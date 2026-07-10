@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "figmaboy",
+  "productName": "Figmaboy",
   "version": "0.1.0",
   "identifier": "com.miki.figmaboy",
   "build": {
@@ -12,13 +12,18 @@
   "app": {
     "windows": [
       {
-        "title": "figmaboy",
-        "width": 800,
-        "height": 600
+        "title": "Figmaboy",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1024,
+        "minHeight": 700,
+        "resizable": true,
+        "center": true,
+        "incognito": true
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost"
     }
   },
   "bundle": {

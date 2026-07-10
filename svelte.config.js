@@ -8,6 +8,12 @@ import { vitePreprocess } from "@sveltejs/vite-plugin-svelte";
 /** @type {import('@sveltejs/kit').Config} */
 const config = {
   preprocess: vitePreprocess(),
+  // Tauri's persistent webview can restore a virtual Svelte stylesheet before
+  // Vite has compiled its owning component. Keeping component CSS in the JS
+  // module avoids that CSS-first cache race during development.
+  vitePlugin: {
+    emitCss: false,
+  },
   kit: {
     adapter: adapter({
       fallback: "index.html",
