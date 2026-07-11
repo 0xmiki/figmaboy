@@ -19,6 +19,8 @@ use tauri_plugin_dialog::DialogExt;
 use uuid::Uuid;
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipArchive, ZipWriter};
 
+mod terminal;
+
 type CommandResult<T> = Result<T, String>;
 
 struct AppState {
@@ -1274,6 +1276,7 @@ pub fn run() {
             app.manage(AppState {
                 database: Mutex::new(connection),
             });
+            app.manage(terminal::TerminalState::default());
             #[cfg(target_os = "linux")]
             install_linux_touchpad_zoom(app)?;
             Ok(())
@@ -1304,6 +1307,10 @@ pub fn run() {
             export_package,
             import_package,
             export_render,
+            terminal::terminal_start,
+            terminal::terminal_write,
+            terminal::terminal_resize,
+            terminal::terminal_close,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Figmaboy");

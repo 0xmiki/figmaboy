@@ -19,6 +19,8 @@
     "@iconify-json/lucide": "^1.2.116",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-opener": "^2",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
     "immer": "^11.1.11",
     "lucide-svelte": "^1.0.1"
   },

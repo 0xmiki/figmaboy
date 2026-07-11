@@ -1,12 +1,12 @@
 <script lang="ts">
   import {
     Circle, Frame, Hand, Image, Minus, MousePointer2, MoveRight, Pentagon, Plus,
-    RectangleHorizontal, Star, Type, ZoomIn, ZoomOut,
+    RectangleHorizontal, SquareTerminal, Star, Type, ZoomIn, ZoomOut,
   } from "lucide-svelte";
   import type { Tool } from "$lib/domain";
   import type { EditorSession } from "$lib/editor/editor.svelte";
 
-  let { session, onFit }: { session: EditorSession; onFit: () => void } = $props();
+  let { session, onFit, terminalOpen, onToggleTerminal }: { session: EditorSession; onFit: () => void; terminalOpen: boolean; onToggleTerminal: () => void } = $props();
   let shapeMenu = $state(false);
   const shapeTools: { id: Tool; label: string; shortcut: string; icon: typeof RectangleHorizontal }[] = [
     { id: "rectangle", label: "Rectangle", shortcut: "R", icon: RectangleHorizontal },
@@ -56,6 +56,8 @@
     <button title="Zoom out" onclick={() => zoom(.8)}><ZoomOut size={17} /></button>
     <button class="zoom" title="Fit selection" onclick={onFit}>{Math.round(session.document.viewport.zoom * 100)}%</button>
     <button title="Zoom in" onclick={() => zoom(1.25)}><ZoomIn size={17} /></button>
+    <span class="separator"></span>
+    <button class:active={terminalOpen} title="Toggle terminal (Ctrl + `)" onclick={onToggleTerminal}><SquareTerminal size={18} /></button>
   </div>
 </div>
 
