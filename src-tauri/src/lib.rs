@@ -19,6 +19,7 @@ use tauri_plugin_dialog::DialogExt;
 use uuid::Uuid;
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipArchive, ZipWriter};
 
+mod editor_bridge;
 mod terminal;
 
 type CommandResult<T> = Result<T, String>;
@@ -878,6 +879,13 @@ fn import_image(
     if data.len() > 50 * 1024 * 1024 {
         return Err("Images must be smaller than 50 MB".into());
     }
+    store_image_data(data, &state).map(Some)
+}
+
+fn store_image_data(data: Vec<u8>, state: &State<'_, AppState>) -> CommandResult<ImportedAsset> {
+    if data.len() > 50 * 1024 * 1024 {
+        return Err("Images must be smaller than 50 MB".into());
+    }
     let format =
         image::guess_format(&data).map_err(|_| "Choose a PNG, JPEG, or WebP image".to_string())?;
     let mime = match format {
@@ -897,13 +905,103 @@ fn import_image(
             params![id, hash, mime, data, width, height, now()],
         )
         .map_err(|error| error.to_string())?;
-    Ok(Some(ImportedAsset {
+    Ok(ImportedAsset {
         id,
         mime: mime.into(),
         data_url: format!("data:{mime};base64,{}", BASE64.encode(data)),
         width,
         height,
-    }))
+    })
+}
+
+#[tauri::command]
+fn import_image_data(
+    data_base64: String,
+    state: State<'_, AppState>,
+) -> CommandResult<ImportedAsset> {
+    let data = BASE64
+        .decode(data_base64)
+        .map_err(|_| "The generated image payload is not valid base64".to_string())?;
+    store_image_data(data, &state)
+}
+
+#[cfg(target_os = "linux")]
+#[tauri::command]
+fn copy_image_to_clipboard(
+    app: AppHandle,
+    data_base64: String,
+    filename: String,
+) -> CommandResult<String> {
+    let encoded = BASE64
+        .decode(data_base64)
+        .map_err(|_| "The rendered frame is not valid base64".to_string())?;
+    if image::guess_format(&encoded)
+        .map_err(|_| "The rendered frame is not an image".to_string())?
+        != image::ImageFormat::Png
+    {
+        return Err("Copy as image requires PNG data".into());
+    }
+    let directory = app
+        .path()
+        .app_cache_dir()
+        .map_err(|error| error.to_string())?
+        .join("clipboard");
+    fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
+    let mut safe = safe_filename(&filename);
+    if safe.trim().is_empty() {
+        safe = "Frame.png".into();
+    } else if !safe.to_ascii_lowercase().ends_with(".png") {
+        safe.push_str(".png");
+    }
+    let path = directory.join(safe);
+    fs::write(&path, &encoded)
+        .map_err(|error| format!("Could not cache the frame image: {error}"))?;
+    let uri = gtk::glib::filename_to_uri(&path, None)
+        .map_err(|error| format!("Could not create the frame file URI: {error}"))?
+        .to_string();
+    let targets = [
+        gtk::TargetEntry::new("image/png", gtk::TargetFlags::empty(), 0),
+        gtk::TargetEntry::new("text/uri-list", gtk::TargetFlags::empty(), 1),
+        gtk::TargetEntry::new("x-special/gnome-copied-files", gtk::TargetFlags::empty(), 2),
+        gtk::TargetEntry::new("application/x-kde4-urilist", gtk::TargetFlags::empty(), 3),
+        gtk::TargetEntry::new(
+            "application/x-kde-cutselection",
+            gtk::TargetFlags::empty(),
+            4,
+        ),
+    ];
+    let png = encoded;
+    let offered_uri = uri.clone();
+    let clipboard = gtk::Clipboard::get(&gtk::gdk::SELECTION_CLIPBOARD);
+    let accepted =
+        clipboard.set_with_data(&targets, move |_clipboard, selection, info| match info {
+            0 => selection.set(&gtk::gdk::Atom::intern("image/png"), 8, &png),
+            1 | 3 => {
+                selection.set_uris(&[offered_uri.as_str()]);
+            }
+            2 => selection.set(
+                &gtk::gdk::Atom::intern("x-special/gnome-copied-files"),
+                8,
+                format!("copy\n{offered_uri}\n").as_bytes(),
+            ),
+            4 => selection.set(
+                &gtk::gdk::Atom::intern("application/x-kde-cutselection"),
+                8,
+                b"0",
+            ),
+            _ => {}
+        });
+    if !accepted {
+        return Err("The Wayland clipboard rejected the frame image".into());
+    }
+    clipboard.store();
+    Ok(path.to_string_lossy().into_owned())
+}
+
+#[cfg(not(target_os = "linux"))]
+#[tauri::command]
+fn copy_image_to_clipboard(_data_base64: String, _filename: String) -> CommandResult<String> {
+    Err("Native image clipboard support is currently available on Linux".into())
 }
 
 #[tauri::command]
@@ -1277,6 +1375,14 @@ pub fn run() {
                 database: Mutex::new(connection),
             });
             app.manage(terminal::TerminalState::default());
+            app.manage(editor_bridge::EditorBridgeState::default());
+            let bridge_app = app.handle().clone();
+            let bridge_data_dir = data_dir.clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(error) = editor_bridge::start(bridge_app, bridge_data_dir).await {
+                    eprintln!("Figmaboy editor bridge stopped: {error}");
+                }
+            });
             #[cfg(target_os = "linux")]
             install_linux_touchpad_zoom(app)?;
             Ok(())
@@ -1303,6 +1409,8 @@ pub fn run() {
             delete_page,
             reorder_pages,
             import_image,
+            import_image_data,
+            copy_image_to_clipboard,
             read_asset,
             export_package,
             import_package,
@@ -1311,6 +1419,7 @@ pub fn run() {
             terminal::terminal_write,
             terminal::terminal_resize,
             terminal::terminal_close,
+            editor_bridge::editor_bridge_complete,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Figmaboy");

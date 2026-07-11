@@ -8,7 +8,7 @@
   import type { EditorSession } from "$lib/editor/editor.svelte";
   import CanvasNode from "$lib/editor/CanvasNode.svelte";
 
-  let { session, onContextMenu }: { session: EditorSession; onContextMenu: (event: MouseEvent, world: Point) => void } = $props();
+  let { session, onContextMenu }: { session: EditorSession; onContextMenu: (event: MouseEvent, world: Point, hitId?: string) => void } = $props();
   let host = $state<HTMLDivElement>();
   let marquee = $state<Rect | null>(null);
   let spacePressed = $state(false);
@@ -30,6 +30,11 @@
   let dragDuplicated = false;
   let startViewport = { x: 0, y: 0 };
   let moveFrame = 0;
+  let wheelFrame = 0;
+  let pendingWheelPan = { x: 0, y: 0 };
+  let pendingWheelZoom = 1;
+  let pendingWheelPoint: Point = { x: 0, y: 0 };
+  let viewportCommitTimer: ReturnType<typeof setTimeout> | undefined;
   let gestureStartZoom = 1;
 
   const viewport = $derived(session.document.viewport);
@@ -103,6 +108,8 @@
     }
     return () => {
       disposed = true;
+      cancelAnimationFrame(wheelFrame);
+      if (viewportCommitTimer) clearTimeout(viewportCommitTimer);
       unlistenNative?.();
       target.removeEventListener("gesturestart", startGesture);
       target.removeEventListener("gesturechange", changeGesture);
@@ -237,6 +244,13 @@
       const first = node.childIds[0];
       if (first) session.select(first);
     }
+  }
+
+  function nodeContextMenu(event: MouseEvent, id: string) {
+    const node = session.document.nodes[id];
+    if (!node || node.locked) return;
+    session.select(id);
+    onContextMenu(event, worldFromEvent(event), id);
   }
 
   function startHandle(event: PointerEvent, nextHandle: string) {
@@ -406,6 +420,7 @@
       if (node.type === "line" || node.type === "arrow") node.height = original.height * sy; else node.height = Math.max(1, original.height * sy);
       if (node.type === "text") {
         node.autoWidth = false;
+        node.textAutoResize = "height";
         syncTextSize(node);
       }
     }
@@ -454,6 +469,7 @@
         node.width = Math.max(1, Math.abs(localEnd.x - draftStart.x));
         node.height = Math.max(node.fontSize * node.lineHeight, Math.abs(localEnd.y - draftStart.y));
         node.autoWidth = false;
+        node.textAutoResize = "height";
       }
       session.addNode(node, draftParentId);
       session.editingTextId = node.id;
@@ -500,24 +516,46 @@
 
   function wheel(event: WheelEvent) {
     event.preventDefault();
-    const point = pointFromEvent(event);
     if (event.ctrlKey || event.metaKey) {
       const delta = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? event.deltaY * 16 : event.deltaY;
-      zoomAtPoint(point, viewport.zoom * Math.exp(-delta * .002));
+      pendingWheelPoint = pointFromEvent(event);
+      pendingWheelZoom *= Math.exp(-delta * .002);
     } else {
-      viewport.x -= event.deltaX;
-      viewport.y -= event.deltaY;
-      session.gestureChanged();
+      pendingWheelPan.x += event.deltaX;
+      pendingWheelPan.y += event.deltaY;
     }
+    if (!wheelFrame) wheelFrame = requestAnimationFrame(flushWheel);
   }
 
-  function zoomAtPoint(point: Point, requestedZoom: number) {
+  function flushWheel() {
+    wheelFrame = 0;
+    if (pendingWheelZoom !== 1) {
+      zoomAtPoint(pendingWheelPoint, viewport.zoom * pendingWheelZoom, false);
+      pendingWheelZoom = 1;
+    }
+    if (pendingWheelPan.x || pendingWheelPan.y) {
+      viewport.x -= pendingWheelPan.x;
+      viewport.y -= pendingWheelPan.y;
+      pendingWheelPan = { x: 0, y: 0 };
+    }
+    scheduleViewportCommit();
+  }
+
+  function zoomAtPoint(point: Point, requestedZoom: number, commit = true) {
     const world = screenToWorld(point, viewport);
     const next = Math.min(8, Math.max(.05, requestedZoom));
     viewport.x = point.x - world.x * next;
     viewport.y = point.y - world.y * next;
     viewport.zoom = next;
-    session.gestureChanged();
+    if (commit) scheduleViewportCommit();
+  }
+
+  function scheduleViewportCommit() {
+    if (viewportCommitTimer) clearTimeout(viewportCommitTimer);
+    viewportCommitTimer = setTimeout(() => {
+      viewportCommitTimer = undefined;
+      session.gestureChanged();
+    }, 220);
   }
 
   function contextMenu(event: MouseEvent) {
@@ -595,7 +633,7 @@
     <g class="world" transform={`translate(${viewport.x} ${viewport.y}) scale(${viewport.zoom})`}>
       {#each session.document.rootIds as id}
         {#if session.document.nodes[id]}
-          <CanvasNode node={session.document.nodes[id]} document={session.document} selectedIds={session.selectedIds} imageSources={session.imageSources} {unclippedFrameIds} onNodePointerDown={nodePointerDown} onNodeDoubleClick={nodeDoubleClick} />
+          <CanvasNode node={session.document.nodes[id]} document={session.document} selectedIds={session.selectedIds} imageSources={session.imageSources} {unclippedFrameIds} onNodePointerDown={nodePointerDown} onNodeDoubleClick={nodeDoubleClick} onNodeContextMenu={nodeContextMenu} />
         {/if}
       {/each}
 

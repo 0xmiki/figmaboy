@@ -24,6 +24,7 @@ export interface Repository {
   deletePage(pageId: string): Promise<void>;
   reorderPages(fileId: string, pageIds: string[]): Promise<void>;
   importImage(): Promise<ImportedAsset | null>;
+  importImageData(dataBase64: string): Promise<ImportedAsset>;
   readAsset(id: string): Promise<string>;
   exportPackage(kind: "project" | "file", id: string): Promise<boolean>;
   importPackage(): Promise<boolean>;
@@ -287,6 +288,27 @@ class BrowserRepository implements Repository {
     });
   }
 
+  async importImageData(dataBase64: string): Promise<ImportedAsset> {
+    if (dataBase64.length > 70 * 1024 * 1024) throw new Error("Images must be smaller than 50 MB");
+    const mime: ImportedAsset["mime"] | null = dataBase64.startsWith("iVBOR") ? "image/png"
+      : dataBase64.startsWith("/9j/") ? "image/jpeg"
+      : dataBase64.startsWith("UklGR") ? "image/webp" : null;
+    if (!mime) throw new Error("Choose a PNG, JPEG, or WebP image");
+    const dataUrl = `data:${mime};base64,${dataBase64}`;
+    const image = new Image();
+    const loaded = new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve();
+      image.onerror = () => reject(new Error("The generated image is damaged"));
+    });
+    image.src = dataUrl;
+    await loaded;
+    const state = this.state();
+    const asset: ImportedAsset = { id: uid("asset"), mime, dataUrl, width: image.naturalWidth, height: image.naturalHeight };
+    state.assets[asset.id] = asset;
+    persistBrowserState(state);
+    return asset;
+  }
+
   async readAsset(id: string): Promise<string> {
     const asset = this.state().assets[id];
     if (!asset) throw new Error("Asset not found");
@@ -375,6 +397,7 @@ class TauriRepository implements Repository {
   deletePage = (pageId: string) => invoke<void>("delete_page", { pageId });
   reorderPages = (fileId: string, pageIds: string[]) => invoke<void>("reorder_pages", { fileId, pageIds });
   importImage = () => invoke<ImportedAsset | null>("import_image");
+  importImageData = (dataBase64: string) => invoke<ImportedAsset>("import_image_data", { dataBase64 });
   readAsset = (id: string) => invoke<string>("read_asset", { id });
   exportPackage = (kind: "project" | "file", id: string) => invoke<boolean>("export_package", { kind, id });
   importPackage = () => invoke<boolean>("import_package");

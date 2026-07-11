@@ -41,16 +41,38 @@ export interface GradientStop {
 export interface LinearGradientPaint {
   type: "linear-gradient";
   angle: number;
-  stops: [GradientStop, GradientStop];
+  stops: GradientStop[];
 }
 
-export type Paint = SolidPaint | LinearGradientPaint;
+export interface RadialGradientPaint {
+  type: "radial-gradient";
+  centerX: number;
+  centerY: number;
+  radius: number;
+  stops: GradientStop[];
+}
+
+export type Paint = SolidPaint | LinearGradientPaint | RadialGradientPaint;
+
+export type BlendMode =
+  | "normal" | "multiply" | "screen" | "overlay" | "darken" | "lighten"
+  | "color-dodge" | "color-burn" | "hard-light" | "soft-light"
+  | "difference" | "exclusion" | "hue" | "saturation" | "color" | "luminosity";
 
 export interface StrokeStyle {
   color: string;
   opacity: number;
   width: number;
   dash?: number[];
+  cap?: "butt" | "round" | "square";
+  join?: "miter" | "round" | "bevel";
+}
+
+export interface CornerRadii {
+  topLeft: number;
+  topRight: number;
+  bottomRight: number;
+  bottomLeft: number;
 }
 
 export interface ShadowStyle {
@@ -60,6 +82,19 @@ export interface ShadowStyle {
   y: number;
   blur: number;
 }
+
+export interface DropShadowEffect extends ShadowStyle {
+  type: "drop-shadow";
+  visible?: boolean;
+}
+
+export interface LayerBlurEffect {
+  type: "layer-blur";
+  radius: number;
+  visible?: boolean;
+}
+
+export type LayerEffect = DropShadowEffect | LayerBlurEffect;
 
 export interface NavigateInteraction {
   trigger: "click";
@@ -78,12 +113,15 @@ export interface CommonNode {
   height: number;
   rotation: number;
   opacity: number;
+  blendMode?: BlendMode;
   visible: boolean;
   locked: boolean;
   fill: Paint | null;
   stroke: StrokeStyle | null;
   radius: number;
+  cornerRadii?: CornerRadii;
   shadow: ShadowStyle | null;
+  effects?: LayerEffect[];
   interaction?: NavigateInteraction;
 }
 
@@ -104,9 +142,18 @@ export interface TextNode extends CommonNode {
   fontFamily: string;
   fontSize: number;
   fontWeight: number;
+  fontStyle: "normal" | "italic";
   lineHeight: number;
   letterSpacing: number;
   textAlign: "left" | "center" | "right";
+  textAlignVertical: "top" | "center" | "bottom";
+  textCase: "original" | "upper" | "lower" | "title";
+  textDecoration: "none" | "underline" | "strikethrough";
+  textAutoResize: "none" | "width-and-height" | "height";
+  paragraphSpacing: number;
+  paragraphIndent: number;
+  maxLines: number | null;
+  textTruncation: "disabled" | "ending";
   autoWidth: boolean;
 }
 
@@ -250,7 +297,7 @@ export function defaultNode(type: NodeType, x: number, y: number, overrides: Par
     return { ...base, type, childIds: [], clipContent: type === "frame", ...overrides } as ContainerNode;
   }
   if (type === "text") {
-    return {
+    const textNode = {
       ...base,
       type,
       fill: solid("#18181b"),
@@ -258,12 +305,24 @@ export function defaultNode(type: NodeType, x: number, y: number, overrides: Par
       fontFamily: "Inter, sans-serif",
       fontSize: 20,
       fontWeight: 400,
+      fontStyle: "normal",
       lineHeight: 1.2,
       letterSpacing: 0,
       textAlign: "left",
+      textAlignVertical: "top",
+      textCase: "original",
+      textDecoration: "none",
+      textAutoResize: "width-and-height",
+      paragraphSpacing: 0,
+      paragraphIndent: 0,
+      maxLines: null,
+      textTruncation: "disabled",
       autoWidth: true,
       ...overrides,
     } as TextNode;
+    if ("autoWidth" in overrides && !("textAutoResize" in overrides)) textNode.textAutoResize = textNode.autoWidth ? "width-and-height" : "height";
+    if ("textAutoResize" in overrides && !("autoWidth" in overrides)) textNode.autoWidth = textNode.textAutoResize === "width-and-height";
+    return textNode;
   }
   if (type === "image") {
     return {

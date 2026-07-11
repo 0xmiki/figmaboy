@@ -2,6 +2,8 @@
   import { onMount } from "svelte";
   import { goto } from "$app/navigation";
   import { page as route } from "$app/state";
+  import { invoke } from "@tauri-apps/api/core";
+  import { listen } from "@tauri-apps/api/event";
   import { ChevronDown, ChevronLeft, Copy, Eye, EyeOff, Group, Lock, MoveDown, MoveUp, PanelLeftClose, PanelRightClose, RefreshCw, Save, Trash2, Ungroup, Unlock, X } from "lucide-svelte";
   import type { DesignNode, PageMeta } from "$lib/domain";
   import { cloneDocument, defaultNode } from "$lib/domain";
@@ -14,11 +16,13 @@
   import PrototypePreview from "$lib/editor/PrototypePreview.svelte";
   import Toolbar from "$lib/editor/Toolbar.svelte";
   import TerminalPanel from "$lib/editor/TerminalPanel.svelte";
+  import { applyExternalOperations, centerNodes, nodeGeometry, placeImageNode, setBorderRadius } from "$lib/editor/editor-rpc";
 
   const repo = repository();
   let session = $state<EditorSession | null>(null);
   let loading = $state(true);
   let error = $state("");
+  let notice = $state("");
   let context = $state<{ x: number; y: number; worldX: number; worldY: number } | null>(null);
   let pageMenu = $state<{ id: string; x: number; y: number } | null>(null);
   let preview = $state(false);
@@ -26,6 +30,7 @@
   let terminalOpen = $state(false);
   let terminalHeight = $state(280);
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
+  let noticeTimer: ReturnType<typeof setTimeout> | null = null;
 
   onMount(async () => {
     try {
@@ -34,6 +39,19 @@
       await loadAssets();
     } catch (cause) { error = cause instanceof Error ? cause.message : "Could not open this design"; }
     finally { loading = false; }
+  });
+
+  type EditorRpcRequest = { id: string; method: string; params: unknown };
+
+  onMount(() => {
+    if (!("__TAURI_INTERNALS__" in window)) return;
+    let remove: (() => void) | undefined;
+    void listen<EditorRpcRequest>("editor-rpc-request", ({ payload }) => {
+      void handleEditorRpc(payload)
+        .then((result) => invoke("editor_bridge_complete", { id: payload.id, result, error: null }))
+        .catch((cause) => invoke("editor_bridge_complete", { id: payload.id, result: null, error: cause instanceof Error ? cause.message : String(cause) }));
+    }).then((unlisten) => (remove = unlisten));
+    return () => remove?.();
   });
 
   $effect(() => {
@@ -136,6 +154,10 @@
     if (!session || !context) return;
     const point = { x: context.worldX, y: context.worldY }; context = null;
     if (action === "copy") session.copy();
+    if (action === "copy-image") {
+      const frame = session.selectedNodes.length === 1 && session.selectedNodes[0].type === "frame" ? session.selectedNodes[0] : null;
+      if (frame) await copyFrameAsImage(frame.id);
+    }
     if (action === "cut") session.cut();
     if (action === "paste") await session.paste(point);
     if (action === "duplicate") session.duplicate();
@@ -229,6 +251,131 @@
       };
       image.src = svgUrl;
     }
+  }
+
+  function showNotice(message: string) {
+    notice = message;
+    if (noticeTimer) clearTimeout(noticeTimer);
+    noticeTimer = setTimeout(() => (notice = ""), 2600);
+  }
+
+  async function rasterizeNodes(ids: string[], requestedScale: number) {
+    if (!session || !ids.length) throw new Error("Nothing to render");
+    const nodes = ids.map((id) => session!.document.nodes[id]).filter(Boolean);
+    const bounds = unionRects(nodes.map((node) => worldBounds(session!.document, node)));
+    const world = document.querySelector<SVGGElement>("#design-canvas .world")?.cloneNode(true) as SVGGElement | undefined;
+    if (!bounds || !world) throw new Error("Could not render the design canvas");
+    world.removeAttribute("transform");
+    world.querySelectorAll(".selection-ui,.guide").forEach((item) => item.remove());
+    const selector = ids.map((candidate) => `[data-node-id='${candidate}']`).join(",");
+    world.querySelectorAll("[data-node-id]").forEach((item) => {
+      const id = item.getAttribute("data-node-id");
+      if (id && !ids.includes(id) && !item.closest(selector)) item.remove();
+    });
+    const desiredScale = Math.max(.25, Math.min(4, Number(requestedScale) || 1));
+    const scale = Math.min(desiredScale, 4096 / Math.max(1, bounds.width), 4096 / Math.max(1, bounds.height));
+    const width = Math.max(1, Math.ceil(bounds.width * scale));
+    const height = Math.max(1, Math.ceil(bounds.height * scale));
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${bounds.x} ${bounds.y} ${Math.max(1, bounds.width)} ${Math.max(1, bounds.height)}">${world.outerHTML}</svg>`;
+    const image = new Image();
+    const loaded = new Promise<void>((resolve, reject) => { image.onload = () => resolve(); image.onerror = () => reject(new Error("Could not rasterize design")); });
+    image.src = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`;
+    await loaded;
+    const canvas = document.createElement("canvas"); canvas.width = width; canvas.height = height;
+    const context2d = canvas.getContext("2d");
+    if (!context2d) throw new Error("Could not create the image canvas");
+    context2d.drawImage(image, 0, 0, width, height);
+    return { canvas, width, height, bounds, ids, scale };
+  }
+
+  async function copyFrameAsImage(frameId: string) {
+    if (!session || session.document.nodes[frameId]?.type !== "frame") return;
+    try {
+      const frame = session.document.nodes[frameId];
+      const scale = Math.min(4, Math.max(2, 3840 / Math.max(1, frame.width, frame.height)));
+      const rendered = await rasterizeNodes([frameId], scale);
+      if ("__TAURI_INTERNALS__" in window) {
+        const png = rendered.canvas.toDataURL("image/png");
+        await invoke<string>("copy_image_to_clipboard", {
+          dataBase64: png.slice(png.indexOf(",") + 1), filename: `${frame.name}.png`,
+        });
+      } else {
+        const blob = await new Promise<Blob>((resolve, reject) => rendered.canvas.toBlob((value) => value ? resolve(value) : reject(new Error("Could not encode frame image")), "image/png"));
+        if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined") throw new Error("Image clipboard access is unavailable");
+        await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      }
+      showNotice(`Copied ${frame.name} as ${rendered.width} × ${rendered.height} image`);
+    } catch (cause) {
+      session.errorMessage = cause instanceof Error ? cause.message : "Could not copy frame as an image";
+    }
+  }
+
+  async function renderForRpc(paramsValue: unknown) {
+    if (!session) throw new Error("NO_ACTIVE_EDITOR");
+    const params = (paramsValue && typeof paramsValue === "object" ? paramsValue : {}) as { scope?: string; ids?: string[]; scale?: number };
+    const ids = params.scope === "selection"
+      ? (params.ids?.length ? params.ids : session.selectedIds)
+      : (params.ids?.length ? params.ids : session.document.rootIds);
+    const rendered = await rasterizeNodes(ids, Number(params.scale) || 1);
+    const dataUrl = rendered.canvas.toDataURL("image/png");
+    return { mimeType: "image/png", imageBase64: dataUrl.slice(dataUrl.indexOf(",") + 1), width: rendered.width, height: rendered.height, bounds: rendered.bounds, ids, scale: rendered.scale };
+  }
+
+  async function handleEditorRpc(request: EditorRpcRequest): Promise<unknown> {
+    if (!session) throw new Error("NO_ACTIVE_EDITOR: open a design file");
+    const params = (request.params && typeof request.params === "object" ? request.params : {}) as Record<string, unknown>;
+    const canvas = document.querySelector<HTMLElement>("#design-canvas");
+    const rect = canvas?.getBoundingClientRect() ?? { x: 0, y: 0, width: 0, height: 0 };
+    if (request.method === "editor_status") return {
+      file: session.file, page: session.page, pages: session.pages, changeToken: session.changeToken,
+      selectedIds: session.selectedIds, activeTool: session.activeTool, saveStatus: session.saveStatus,
+      viewport: session.document.viewport,
+      canvas: { clientRect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height }, screenOrigin: { x: window.screenX + rect.x, y: window.screenY + rect.y }, devicePixelRatio: window.devicePixelRatio },
+    };
+    if (request.method === "document_get") return { changeToken: session.changeToken, document: cloneDocument(session.document) };
+    if (request.method === "nodes_get") {
+      const ids = Array.isArray(params.ids) ? params.ids.filter((id): id is string => typeof id === "string") : Object.keys(session.document.nodes);
+      const type = typeof params.type === "string" ? params.type : null;
+      const name = typeof params.name === "string" ? params.name.toLowerCase() : null;
+      const nodes = ids.map((id) => session!.document.nodes[id]).filter((node) => node && (!type || node.type === type) && (!name || node.name.toLowerCase().includes(name)));
+      return { changeToken: session.changeToken, nodes };
+    }
+    if (request.method === "geometry_get") {
+      const ids = Array.isArray(params.ids) ? params.ids.filter((id): id is string => typeof id === "string") : session.selectedIds;
+      const canvasClientRect = { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+      return { changeToken: session.changeToken, viewport: session.document.viewport, canvasClientRect, nodes: nodeGeometry(session, ids, canvasClientRect) };
+    }
+    if (request.method === "operations_apply") return applyExternalOperations(session, params);
+    if (request.method === "nodes_center") return centerNodes(session, params);
+    if (request.method === "nodes_set_border_radius") return setBorderRadius(session, params);
+    if (request.method === "image_place") {
+      if (typeof params.expectedChangeToken === "number" && params.expectedChangeToken !== session.changeToken) throw new Error(`STALE_DOCUMENT: expected changeToken ${params.expectedChangeToken}, current value is ${session.changeToken}`);
+      if (typeof params.imageBase64 !== "string" || !params.imageBase64.length) throw new Error("imageBase64 is required");
+      const asset = await repo.importImageData(params.imageBase64);
+      session.imageSources[asset.id] = asset.dataUrl;
+      return placeImageNode(session, asset, params);
+    }
+    if (request.method === "selection_set") {
+      const ids = Array.isArray(params.ids) ? params.ids.filter((id): id is string => typeof id === "string" && Boolean(session!.document.nodes[id])) : [];
+      session.selectedIds = ids; return { selectedIds: ids };
+    }
+    if (request.method === "viewport_focus") {
+      const ids = Array.isArray(params.ids) ? params.ids.filter((id): id is string => typeof id === "string" && Boolean(session!.document.nodes[id])) : [];
+      if (ids.length) session.selectedIds = ids;
+      fitCanvas(ids.length ? "selection" : "all");
+      return { viewport: session.document.viewport, selectedIds: session.selectedIds };
+    }
+    if (request.method === "history_undo") { session.undo(); return { changeToken: session.changeToken }; }
+    if (request.method === "history_redo") { session.redo(); return { changeToken: session.changeToken }; }
+    if (request.method === "document_save") { await saveNow(); return { revision: session.page.revision, saveStatus: session.saveStatus, changeToken: session.changeToken }; }
+    if (request.method === "frame_screenshot") {
+      const frameId = typeof params.frameId === "string" ? params.frameId : "";
+      const frame = session.document.nodes[frameId];
+      if (frame?.type !== "frame") throw new Error(`frameId must identify a frame; received ${frameId || "nothing"}`);
+      return renderForRpc({ scope: "selection", ids: [frameId], scale: params.scale });
+    }
+    if (request.method === "render") return renderForRpc(params);
+    throw new Error(`Unknown editor RPC method: ${request.method}`);
   }
 
   function keydown(event: KeyboardEvent) {
@@ -326,12 +473,13 @@
     {#if session.errorMessage || session.saveStatus === "conflict"}
       <div class="save-error"><div><strong>{session.saveStatus === "conflict" ? "This page changed elsewhere" : "Could not save"}</strong><span>{session.saveStatus === "conflict" ? "Reload the page or keep working and export a package." : session.errorMessage}</span></div><button onclick={retrySave}><RefreshCw size={14} /> Retry</button><button class="dismiss" onclick={dismissSaveError}><X size={14} /></button></div>
     {/if}
+    {#if notice}<div class="copy-notice"><Copy size={14} />{notice}</div>{/if}
   </div>
 
   {#if context}
     <div class="editor-context" role="menu" tabindex="-1" style:left={`${context.x}px`} style:top={`${context.y}px`} onclick={(event) => event.stopPropagation()} onkeydown={(event) => event.key === "Escape" && (context = null)}>
       {#if session.selectedIds.length}
-        <button onclick={() => contextAction("copy")}><Copy size={13} />Copy<kbd>⌘C</kbd></button><button onclick={() => contextAction("cut")}>Cut<kbd>⌘X</kbd></button><button onclick={() => contextAction("paste")}>Paste here<kbd>⌘V</kbd></button><button onclick={() => contextAction("duplicate")}>Duplicate<kbd>⌘D</kbd></button><hr />
+        <button onclick={() => contextAction("copy")}><Copy size={13} />Copy<kbd>⌘C</kbd></button>{#if session.selectedNodes.length === 1 && session.selectedNodes[0].type === "frame"}<button onclick={() => contextAction("copy-image")}><Copy size={13} />Copy as image</button>{/if}<button onclick={() => contextAction("cut")}>Cut<kbd>⌘X</kbd></button><button onclick={() => contextAction("paste")}>Paste here<kbd>⌘V</kbd></button><button onclick={() => contextAction("duplicate")}>Duplicate<kbd>⌘D</kbd></button><hr />
         {#if session.pages.length > 1}<button onclick={() => contextAction("move-page")}>Move to page<span>›</span></button>{/if}<button onclick={() => contextAction("front")}><MoveUp size={13} />Bring to front<kbd>]</kbd></button><button onclick={() => contextAction("back")}><MoveDown size={13} />Send to back<kbd>[</kbd></button><hr />
         {#if session.selectedNodes.some((node) => node.type === "group" || node.type === "frame")}<button onclick={() => contextAction("ungroup")}><Ungroup size={13} />Ungroup<kbd>⇧⌘G</kbd></button>{:else}<button onclick={() => contextAction("group")}><Group size={13} />Group selection<kbd>⌘G</kbd></button><button onclick={() => contextAction("frame")}>Frame selection</button>{/if}<hr />
         <button onclick={() => contextAction("visible")}>{#if session.selectedNodes.every((node) => node.visible)}<EyeOff size={13} />Hide{:else}<Eye size={13} />Show{/if}</button><button onclick={() => contextAction("lock")}>{#if session.selectedNodes.every((node) => node.locked)}<Unlock size={13} />Unlock{:else}<Lock size={13} />Lock{/if}</button><button class="danger" onclick={() => contextAction("delete")}><Trash2 size={13} />Delete<kbd>⌫</kbd></button>
@@ -355,5 +503,6 @@
   .error-screen > div { width: 58px; height: 58px; display: grid; place-items: center; border: 1px solid #512727; background: #321d1d; color: #f87171; border-radius: 15px; }.error-screen h1 { font-size: 17px; margin: 17px 0 4px; }.error-screen p { color: #888; font-size: 10px; }.error-screen button { margin-top: 13px; height: 32px; border: 1px solid #414141; border-radius: 6px; background: #2c2c2c; color: white; display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 0 11px; font-size: 10px; }
   .editor-context { position: fixed; z-index: 100; width: 225px; padding: 6px; border: 1px solid #444; border-radius: 7px; background: #202020; box-shadow: 0 15px 45px #0009; }.editor-context.small { width: 165px; }.editor-context button { width: 100%; min-height: 31px; border: 0; border-radius: 4px; background: transparent; color: #eee; padding: 0 8px; display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 10px; }.editor-context button:hover { background: #373737; }.editor-context kbd,.editor-context button > span { margin-left: auto; color: #888; font: inherit; }.editor-context hr { height: 1px; border: 0; background: #3d3d3d; margin: 5px -6px; }.editor-context .danger { color: #fca5a5; }
   .save-error { position: fixed; z-index: 80; left: 50%; top: 13px; transform: translateX(-50%); min-width: 380px; min-height: 48px; background: #3a2020; border: 1px solid #7f3737; border-radius: 8px; box-shadow: 0 8px 30px #0007; display: flex; align-items: center; gap: 10px; padding: 8px 9px 8px 13px; }.save-error > div { flex: 1; display: flex; flex-direction: column; }.save-error strong { font-size: 10px; }.save-error span { color: #d4a1a1; font-size: 8px; margin-top: 3px; }.save-error button { height: 28px; border: 0; border-radius: 5px; background: #693333; color: #fff; display: flex; align-items: center; gap: 5px; padding: 0 9px; cursor: pointer; font-size: 9px; }.save-error .dismiss { width: 28px; padding: 0; justify-content: center; background: transparent; }
+  .copy-notice { position: fixed; z-index: 90; left: 50%; bottom: 24px; transform: translateX(-50%); min-height: 34px; display: flex; align-items: center; gap: 7px; padding: 0 13px; border: 1px solid #4a4a4a; border-radius: 7px; background: #252525; color: #f4f4f5; box-shadow: 0 8px 28px #0008; font-size: 9px; }
   @media (max-width: 1050px) { .canvas-region,.terminal-dock { left: 56px; }.editor-shell :global(.left-shell) { width: 56px; grid-template-columns: 56px 0; }.editor-shell :global(.left-shell .panel) { display: none; } }
 </style>

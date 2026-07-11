@@ -2,6 +2,8 @@ import type { TextNode } from "$lib/domain";
 
 export interface TextLayout {
   lines: string[];
+  lineOffsets: number[];
+  lineIndents: number[];
   width: number;
   height: number;
   lineHeight: number;
@@ -16,11 +18,18 @@ export function measureText(text: string, node: TextNode): number {
     measureCanvas ??= globalThis.document.createElement("canvas");
     const context = measureCanvas.getContext("2d");
     if (context) {
-      context.font = `${node.fontWeight} ${node.fontSize}px ${node.fontFamily}`;
+      context.font = `${node.fontStyle ?? "normal"} ${node.fontWeight} ${node.fontSize}px ${node.fontFamily}`;
       return context.measureText(text).width + Math.max(0, text.length - 1) * node.letterSpacing;
     }
   }
   return text.length * node.fontSize * .56 + Math.max(0, text.length - 1) * node.letterSpacing;
+}
+
+export function displayedText(node: TextNode): string {
+  if (node.textCase === "upper") return node.text.toUpperCase();
+  if (node.textCase === "lower") return node.text.toLowerCase();
+  if (node.textCase === "title") return node.text.replace(/\p{L}[\p{L}\p{M}'’-]*/gu, (word) => word[0].toUpperCase() + word.slice(1).toLowerCase());
+  return node.text;
 }
 
 function splitLongWord(word: string, width: number, node: TextNode, measure: Measure): string[] {
@@ -60,22 +69,54 @@ function wrapParagraph(paragraph: string, width: number, node: TextNode, measure
 }
 
 export function layoutText(node: TextNode, measure: Measure = measureText): TextLayout {
-  const lines = node.autoWidth
-    ? node.text.split("\n")
-    : node.text.split("\n").flatMap((paragraph) => wrapParagraph(paragraph, Math.max(1, node.width), node, measure));
-  const safeLines = lines.length ? lines : [""];
+  const autoResize = node.textAutoResize ?? (node.autoWidth ? "width-and-height" : "height");
+  const paragraphs = displayedText(node).split("\n");
+  const lines: string[] = [];
+  const lineOffsets: number[] = [];
+  const lineIndents: number[] = [];
   const lineHeight = node.fontSize * node.lineHeight;
+  let offset = 0;
+  paragraphs.forEach((paragraph, paragraphIndex) => {
+    if (paragraphIndex > 0) offset += node.paragraphSpacing ?? 0;
+    const wrapped = autoResize === "width-and-height"
+      ? [paragraph]
+      : wrapParagraph(paragraph, Math.max(1, node.width - Math.max(0, node.paragraphIndent ?? 0)), node, measure);
+    wrapped.forEach((line, lineIndex) => {
+      lines.push(line);
+      lineOffsets.push(offset);
+      lineIndents.push(lineIndex === 0 ? Math.max(0, node.paragraphIndent ?? 0) : 0);
+      offset += lineHeight;
+    });
+  });
+  if (!lines.length) { lines.push(""); lineOffsets.push(0); lineIndents.push(0); offset = lineHeight; }
+  const maxLines = node.maxLines && node.maxLines > 0 ? Math.floor(node.maxLines) : null;
+  if (node.textTruncation === "ending" && maxLines && lines.length > maxLines) {
+    lines.length = maxLines;
+    lineOffsets.length = maxLines;
+    lineIndents.length = maxLines;
+    let last = lines[maxLines - 1].replace(/\s+$/, "");
+    if (autoResize !== "width-and-height") {
+      const available = Math.max(1, node.width - lineIndents[maxLines - 1]);
+      while (last && measure(`${last}…`, node) > available) last = last.slice(0, -1);
+    }
+    lines[maxLines - 1] = `${last}…`;
+    offset = lineOffsets[maxLines - 1] + lineHeight;
+  }
   return {
-    lines: safeLines,
-    width: Math.max(1, ...safeLines.map((line) => measure(line || " ", node))),
-    height: Math.max(lineHeight, safeLines.length * lineHeight),
+    lines,
+    lineOffsets,
+    lineIndents,
+    width: Math.max(1, ...lines.map((line, index) => measure(line || " ", node) + lineIndents[index])),
+    height: Math.max(lineHeight, offset),
     lineHeight,
   };
 }
 
 export function syncTextSize(node: TextNode, measure: Measure = measureText): TextLayout {
   const layout = layoutText(node, measure);
-  if (node.autoWidth) node.width = layout.width;
-  node.height = layout.height;
+  const autoResize = node.textAutoResize ?? (node.autoWidth ? "width-and-height" : "height");
+  node.autoWidth = autoResize === "width-and-height";
+  if (autoResize === "width-and-height") node.width = layout.width;
+  if (autoResize !== "none") node.height = layout.height;
   return layout;
 }

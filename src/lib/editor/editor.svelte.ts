@@ -54,6 +54,34 @@ function normalizeTextSizes(document: PageDocument): void {
   for (const node of Object.values(document.nodes)) if (node.type === "text") syncTextSize(node);
 }
 
+const supportedNodeTypes = new Set(["frame", "group", "rectangle", "ellipse", "line", "arrow", "polygon", "star", "text", "image", "icon"]);
+
+function removeUnsupportedNodes(document: PageDocument): boolean {
+  let changed = false;
+  for (const [id, node] of Object.entries(document.nodes)) {
+    if (supportedNodeTypes.has((node as { type: string }).type)) continue;
+    delete document.nodes[id];
+    changed = true;
+  }
+  const keep = (id: string) => Boolean(document.nodes[id]);
+  const roots = document.rootIds.filter(keep);
+  if (roots.length !== document.rootIds.length) changed = true;
+  document.rootIds = roots;
+  for (const node of Object.values(document.nodes)) {
+    if (node.type === "frame" || node.type === "group") {
+      const children = node.childIds.filter(keep);
+      if (children.length !== node.childIds.length) changed = true;
+      node.childIds = children;
+    }
+    if (node.parentId && !document.nodes[node.parentId]) {
+      node.parentId = null;
+      if (!document.rootIds.includes(node.id)) document.rootIds.push(node.id);
+      changed = true;
+    }
+  }
+  return changed;
+}
+
 export class EditorSession {
   file = $state<DesignFile>({} as DesignFile);
   pages = $state<PageMeta[]>([]);
@@ -80,7 +108,12 @@ export class EditorSession {
     this.pages = opened.pages;
     this.page = opened.page;
     this.document = opened.document;
+    const removedUnsupportedNodes = removeUnsupportedNodes(this.document);
     normalizeTextSizes(this.document);
+    if (removedUnsupportedNodes) {
+      this.changeToken = 1;
+      this.saveStatus = "dirty";
+    }
   }
 
   get selectedNodes(): DesignNode[] {
@@ -96,6 +129,17 @@ export class EditorSession {
   private changed(): void {
     this.changeToken += 1;
     this.saveStatus = "dirty";
+  }
+
+  replaceDocumentFromExternal(next: PageDocument): void {
+    const before = this.snapshot();
+    this.document = cloneDocument(next);
+    normalizeTextSizes(this.document);
+    this.undoStack.push({ before, after: this.snapshot() });
+    if (this.undoStack.length > 100) this.undoStack.shift();
+    this.redoStack = [];
+    this.selectedIds = this.selectedIds.filter((id) => Boolean(this.document.nodes[id]));
+    this.changed();
   }
 
   mutate(mutator: (document: PageDocument) => void, record = true): void {
@@ -180,7 +224,11 @@ export class EditorSession {
         const node = document.nodes[id];
         if (node && (!node.locked || "locked" in patch || "visible" in patch)) {
           Object.assign(node, patch);
-          if (node.type === "text") syncTextSize(node);
+          if (node.type === "text") {
+            if ("autoWidth" in patch && !("textAutoResize" in patch)) node.textAutoResize = node.autoWidth ? "width-and-height" : "height";
+            if ("textAutoResize" in patch) node.autoWidth = node.textAutoResize === "width-and-height";
+            syncTextSize(node);
+          }
         }
       });
     });
@@ -432,10 +480,12 @@ export class EditorSession {
   setPage(page: PageMeta, document: PageDocument): void {
     this.page = page;
     this.document = document;
+    const removedUnsupportedNodes = removeUnsupportedNodes(this.document);
     normalizeTextSizes(this.document);
     this.selectedIds = [];
     this.undoStack = [];
     this.redoStack = [];
-    this.saveStatus = "saved";
+    this.saveStatus = removedUnsupportedNodes ? "dirty" : "saved";
+    if (removedUnsupportedNodes) this.changeToken += 1;
   }
 }
