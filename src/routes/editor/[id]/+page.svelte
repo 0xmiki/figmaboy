@@ -31,6 +31,7 @@
   let terminalHeight = $state(280);
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
   let noticeTimer: ReturnType<typeof setTimeout> | null = null;
+  let nudgeTimer: ReturnType<typeof setTimeout> | null = null;
 
   onMount(async () => {
     try {
@@ -52,6 +53,18 @@
         .catch((cause) => invoke("editor_bridge_complete", { id: payload.id, result: null, error: cause instanceof Error ? cause.message : String(cause) }));
     }).then((unlisten) => (remove = unlisten));
     return () => remove?.();
+  });
+
+  onMount(() => {
+    const flush = () => {
+      if (document.visibilityState === "hidden") void saveNow();
+    };
+    document.addEventListener("visibilitychange", flush);
+    window.addEventListener("pagehide", flush);
+    return () => {
+      document.removeEventListener("visibilitychange", flush);
+      window.removeEventListener("pagehide", flush);
+    };
   });
 
   $effect(() => {
@@ -82,13 +95,26 @@
 
   async function saveNow() {
     if (!session || session.saveStatus === "saving" || session.saveStatus === "saved") return;
+    if (session.persistencePaused) {
+      if (saveTimer) clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => void saveNow(), 250);
+      return;
+    }
     session.saveStatus = "saving";
+    const savingToken = session.changeToken;
+    const pageId = session.page.id;
+    const expectedRevision = session.page.revision;
+    const snapshot = cloneDocument(session.document);
     try {
-      const revision = await repo.savePage(session.page.id, session.page.revision, cloneDocument(session.document), thumbnailSvg());
-      session.page.revision = revision;
-      const meta = session.pages.find((page) => page.id === session!.page.id);
+      const revision = await repo.savePage(pageId, expectedRevision, snapshot, thumbnailSvg());
+      if (session.page.id === pageId) session.page.revision = revision;
+      const meta = session.pages.find((page) => page.id === pageId);
       if (meta) meta.revision = revision;
-      session.saveStatus = "saved";
+      session.saveStatus = session.changeToken === savingToken ? "saved" : "dirty";
+      if (session.saveStatus === "dirty") {
+        if (saveTimer) clearTimeout(saveTimer);
+        saveTimer = setTimeout(() => void saveNow(), 120);
+      }
     } catch (cause) {
       if (cause instanceof Error && cause.message.includes("REVISION_CONFLICT")) session.saveStatus = "conflict";
       else { session.saveStatus = "error"; session.errorMessage = cause instanceof Error ? cause.message : "Autosave failed"; }
@@ -146,7 +172,8 @@
 
   function layerContext(event: MouseEvent, id: string) {
     if (!session) return;
-    event.preventDefault(); event.stopPropagation(); session.select(id);
+    event.preventDefault(); event.stopPropagation();
+    if (!session.selectedIds.includes(id)) session.select(id, false, true);
     showContext(event, { x: session.document.nodes[id].x, y: session.document.nodes[id].y });
   }
 
@@ -231,6 +258,18 @@
     session.gestureChanged();
   }
 
+  function resetZoom() {
+    if (!session) return;
+    const viewport = session.document.viewport;
+    const canvas = document.querySelector<HTMLElement>("#design-canvas");
+    const point = { x: (canvas?.clientWidth ?? innerWidth) / 2, y: (canvas?.clientHeight ?? innerHeight) / 2 };
+    const world = screenToWorld(point, viewport);
+    viewport.zoom = 1;
+    viewport.x = point.x - world.x;
+    viewport.y = point.y - world.y;
+    session.gestureChanged();
+  }
+
   async function exportSelection(format: "svg" | "png", scale = 1) {
     if (!session) return;
     const ids = session.selectedIds.length ? session.selectedIds : session.document.rootIds;
@@ -266,6 +305,8 @@
     const world = document.querySelector<SVGGElement>("#design-canvas .world")?.cloneNode(true) as SVGGElement | undefined;
     if (!bounds || !world) throw new Error("Could not render the design canvas");
     world.removeAttribute("transform");
+    world.style.removeProperty("transform");
+    world.style.removeProperty("will-change");
     world.querySelectorAll(".selection-ui,.guide").forEach((item) => item.remove());
     const selector = ids.map((candidate) => `[data-node-id='${candidate}']`).join(",");
     world.querySelectorAll("[data-node-id]").forEach((item) => {
@@ -379,10 +420,14 @@
   }
 
   function keydown(event: KeyboardEvent) {
+    if (event.defaultPrevented) return;
     const mod = event.metaKey || event.ctrlKey;
     const key = event.key.toLowerCase();
+    const target = event.target instanceof Element ? event.target : null;
+    const typing = target?.matches("input, textarea, select, [contenteditable]:not([contenteditable='false']), [role='textbox']") || target?.closest("[contenteditable]:not([contenteditable='false']), [role='textbox']");
+    if (!session || typing) return;
     if (event.ctrlKey && key === "`") { event.preventDefault(); terminalOpen = !terminalOpen; return; }
-    if (!session || event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement) return;
+    if (!event.key.startsWith("Arrow")) commitNudge();
     if (mod && key === "a") { event.preventDefault(); session.selectAll(); return; }
     if (mod && key === "z") { event.preventDefault(); event.shiftKey ? session.redo() : session.undo(); return; }
     if (mod && key === "y") { event.preventDefault(); session.redo(); return; }
@@ -394,10 +439,11 @@
     if (mod && key === "g") { event.preventDefault(); event.shiftKey ? session.ungroupSelection() : session.groupSelection(); return; }
     if (mod && event.shiftKey && key === "h") { event.preventDefault(); session.updateSelected({ visible: !session.selectedNodes.every((node) => node.visible) }); return; }
     if (mod && event.shiftKey && key === "l") { event.preventDefault(); session.updateSelected({ locked: !session.selectedNodes.every((node) => node.locked) }); return; }
-    if ((key === "+" || (mod && key === "="))) { event.preventDefault(); zoomCanvas(1.25); return; }
-    if (key === "-" && (event.shiftKey || mod)) { event.preventDefault(); zoomCanvas(.8); return; }
-    if (event.shiftKey && key === "1") { event.preventDefault(); fitCanvas("all"); return; }
-    if (event.shiftKey && key === "2") { event.preventDefault(); fitCanvas("selection"); return; }
+    if ((key === "+" || (mod && key === "="))) { event.preventDefault(); if (session.persistencePaused) session.requestInteractionCancel(); else zoomCanvas(1.25); return; }
+    if (key === "-" && (event.shiftKey || mod)) { event.preventDefault(); if (session.persistencePaused) session.requestInteractionCancel(); else zoomCanvas(.8); return; }
+    if (event.shiftKey && key === "1") { event.preventDefault(); if (session.persistencePaused) session.requestInteractionCancel(); else fitCanvas("all"); return; }
+    if (event.shiftKey && key === "2") { event.preventDefault(); if (session.persistencePaused) session.requestInteractionCancel(); else fitCanvas("selection"); return; }
+    if (event.shiftKey && key === "0") { event.preventDefault(); if (session.persistencePaused) session.requestInteractionCancel(); else resetZoom(); return; }
     if (key === "]") { event.preventDefault(); session.arrange(mod && !event.altKey && !event.shiftKey ? "forward" : "front"); return; }
     if (key === "[") { event.preventDefault(); session.arrange(mod && !event.altKey && !event.shiftKey ? "backward" : "back"); return; }
     if (mod && (key === "\\" || key === ".")) {
@@ -407,11 +453,40 @@
       return;
     }
     if (event.key === "Delete" || event.key === "Backspace") { event.preventDefault(); session.deleteSelection(); return; }
-    if (event.key.startsWith("Arrow")) { event.preventDefault(); const amount = event.shiftKey ? 10 : 1; session.nudge(event.key === "ArrowLeft" ? -amount : event.key === "ArrowRight" ? amount : 0, event.key === "ArrowUp" ? -amount : event.key === "ArrowDown" ? amount : 0); return; }
-    if (key === "escape") { session.activeTool = "select"; session.select(null); context = null; return; }
+    if (event.key.startsWith("Arrow")) {
+      event.preventDefault();
+      const amount = event.shiftKey ? 10 : 1;
+      session.beginGesture();
+      session.nudge(event.key === "ArrowLeft" ? -amount : event.key === "ArrowRight" ? amount : 0, event.key === "ArrowUp" ? -amount : event.key === "ArrowDown" ? amount : 0, false);
+      if (nudgeTimer) clearTimeout(nudgeTimer);
+      nudgeTimer = setTimeout(commitNudge, 300);
+      return;
+    }
+    if (key === "escape") {
+      event.preventDefault();
+      context = null;
+      if (session.persistencePaused || session.hasActiveGesture) {
+        session.requestInteractionCancel();
+        return;
+      }
+      session.setActiveTool("select");
+      session.select(null);
+      return;
+    }
     if (key === "enter") { event.preventDefault(); event.shiftKey ? session.selectParent() : session.selectFirstChild(); return; }
     const tools: Record<string, typeof session.activeTool> = { v: "select", h: "hand", f: "frame", a: "frame", r: "rectangle", o: "ellipse", l: event.shiftKey ? "arrow" : "line", t: "text" };
-    if (tools[key] && !mod) { event.preventDefault(); session.activeTool = tools[key]; }
+    if (tools[key] && !mod) { event.preventDefault(); session.setActiveTool(tools[key]); }
+  }
+
+  function commitNudge() {
+    if (!nudgeTimer) return;
+    clearTimeout(nudgeTimer);
+    nudgeTimer = null;
+    session?.commitGesture();
+  }
+
+  function keyup(event: KeyboardEvent) {
+    if (event.key.startsWith("Arrow")) commitNudge();
   }
 
   function retrySave() {
@@ -419,6 +494,27 @@
     session.errorMessage = "";
     session.saveStatus = "dirty";
     void saveNow();
+  }
+
+  async function resolveConflict(strategy: "reload" | "keep-local") {
+    if (!session) return;
+    if (strategy === "reload" && !confirm("Discard local changes and reload the version saved elsewhere?")) return;
+    try {
+      const latest = await repo.loadPage(session.page.id);
+      if (strategy === "reload") {
+        session.setPage(latest.page, latest.document);
+        await loadAssets();
+        return;
+      }
+      session.page.revision = latest.page.revision;
+      const meta = session.pages.find((page) => page.id === latest.page.id);
+      if (meta) meta.revision = latest.page.revision;
+      session.saveStatus = "dirty";
+      await saveNow();
+    } catch (cause) {
+      session.saveStatus = "error";
+      session.errorMessage = cause instanceof Error ? cause.message : "Could not resolve the save conflict";
+    }
   }
 
   function dismissSaveError() {
@@ -442,7 +538,7 @@
 </script>
 
 <svelte:head><title>{session?.file.name ?? "Editor"} · Figmaboy</title></svelte:head>
-<svelte:window onkeydown={keydown} onclick={() => { context = null; pageMenu = null; }} />
+<svelte:window onkeydown={keydown} onkeyup={keyup} onclick={() => { context = null; pageMenu = null; }} />
 
 {#if loading}
   <div class="loading"><div class="loader-mark"><span></span><span></span><span></span></div><p>Opening your design…</p></div>
@@ -471,7 +567,7 @@
     {#if panels.right}<Inspector {session} onCreatePreset={createPreset} onPresent={() => (preview = true)} onExport={exportSelection} />{/if}
 
     {#if session.errorMessage || session.saveStatus === "conflict"}
-      <div class="save-error"><div><strong>{session.saveStatus === "conflict" ? "This page changed elsewhere" : "Could not save"}</strong><span>{session.saveStatus === "conflict" ? "Reload the page or keep working and export a package." : session.errorMessage}</span></div><button onclick={retrySave}><RefreshCw size={14} /> Retry</button><button class="dismiss" onclick={dismissSaveError}><X size={14} /></button></div>
+      <div class="save-error"><div><strong>{session.saveStatus === "conflict" ? "This page changed elsewhere" : "Could not save"}</strong><span>{session.saveStatus === "conflict" ? "Choose which version should win. Neither action happens automatically." : session.errorMessage}</span></div>{#if session.saveStatus === "conflict"}<button onclick={() => resolveConflict("reload")}><RefreshCw size={14} /> Reload</button><button onclick={() => resolveConflict("keep-local")}><Save size={14} /> Keep local</button>{:else}<button onclick={retrySave}><RefreshCw size={14} /> Retry</button><button class="dismiss" onclick={dismissSaveError}><X size={14} /></button>{/if}</div>
     {/if}
     {#if notice}<div class="copy-notice"><Copy size={14} />{notice}</div>{/if}
   </div>

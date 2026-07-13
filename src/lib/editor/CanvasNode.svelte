@@ -119,7 +119,7 @@
     role="button"
     aria-label={node.name}
     tabindex={preview && node.interaction ? 0 : -1}
-    style:cursor={preview && node.interaction ? "pointer" : node.locked ? "not-allowed" : "default"}
+    style:cursor={preview && node.interaction ? "pointer" : node.locked ? "default" : selectedIds.includes(node.id) ? "move" : "default"}
     style:mix-blend-mode={node.blendMode ?? "normal"}
   >
     <defs>
@@ -153,6 +153,7 @@
       {:else if node.type === "ellipse"}
         <ellipse cx={node.width / 2} cy={node.height / 2} rx={Math.abs(node.width / 2)} ry={Math.abs(node.height / 2)} fill={fillValue} fill-opacity={fillOpacity} stroke={strokeValue} stroke-opacity={node.stroke?.opacity ?? 1} stroke-width={node.stroke?.width ?? 0} stroke-dasharray={node.stroke?.dash?.join(" ")} />
       {:else if node.type === "line" || node.type === "arrow"}
+        <line x1="0" y1="0" x2={node.width} y2={node.height} fill="none" stroke="transparent" stroke-width={Math.max(12, (node.stroke?.width ?? 2) + 8)} pointer-events="stroke" />
         <line x1="0" y1="0" x2={node.width} y2={node.height} fill="none" stroke={strokeValue} stroke-opacity={node.stroke?.opacity ?? 1} stroke-width={node.stroke?.width ?? 2} stroke-dasharray={node.stroke?.dash?.join(" ")} stroke-linecap={node.stroke?.cap ?? "round"} marker-end={node.type === "arrow" ? `url(#arrow-${node.id})` : undefined} />
       {:else if node.type === "polygon"}
         <polygon points={polygonPoints(node.width, node.height, node.points ?? 6)} fill={fillValue} fill-opacity={fillOpacity} stroke={strokeValue} stroke-width={node.stroke?.width ?? 0} />

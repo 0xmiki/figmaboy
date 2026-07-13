@@ -78,6 +78,18 @@ export function intersects(a: Rect, b: Rect): boolean {
   return a.x <= b.x + b.width && a.x + a.width >= b.x && a.y <= b.y + b.height && a.y + a.height >= b.y;
 }
 
+export function containsRect(container: Rect, target: Rect, tolerance = 0): boolean {
+  return target.x >= container.x - tolerance
+    && target.y >= container.y - tolerance
+    && target.x + target.width <= container.x + container.width + tolerance
+    && target.y + target.height <= container.y + container.height + tolerance;
+}
+
+export function rectContainsPoint(rect: Rect, point: Point, tolerance = 0): boolean {
+  return point.x >= rect.x - tolerance && point.x <= rect.x + rect.width + tolerance
+    && point.y >= rect.y - tolerance && point.y <= rect.y + rect.height + tolerance;
+}
+
 export function normalizeRect(start: Point, end: Point): Rect {
   return { x: Math.min(start.x, end.x), y: Math.min(start.y, end.y), width: Math.abs(end.x - start.x), height: Math.abs(end.y - start.y) };
 }

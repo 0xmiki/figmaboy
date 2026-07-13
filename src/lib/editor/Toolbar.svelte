@@ -5,6 +5,7 @@
   } from "lucide-svelte";
   import type { Tool } from "$lib/domain";
   import type { EditorSession } from "$lib/editor/editor.svelte";
+  import { screenToWorld } from "$lib/geometry";
 
   let { session, onFit, terminalOpen, onToggleTerminal }: { session: EditorSession; onFit: () => void; terminalOpen: boolean; onToggleTerminal: () => void } = $props();
   let shapeMenu = $state(false);
@@ -20,14 +21,19 @@
   const selectedShape = $derived(shapeTools.find((tool) => tool.id === session.activeTool) ?? shapeTools[0]);
 
   function choose(tool: Tool) {
-    session.activeTool = tool;
-    session.editingTextId = null;
+    session.setActiveTool(tool);
     shapeMenu = false;
   }
 
   function zoom(delta: number) {
     const viewport = session.document.viewport;
-    viewport.zoom = Math.max(.05, Math.min(8, viewport.zoom * delta));
+    const canvas = document.querySelector<HTMLElement>("#design-canvas");
+    const point = { x: (canvas?.clientWidth ?? innerWidth) / 2, y: (canvas?.clientHeight ?? innerHeight) / 2 };
+    const world = screenToWorld(point, viewport);
+    const next = Math.max(.05, Math.min(8, viewport.zoom * delta));
+    viewport.x = point.x - world.x * next;
+    viewport.y = point.y - world.y * next;
+    viewport.zoom = next;
     session.gestureChanged();
   }
 </script>

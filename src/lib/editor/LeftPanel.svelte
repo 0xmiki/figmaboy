@@ -39,25 +39,15 @@
     const dragged = session.document.nodes[draggedId];
     const target = session.document.nodes[targetId];
     if (!dragged || !target) return;
-    session.mutate((document) => {
-      const current = document.nodes[draggedId];
-      if (!current) return;
-      if (current.parentId) {
-        const parent = document.nodes[current.parentId];
-        if (parent?.type === "frame" || parent?.type === "group") parent.childIds = parent.childIds.filter((id) => id !== draggedId);
-      } else document.rootIds = document.rootIds.filter((id) => id !== draggedId);
-      if (target.type === "frame" || target.type === "group") {
-        current.parentId = target.id;
-        current.x -= target.x;
-        current.y -= target.y;
-        target.childIds.push(draggedId);
-        expandedIds = new Set([...expandedIds, target.id]);
-      } else {
-        current.parentId = target.parentId;
-        const list = target.parentId ? (document.nodes[target.parentId] as Extract<DesignNode, { type: "frame" | "group" }>).childIds : document.rootIds;
-        list.splice(Math.max(0, list.indexOf(target.id)), 0, draggedId);
-      }
-    });
+    if (target.type === "frame" || target.type === "group") {
+      session.moveNode(draggedId, target.id, target.childIds.length);
+      expandedIds = new Set([...expandedIds, target.id]);
+      return;
+    }
+    const siblings = target.parentId
+      ? (session.document.nodes[target.parentId] as Extract<DesignNode, { type: "frame" | "group" }>).childIds
+      : session.document.rootIds;
+    session.moveNode(draggedId, target.parentId, Math.max(0, siblings.indexOf(target.id)));
   }
 </script>
 
@@ -82,7 +72,7 @@
       <div class="layers" role="tree">
         {#each [...session.document.rootIds].reverse() as id}
           {#if session.document.nodes[id]}
-            <LayerRow node={session.document.nodes[id]} document={session.document} selectedIds={session.selectedIds} {expandedIds} onSelect={(id, additive) => session.select(id, additive)} onToggleExpanded={toggleExpanded} onToggleVisible={(id) => updateNode(id, { visible: !session.document.nodes[id].visible })} onToggleLock={(id) => updateNode(id, { locked: !session.document.nodes[id].locked })} onRename={renameLayer} onContextMenu={onLayerContext} onDropNode={dropNode} />
+            <LayerRow node={session.document.nodes[id]} document={session.document} selectedIds={session.selectedIds} {expandedIds} onSelect={(id, additive) => session.select(id, additive, true)} onToggleExpanded={toggleExpanded} onToggleVisible={(id) => updateNode(id, { visible: !session.document.nodes[id].visible })} onToggleLock={(id) => updateNode(id, { locked: !session.document.nodes[id].locked })} onRename={renameLayer} onContextMenu={onLayerContext} onDropNode={dropNode} />
           {/if}
         {/each}
         {#if session.document.rootIds.length === 0}<div class="layers-empty"><Layers3 size={22} /><p>No layers yet</p><span>Choose a tool and draw on the canvas.</span></div>{/if}

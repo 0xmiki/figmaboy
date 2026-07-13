@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { defaultNode, emptyDocument } from "$lib/domain";
-import { drawingParentFrame, frameAtPoint, intersects, normalizeRect, polygonPoints, selectionBounds, worldBounds, worldToNodeLocal } from "$lib/geometry";
+import { containsRect, drawingParentFrame, frameAtPoint, intersects, normalizeRect, polygonPoints, screenToWorld, selectionBounds, worldBounds, worldToNodeLocal } from "$lib/geometry";
 
 describe("editor geometry", () => {
   it("normalizes reverse drag rectangles", () => {
@@ -46,6 +46,17 @@ describe("editor geometry", () => {
     document.rootIds.push(first.id, second.id);
     expect(selectionBounds(document, [first.id, second.id])).toMatchObject({ x: 0, y: 0, width: 50, height: 40 });
     expect(intersects({ x: 39, y: 9, width: 2, height: 2 }, worldBounds(document, second))).toBe(true);
+    expect(containsRect({ x: -1, y: -1, width: 22, height: 22 }, worldBounds(document, first))).toBe(true);
+    expect(containsRect({ x: 1, y: 1, width: 18, height: 18 }, worldBounds(document, first))).toBe(false);
+  });
+
+  it("keeps the world coordinate under the pointer stable while zooming", () => {
+    const point = { x: 420, y: 315 };
+    const viewport = { x: 123, y: -45, zoom: 2 };
+    const world = screenToWorld(point, viewport);
+    const zoom = 3.5;
+    const next = { x: point.x - world.x * zoom, y: point.y - world.y * zoom, zoom };
+    expect(screenToWorld(point, next)).toEqual(world);
   });
 
   it("generates the requested polygon and star vertices", () => {

@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { DesignFile, ImportedAsset, LibrarySnapshot, OpenedFile, PageDocument, PageMeta, Project } from "$lib/domain";
 import { emptyDocument, uid } from "$lib/domain";
+import { sanitizeDocument } from "$lib/document-validation";
 
 export interface Repository {
   library(): Promise<LibrarySnapshot>;
@@ -38,23 +39,85 @@ interface BrowserState extends LibrarySnapshot {
 }
 
 const STORAGE_KEY = "figmaboy.workspace.v1";
+const STORAGE_BACKUP_KEY = "figmaboy.workspace.v1.backup";
 const now = () => new Date().toISOString();
 
 function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
+function normalizeBrowserState(value: unknown): { state: BrowserState; recovered: boolean } {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  const objects = (candidate: unknown) => Array.isArray(candidate) ? candidate.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item)) : [];
+  const timestamp = now();
+  const projects = objects(source.projects).filter((item) => typeof item.id === "string" && typeof item.name === "string").map((item) => ({
+    ...item, id: item.id as string, name: item.name as string,
+    createdAt: typeof item.createdAt === "string" ? item.createdAt : timestamp,
+    updatedAt: typeof item.updatedAt === "string" ? item.updatedAt : timestamp,
+    trashedAt: typeof item.trashedAt === "string" ? item.trashedAt : null,
+  })) as Project[];
+  const projectIds = new Set(projects.map((project) => project.id));
+  const files = objects(source.files).filter((item) => typeof item.id === "string" && typeof item.name === "string").map((item) => ({
+    ...item, id: item.id as string, name: item.name as string,
+    projectId: typeof item.projectId === "string" && projectIds.has(item.projectId) ? item.projectId : null,
+    starred: item.starred === true,
+    createdAt: typeof item.createdAt === "string" ? item.createdAt : timestamp,
+    updatedAt: typeof item.updatedAt === "string" ? item.updatedAt : timestamp,
+    lastOpenedAt: typeof item.lastOpenedAt === "string" ? item.lastOpenedAt : null,
+    trashedAt: typeof item.trashedAt === "string" ? item.trashedAt : null,
+    thumbnail: typeof item.thumbnail === "string" ? item.thumbnail : null,
+  })) as DesignFile[];
+  const fileIds = new Set(files.map((file) => file.id));
+  const pages = objects(source.pages).filter((item) => typeof item.id === "string" && typeof item.fileId === "string" && fileIds.has(item.fileId)).map((item) => ({
+    ...item, id: item.id as string, fileId: item.fileId as string,
+    name: typeof item.name === "string" ? item.name : "Recovered page",
+    position: typeof item.position === "number" && Number.isFinite(item.position) ? Math.max(0, Math.floor(item.position)) : 0,
+    revision: typeof item.revision === "number" && Number.isFinite(item.revision) ? Math.max(0, Math.floor(item.revision)) : 0,
+  })) as PageMeta[];
+  const rawDocuments = source.documents && typeof source.documents === "object" && !Array.isArray(source.documents) ? source.documents as Record<string, unknown> : {};
+  const documents: Record<string, PageDocument> = {};
+  for (const page of pages) documents[page.id] = sanitizeDocument(rawDocuments[page.id]).document;
+  for (const file of files) {
+    if (pages.some((page) => page.fileId === file.id)) continue;
+    const page: PageMeta = { id: uid("page"), fileId: file.id, name: "Recovered page", position: 0, revision: 0 };
+    pages.push(page);
+    documents[page.id] = emptyDocument();
+  }
+  const rawAssets = source.assets && typeof source.assets === "object" && !Array.isArray(source.assets) ? source.assets as Record<string, unknown> : {};
+  const assets = Object.fromEntries(Object.entries(rawAssets).flatMap(([id, item]) => {
+    if (!item || typeof item !== "object") return [];
+    const asset = item as Partial<ImportedAsset>;
+    if (typeof asset.dataUrl !== "string" || !asset.dataUrl.startsWith("data:image/") || !["image/png", "image/jpeg", "image/webp"].includes(asset.mime ?? "")) return [];
+    return [[id, { ...asset, id, width: Number.isFinite(asset.width) ? asset.width : 1, height: Number.isFinite(asset.height) ? asset.height : 1 } as ImportedAsset]];
+  }));
+  const state = { projects, files, pages, documents, assets };
+  let recovered = true;
+  try { recovered = JSON.stringify(value) !== JSON.stringify(state); } catch { /* malformed state is recovered */ }
+  return { state, recovered };
+}
+
 function loadBrowserState(): BrowserState {
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (raw) {
-    try { return JSON.parse(raw) as BrowserState; }
-    catch { localStorage.removeItem(STORAGE_KEY); }
+  for (const key of [STORAGE_KEY, STORAGE_BACKUP_KEY]) {
+    const raw = localStorage.getItem(key);
+    if (!raw) continue;
+    try {
+      const normalized = normalizeBrowserState(JSON.parse(raw));
+      if (key === STORAGE_BACKUP_KEY || normalized.recovered) {
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized.state)); } catch { /* keep using recovered state in memory */ }
+      }
+      return normalized.state;
+    } catch { /* try the backup */ }
   }
   return { projects: [], files: [], pages: [], documents: {}, assets: {} };
 }
 
 function persistBrowserState(state: BrowserState): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  const serialized = JSON.stringify(state);
+  const previous = localStorage.getItem(STORAGE_KEY);
+  if (previous) {
+    try { localStorage.setItem(STORAGE_BACKUP_KEY, previous); } catch { /* a current save is more important than refreshing the backup */ }
+  }
+  localStorage.setItem(STORAGE_KEY, serialized);
 }
 
 class BrowserRepository implements Repository {
@@ -345,17 +408,32 @@ class BrowserRepository implements Repository {
         const file = input.files?.[0];
         if (!file) return resolve(false);
         try {
-          const payload = JSON.parse(await file.text());
-          if (payload?.manifest?.format !== "figmaboy" || payload?.manifest?.schemaVersion !== 1) return resolve(false);
+          const payload = JSON.parse(await file.text()) as Record<string, unknown>;
+          const manifest = payload.manifest && typeof payload.manifest === "object" ? payload.manifest as Record<string, unknown> : null;
+          if (manifest?.format !== "figmaboy" || manifest.schemaVersion !== 1) return resolve(false);
+          if (!Array.isArray(payload.files) || !Array.isArray(payload.pages) || !payload.documents || typeof payload.documents !== "object") return resolve(false);
           const state = this.state();
-          Object.assign(state.assets, payload.assets ?? {});
-          for (const incoming of payload.files ?? []) {
+          const importedAssets = normalizeBrowserState({ projects: [], files: [], pages: [], documents: {}, assets: payload.assets }).state.assets;
+          const assetIdMap = new Map<string, string>();
+          for (const [sourceId, asset] of Object.entries(importedAssets)) {
+            const id = state.assets[sourceId] ? uid("asset") : sourceId;
+            assetIdMap.set(sourceId, id);
+            state.assets[id] = { ...asset, id };
+          }
+          for (const incomingValue of payload.files) {
+            if (!incomingValue || typeof incomingValue !== "object") return resolve(false);
+            const incoming = incomingValue as DesignFile;
+            if (typeof incoming.id !== "string" || typeof incoming.name !== "string") return resolve(false);
             const newFileId = uid("file");
             state.files.push({ ...incoming, id: newFileId, projectId: null, name: `${incoming.name} imported`, trashedAt: null });
-            for (const page of (payload.pages ?? []).filter((item: PageMeta) => item.fileId === incoming.id)) {
+            const incomingPages = payload.pages.filter((item): item is PageMeta => Boolean(item) && typeof item === "object" && (item as PageMeta).fileId === incoming.id && typeof (item as PageMeta).id === "string");
+            if (!incomingPages.length) return resolve(false);
+            for (const page of incomingPages) {
               const newPageId = uid("page");
               state.pages.push({ ...page, id: newPageId, fileId: newFileId, revision: 0 });
-              state.documents[newPageId] = structuredClone(payload.documents[page.id]);
+              const document = sanitizeDocument((payload.documents as Record<string, unknown>)[page.id]).document;
+              for (const node of Object.values(document.nodes)) if (node.type === "image") node.assetId = assetIdMap.get(node.assetId) ?? node.assetId;
+              state.documents[newPageId] = document;
             }
           }
           persistBrowserState(state);

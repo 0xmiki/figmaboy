@@ -81,19 +81,7 @@
   }
 
   function align(kind: "left" | "center" | "right" | "top" | "middle" | "bottom") {
-    if (selected.length < 2) return;
-    const left = Math.min(...selected.map((item) => item.x));
-    const top = Math.min(...selected.map((item) => item.y));
-    const right = Math.max(...selected.map((item) => item.x + item.width));
-    const bottom = Math.max(...selected.map((item) => item.y + item.height));
-    session.mutate(() => selected.forEach((item) => {
-      if (kind === "left") item.x = left;
-      if (kind === "center") item.x = (left + right - item.width) / 2;
-      if (kind === "right") item.x = right - item.width;
-      if (kind === "top") item.y = top;
-      if (kind === "middle") item.y = (top + bottom - item.height) / 2;
-      if (kind === "bottom") item.y = bottom - item.height;
-    }));
+    session.alignSelection(kind);
   }
 
   function center(axis: "horizontal" | "vertical" | "both") {
@@ -152,7 +140,7 @@
         <button class="section-head" onclick={() => toggle("position")}><span>{openSections.has("position") ? "⌄" : "›"} Position</span></button>
         {#if openSections.has("position")}
           <div class="section-content">
-            <div class="align-row"><button title="Align left" onclick={() => align("left")}><AlignStartHorizontal size={14} /></button><button title="Align center" onclick={() => align("center")}><AlignHorizontalJustifyCenter size={14} /></button><button title="Align right" onclick={() => align("right")}><AlignEndHorizontal size={14} /></button><button title="Align middle" onclick={() => align("middle")}><AlignCenter size={14} /></button></div>
+            <div class="align-row"><button disabled={selected.length < 2} title="Align left" onclick={() => align("left")}><AlignStartHorizontal size={14} /></button><button disabled={selected.length < 2} title="Align center" onclick={() => align("center")}><AlignHorizontalJustifyCenter size={14} /></button><button disabled={selected.length < 2} title="Align right" onclick={() => align("right")}><AlignEndHorizontal size={14} /></button><button disabled={selected.length < 2} title="Align middle" onclick={() => align("middle")}><AlignCenter size={14} /></button></div>
             <div class="center-row"><span>Center</span><button title="Center horizontally" onclick={() => center("horizontal")}>H</button><button title="Center vertically" onclick={() => center("vertical")}>V</button><button title="Center on both axes" onclick={() => center("both")}>Both</button></div>
             {#if node}
               <div class="input-grid"><label><span>X</span><input value={Math.round(node.x * 10) / 10} onblur={(event) => numeric("x", event.currentTarget.value)} /></label><label><span>Y</span><input value={Math.round(node.y * 10) / 10} onblur={(event) => numeric("y", event.currentTarget.value)} /></label></div>
@@ -226,7 +214,7 @@
   .tabs { height: 36px; border-bottom: 1px solid #3d3d3d; display: flex; align-items: center; padding: 0 7px; gap: 4px; }.tabs button { border: 0; border-radius: 4px; background: transparent; color: #999; height: 23px; padding: 0 8px; font-size: 9px; cursor: pointer; }.tabs button.active { background: #383838; color: white; }.tabs span { margin-left: auto; color: #ccc; font-size: 9px; padding-right: 4px; }
   .inspector-body { flex: 1; min-height: 0; overflow: auto; }.selection-title { min-height: 48px; border-bottom: 1px solid #3d3d3d; display: flex; align-items: center; padding: 0 14px; gap: 8px; }.selection-title strong { font-size: 10px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.selection-title span { color: #777; font-size: 8px; text-transform: capitalize; }
   section { border-bottom: 1px solid #3d3d3d; }.section-head { width: 100%; min-height: 40px; padding: 0 13px; border: 0; background: transparent; color: #eee; display: flex; justify-content: space-between; align-items: center; cursor: pointer; font-size: 10px; font-weight: 600; }.section-head:hover { background: #2d2d2d; }.section-content { padding: 0 14px 13px; display: grid; gap: 7px; }
-  .align-row, .segmented { display: flex; height: 25px; border-radius: 5px; overflow: hidden; background: #363636; }.align-row button, .segmented button { flex: 1; border: 0; border-right: 1px solid #424242; background: transparent; color: #ccc; display: grid; place-items: center; cursor: pointer; font-size: 8px; }.align-row button:hover, .segmented button:hover, .segmented button.active { background: #494949; color: white; }.center-row { display: grid; grid-template-columns: 1fr repeat(3, auto); align-items: center; gap: 4px; color: #999; font-size: 8px; }.center-row button { height: 24px; min-width: 30px; padding: 0 7px; border: 1px solid #444; border-radius: 4px; background: #363636; color: #ddd; font-size: 8px; cursor: pointer; }.center-row button:hover { border-color: #0d99ff; color: white; }
+  .align-row, .segmented { display: flex; height: 25px; border-radius: 5px; overflow: hidden; background: #363636; }.align-row button, .segmented button { flex: 1; border: 0; border-right: 1px solid #424242; background: transparent; color: #ccc; display: grid; place-items: center; cursor: pointer; font-size: 8px; }.align-row button:hover:not(:disabled), .segmented button:hover, .segmented button.active { background: #494949; color: white; }.align-row button:disabled { opacity: .3; cursor: default; }.center-row { display: grid; grid-template-columns: 1fr repeat(3, auto); align-items: center; gap: 4px; color: #999; font-size: 8px; }.center-row button { height: 24px; min-width: 30px; padding: 0 7px; border: 1px solid #444; border-radius: 4px; background: #363636; color: #ddd; font-size: 8px; cursor: pointer; }.center-row button:hover { border-color: #0d99ff; color: white; }
   .input-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }.input-grid label, .wide-input, .stroke-width { min-width: 0; height: 25px; border-radius: 4px; background: #363636; display: flex; align-items: center; padding: 0 7px; gap: 5px; color: #aaa; font-size: 8px; }.input-grid input, .wide-input input, .stroke-width input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: #eee; font-size: 9px; }.wide-input span:first-child { min-width: 28px; }.section-content select { width: 100%; min-width: 0; height: 27px; border: 1px solid #444; border-radius: 4px; padding: 0 26px 0 7px; background-color: #353535; color: #eee; font-size: 9px; }
   .property-input { min-height: 29px; display: flex; align-items: center; justify-content: space-between; gap: 9px; color: #bcbcc1; font-size: 9px; }.property-input > span { white-space: nowrap; }.property-input > div { width: 76px; height: 27px; display: flex; align-items: center; padding: 0 7px; gap: 3px; border-radius: 4px; background: #363636; }.property-input input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: #eee; text-align: right; font-size: 9px; appearance: textfield; -moz-appearance: textfield; }.property-input input::-webkit-inner-spin-button { display: none; }.property-input em { color: #8b8b91; font-size: 8px; font-style: normal; }.radius-control { display: grid; gap: 5px; padding-top: 2px; }.radius-slider { width: 100%; height: 12px; margin: 0; accent-color: #0d99ff; cursor: pointer; }
   .paint-row { display: flex; gap: 6px; }.paint-row input[type="color"] { width: 27px; height: 25px; border: 0; padding: 2px; background: #3a3a3a; border-radius: 4px; }.paint-row .hex { min-width: 0; flex: 1; height: 25px; border: 0; border-radius: 4px; background: #363636; color: #eee; padding: 0 7px; font-size: 9px; }.paint-row select { width: 62px; }.stroke-width { width: 50px; }
