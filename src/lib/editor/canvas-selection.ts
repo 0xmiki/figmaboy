@@ -62,6 +62,14 @@ export function canvasSelectionTarget(
         && selectedChains.every((selectedChain) => selectedChain.has(id));
     });
     if (sharedScopeIndex >= 0) return targetInside(sharedScopeIndex);
+
+    // Once a nested layer is active, preserve the user's layer-selection
+    // intent even when the next hit is inside a different frame. Groups remain
+    // atomic; otherwise select the deepest rendered layer under the pointer.
+    const hasInnerSelection = selectedIds.some((id) => Boolean(document.nodes[id]?.parentId));
+    if (hasInnerSelection) {
+      return chain.find((id) => document.nodes[id]?.type === "group") ?? chain.at(-1) ?? null;
+    }
   }
 
   return chain[0];

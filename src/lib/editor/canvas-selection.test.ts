@@ -74,6 +74,27 @@ describe("canvas selection depth", () => {
     expect(canvasSelectionTarget(document, secondLabel.id, [firstButton.id])).toBe(secondButton.id);
   });
 
+  it("preserves layer-selection intent when moving into a different frame", () => {
+    const { document, frame, first } = nestedDocument();
+    const otherFrame = defaultNode("frame", 600, 0, { width: 400, height: 300 });
+    const otherButton = defaultNode("group", 30, 30, { width: 140, height: 52, parentId: otherFrame.id, name: "Other button" });
+    const otherLabel = defaultNode("text", 10, 10, { width: 120, height: 24, parentId: otherButton.id, text: "Other" });
+    if (otherFrame.type !== "frame" || otherButton.type !== "group") throw new Error("expected containers");
+    otherFrame.childIds = [otherButton.id];
+    otherButton.childIds = [otherLabel.id];
+    document.rootIds.push(otherFrame.id);
+    Object.assign(document.nodes, { [otherFrame.id]: otherFrame, [otherButton.id]: otherButton, [otherLabel.id]: otherLabel });
+
+    // No active layer means the outer frame is the first selection boundary.
+    expect(canvasSelectionTarget(document, otherLabel.id, [])).toBe(otherFrame.id);
+    // Once a nested child is active elsewhere, the next click targets the
+    // meaningful layer directly instead of bouncing through the other frame.
+    expect(first.parentId).toBe(frame.id);
+    expect(canvasSelectionTarget(document, otherLabel.id, [first.id])).toBe(otherButton.id);
+    // Clearing selection restores frame-first behavior.
+    expect(canvasSelectionTarget(document, otherLabel.id, [])).toBe(otherFrame.id);
+  });
+
   it("skips a locked frame but still selects its children", () => {
     const { document, frame, first } = nestedDocument();
     frame.locked = true;
