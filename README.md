@@ -1,6 +1,10 @@
-# Figma Boy
+# Figmaboy
 
-A local-first desktop interface design tool built with Tauri and SvelteKit.
+**A local-first Figma clone with Codex CLI built directly into the desktop app.**
+
+Design interfaces by hand with a familiar canvas, layers, frames, and inspector—or open the embedded terminal and ask Codex to inspect and edit the live document for you. Codex's changes appear immediately as native, editable layers with undo/redo and local autosave.
+
+![Figmaboy editing a mobile interface with Codex CLI embedded below the canvas](docs/assets/figmaboy-codex-workflow.png)
 
 [![CI](https://github.com/0xmiki/figmaboy/actions/workflows/ci.yml/badge.svg)](https://github.com/0xmiki/figmaboy/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/0xmiki/figmaboy)](https://github.com/0xmiki/figmaboy/releases/latest)
