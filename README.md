@@ -2,6 +2,23 @@
 
 A local-first desktop interface design tool built with Tauri and SvelteKit.
 
+[![CI](https://github.com/0xmiki/figmaboy/actions/workflows/ci.yml/badge.svg)](https://github.com/0xmiki/figmaboy/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/0xmiki/figmaboy)](https://github.com/0xmiki/figmaboy/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+## Download
+
+Download the latest installers from [GitHub Releases](https://github.com/0xmiki/figmaboy/releases/latest):
+
+- Linux: AppImage, Debian package, and RPM package
+- macOS: DMG builds for Apple Silicon and Intel
+- Windows: NSIS and MSI installers
+- MCP: standalone `figmaboy-mcp` binaries for every release target
+
+Release assets include `SHA256SUMS` for verification. The Linux packages install both `figmaboy` and `figmaboy-mcp`; AppImage users can download the matching standalone MCP binary from the same release.
+
+macOS builds are currently ad-hoc signed rather than notarized, so the first launch may require approval in **System Settings → Privacy & Security**. Windows builds are not code-signed yet and may show a SmartScreen warning.
+
 ## Codex design MCP
 
 Figma Boy includes a companion `figmaboy-mcp` stdio server. The app remains the source of truth: MCP edits are applied to the design currently open in the editor, appear immediately, participate in undo/redo, and use normal autosave.
