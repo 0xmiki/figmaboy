@@ -1,10 +1,13 @@
 [package]
 name = "figmaboy"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+description = "A local-first desktop interface design tool"
+authors = ["0xmiki"]
 edition = "2021"
 default-run = "figmaboy"
+license = "MIT"
+repository = "https://github.com/0xmiki/figmaboy"
+homepage = "https://github.com/0xmiki/figmaboy"
 
 [workspace]
 members = ["mcp"]

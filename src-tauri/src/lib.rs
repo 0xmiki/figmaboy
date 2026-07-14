@@ -196,6 +196,8 @@ struct PackageWorkspace {
     assets: Vec<PackageAsset>,
 }
 
+type PackagedWorkspace = (PackageWorkspace, Vec<(String, Vec<u8>)>);
+
 fn now() -> String {
     Utc::now().to_rfc3339()
 }
@@ -899,7 +901,7 @@ fn store_image_data(data: Vec<u8>, state: &State<'_, AppState>) -> CommandResult
     let (width, height) = decoded.dimensions();
     let hash = format!("{:x}", Sha256::digest(&data));
     let id = format!("asset_{}", &hash[..32]);
-    database(&state)?
+    database(state)?
         .execute(
             "INSERT OR IGNORE INTO assets(id, content_hash, mime, data, width, height, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![id, hash, mime, data, width, height, now()],
@@ -1084,7 +1086,7 @@ fn package_workspace(
     connection: &Connection,
     kind: &str,
     id: &str,
-) -> CommandResult<(PackageWorkspace, Vec<(String, Vec<u8>)>)> {
+) -> CommandResult<PackagedWorkspace> {
     let (projects, files) = if kind == "project" {
         let project = connection
             .query_row(
@@ -1178,7 +1180,7 @@ fn export_package(
         .dialog()
         .file()
         .add_filter("Figmaboy package", &["figmaboy"])
-        .set_file_name(&format!("{}.figmaboy", safe_filename(suggested)))
+        .set_file_name(format!("{}.figmaboy", safe_filename(suggested)))
         .blocking_save_file()
     else {
         return Ok(false);

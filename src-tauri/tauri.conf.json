@@ -29,6 +29,14 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "publisher": "0xmiki",
+    "homepage": "https://github.com/0xmiki/figmaboy",
+    "copyright": "Copyright © 2026 0xmiki",
+    "license": "MIT",
+    "licenseFile": "../LICENSE",
+    "category": "GraphicsAndDesign",
+    "shortDescription": "A local-first desktop interface design tool",
+    "longDescription": "Create editable interface designs locally and collaborate with Codex through the bundled Figmaboy MCP server.",
     "externalBin": [
       "binaries/figmaboy-mcp"
     ],
