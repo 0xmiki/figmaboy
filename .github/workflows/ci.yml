@@ -82,13 +82,14 @@ jobs:
       - name: Check Rust formatting
         run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
 
+      - name: Prepare MCP sidecar
+        run: bun run sidecar:prepare
+
       - name: Run Clippy
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --workspace --all-targets --locked -- -D warnings
 
       - name: Run Rust tests
         run: cargo test --manifest-path src-tauri/Cargo.toml --workspace --locked
 
-      - name: Build and verify MCP sidecar
-        run: |
-          bun run sidecar:prepare
-          bun run sidecar:smoke
+      - name: Verify MCP sidecar
+        run: bun run sidecar:smoke
