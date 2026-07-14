@@ -6,6 +6,10 @@ authors = ["you"]
 edition = "2021"
 default-run = "figmaboy"
 
+[workspace]
+members = ["mcp"]
+resolver = "2"
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
@@ -26,11 +30,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
-directories = "6"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 portable-pty = "0.9"
-rmcp = { version = "2.2", features = ["server", "transport-io", "macros"] }
-schemars = "1"
 rusqlite = { version = "0.32", features = ["bundled"] }
 sha2 = "0.10"
 thiserror = "2"

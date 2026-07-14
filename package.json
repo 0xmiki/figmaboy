@@ -6,6 +6,9 @@
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
+    "sidecar:prepare": "bun scripts/prepare-sidecar.mjs",
+    "sidecar:prepare:dev": "bun scripts/prepare-sidecar.mjs --debug",
+    "sidecar:smoke": "bun scripts/smoke-sidecar.mjs",
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",

@@ -11,8 +11,7 @@
 
   let { session, onContextMenu }: { session: EditorSession; onContextMenu: (event: MouseEvent, world: Point, hitId?: string) => void } = $props();
   let host = $state<HTMLDivElement>();
-  let worldElement = $state<SVGGElement>();
-  let overlayElement = $state<SVGGElement>();
+  let viewportElement = $state<SVGSVGElement>();
   let gridPattern = $state<SVGPatternElement>();
   let gridDot = $state<SVGCircleElement>();
   let textEditor = $state<HTMLTextAreaElement>();
@@ -1010,8 +1009,7 @@
 
   function applyViewportPreview() {
     const transform = viewportTransform(liveViewport);
-    if (worldElement) worldElement.style.transform = transform;
-    if (overlayElement) overlayElement.style.transform = transform;
+    if (viewportElement) viewportElement.style.transform = transform;
     const gridSize = 8 * liveViewport.zoom;
     if (gridPattern) {
       gridPattern.setAttribute("width", String(gridSize));
@@ -1051,7 +1049,7 @@
     source.x = liveViewport.x;
     source.y = liveViewport.y;
     source.zoom = liveViewport.zoom;
-    if (markChanged) session.gestureChanged();
+    if (markChanged) session.viewportChanged();
   }
 
   function contextMenu(event: MouseEvent) {
@@ -1145,7 +1143,7 @@
 <svelte:window onpointermove={move} onpointerup={end} onpointercancel={() => mode !== "idle" && cancelInteraction()} onkeydown={keyDown} onkeyup={(event) => event.code === "Space" && (spacePressed = false)} onblur={windowBlur} onpagehide={() => mode !== "idle" && cancelInteraction()} />
 
 <div id="design-canvas" role="application" aria-label="Design canvas" data-mode={mode} data-gesture={session.hasActiveGesture ? "active" : "none"} class:grabbing={mode === "pan"} class:grab={session.activeTool === "hand" || spacePressed} class:crosshair={!['select', 'hand'].includes(session.activeTool)} class="canvas-host" bind:this={host} onpointerdown={begin} onwheel={wheel} oncontextmenu={contextMenu} onselectstart={preventNativeCanvasGesture} ondragstart={preventNativeCanvasGesture} onlostpointercapture={(event) => event.pointerId === activePointerId && mode !== "idle" && queueMicrotask(cancelInteraction)}>
-  <svg width="100%" height="100%" aria-label="Design canvas">
+  <svg class="canvas-background" width="100%" height="100%" aria-hidden="true">
     <defs>
       <pattern bind:this={gridPattern} id="grid" width={8 * viewport.zoom} height={8 * viewport.zoom} patternUnits="userSpaceOnUse" x={viewport.x % (8 * viewport.zoom)} y={viewport.y % (8 * viewport.zoom)}>
         <circle bind:this={gridDot} cx=".5" cy=".5" r=".5" fill="#797979" opacity={viewport.zoom > .65 ? .25 : 0} />
@@ -1153,7 +1151,10 @@
     </defs>
     <rect width="100%" height="100%" fill="#626262" />
     <rect width="100%" height="100%" fill="url(#grid)" />
-    <g bind:this={worldElement} class="world" style:transform={viewportTransform(viewport)}>
+  </svg>
+
+  <svg bind:this={viewportElement} class="viewport-layer" width="100%" height="100%" aria-label="Design canvas" style:transform={viewportTransform(viewport)}>
+    <g class="world">
       {#each session.document.rootIds as id}
         {#if session.document.nodes[id]}
           <CanvasNode node={session.document.nodes[id]} document={session.document} selectedIds={session.selectedIds} imageSources={session.imageSources} {unclippedFrameIds} onNodePointerDown={nodePointerDown} onNodeDoubleClick={nodeDoubleClick} onNodeContextMenu={nodeContextMenu} />
@@ -1161,7 +1162,7 @@
       {/each}
     </g>
 
-    <g bind:this={overlayElement} class="world-overlay" style:transform={viewportTransform(viewport)}>
+    <g class="world-overlay">
       {#if session.guides.x !== null}<line class="guide" x1={session.guides.x} y1={-100000} x2={session.guides.x} y2={100000} stroke-width={1 / viewport.zoom} />{/if}
       {#if session.guides.y !== null}<line class="guide" x1={-100000} y1={session.guides.y} x2={100000} y2={session.guides.y} stroke-width={1 / viewport.zoom} />{/if}
 
@@ -1234,6 +1235,6 @@
 
 <style>
   .canvas-host { position: absolute; inset: 0; overflow: hidden; cursor: default; touch-action: none; user-select: none; -webkit-user-select: none; }.canvas-host :global(svg),.canvas-host :global(text),.canvas-host :global(image) { user-select: none; -webkit-user-select: none; -webkit-user-drag: none; }.canvas-host.grab,.canvas-host.grab :global([data-node-id]) { cursor: grab !important; }.canvas-host.grabbing,.canvas-host.grabbing :global([data-node-id]) { cursor: grabbing !important; }.canvas-host.crosshair,.canvas-host.crosshair :global([data-node-id]) { cursor: crosshair !important; }
-  svg { display: block; }.world,.world-overlay { transform-box: view-box; transform-origin: 0 0; will-change: transform; }.guide,.marquee { pointer-events: none; }.guide { stroke: #ff4ecd; vector-effect: non-scaling-stroke; }.selection-ui { pointer-events: none; user-select: none; -webkit-user-select: none; }.selection-ui .handle, .selection-ui .rotate-handle, .selection-ui .line-handle { pointer-events: all; }.handle-nw,.handle-se { cursor: nwse-resize; }.handle-ne,.handle-sw { cursor: nesw-resize; }.handle-n,.handle-s { cursor: ns-resize; }.handle-e,.handle-w { cursor: ew-resize; }.rotate-handle { cursor: grab; }.line-handle { cursor: crosshair; }
+  svg { display: block; }.canvas-background,.viewport-layer { position: absolute; inset: 0; }.viewport-layer { overflow: visible; transform-origin: 0 0; will-change: transform; }.guide,.marquee { pointer-events: none; }.guide { stroke: #ff4ecd; vector-effect: non-scaling-stroke; }.selection-ui { pointer-events: none; user-select: none; -webkit-user-select: none; }.selection-ui .handle, .selection-ui .rotate-handle, .selection-ui .line-handle { pointer-events: all; }.handle-nw,.handle-se { cursor: nwse-resize; }.handle-ne,.handle-sw { cursor: nesw-resize; }.handle-n,.handle-s { cursor: ns-resize; }.handle-e,.handle-w { cursor: ew-resize; }.rotate-handle { cursor: grab; }.line-handle { cursor: crosshair; }
   .text-editor { position: absolute; z-index: 12; padding: 0; margin: 0; resize: none; overflow: hidden; border: 1px solid #0d99ff; outline: 0; background: transparent; caret-color: #0d99ff; white-space: pre; user-select: text; transform-origin: top left; }
 </style>

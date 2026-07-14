@@ -105,11 +105,14 @@
     const pageId = session.page.id;
     const expectedRevision = session.page.revision;
     const snapshot = cloneDocument(session.document);
+    const savingThumbnailToken = session.thumbnailChangeToken;
+    const refreshThumbnail = session.thumbnailDirty;
     try {
-      const revision = await repo.savePage(pageId, expectedRevision, snapshot, thumbnailSvg());
+      const revision = await repo.savePage(pageId, expectedRevision, snapshot, refreshThumbnail ? thumbnailSvg() : undefined);
       if (session.page.id === pageId) session.page.revision = revision;
       const meta = session.pages.find((page) => page.id === pageId);
       if (meta) meta.revision = revision;
+      if (refreshThumbnail && session.thumbnailChangeToken === savingThumbnailToken) session.thumbnailDirty = false;
       session.saveStatus = session.changeToken === savingToken ? "saved" : "dirty";
       if (session.saveStatus === "dirty") {
         if (saveTimer) clearTimeout(saveTimer);
@@ -242,7 +245,7 @@
     session.document.viewport.zoom = zoom;
     session.document.viewport.x = width / 2 - (bounds.x + bounds.width / 2) * zoom;
     session.document.viewport.y = height / 2 - (bounds.y + bounds.height / 2) * zoom;
-    session.gestureChanged();
+    session.viewportChanged();
   }
 
   function zoomCanvas(factor: number) {
@@ -255,7 +258,7 @@
     viewport.x = point.x - world.x * next;
     viewport.y = point.y - world.y * next;
     viewport.zoom = next;
-    session.gestureChanged();
+    session.viewportChanged();
   }
 
   function resetZoom() {
@@ -267,7 +270,7 @@
     viewport.zoom = 1;
     viewport.x = point.x - world.x;
     viewport.y = point.y - world.y;
-    session.gestureChanged();
+    session.viewportChanged();
   }
 
   async function exportSelection(format: "svg" | "png", scale = 1) {
@@ -541,15 +544,15 @@
 <svelte:window onkeydown={keydown} onkeyup={keyup} onclick={() => { context = null; pageMenu = null; }} />
 
 {#if loading}
-  <div class="loading"><div class="loader-mark"><span></span><span></span><span></span></div><p>Opening your design…</p></div>
+  <div class="loading" role="status" aria-live="polite"><img class="loader-logo" src="/figmaboy.svg" alt="" /><strong>Figmaboy</strong><p>Opening your design…</p></div>
 {:else if error || !session}
-  <div class="error-screen"><div><X size={24} /></div><h1>Couldn’t open this file</h1><p>{error}</p><button onclick={() => goto("/")}><ChevronLeft size={15} /> Back to projects</button></div>
+  <div class="error-screen"><img class="screen-brand" src="/figmaboy.svg" alt="" /><div class="error-icon"><X size={24} /></div><h1>Couldn’t open this file</h1><p>{error}</p><button onclick={() => goto("/")}><ChevronLeft size={15} /> Back to projects</button></div>
 {:else}
   <div class="editor-shell" class:left-hidden={!panels.left} class:right-hidden={!panels.right}>
     <div class="canvas-region" style:bottom={terminalOpen ? `${terminalHeight}px` : "0"}>
       <EditorCanvas {session} onContextMenu={showContext} />
       <div class="editor-top-left">
-        <button title="Back to projects" onclick={backToFiles}><ChevronLeft size={17} /></button>
+        <button class="home-mark" title="Back to projects" aria-label="Back to projects" onclick={backToFiles}><img src="/figmaboy.svg" alt="" /></button>
         <button class="file-title" onclick={renameFile}>{session.file.name}<ChevronDown size={12} /></button>
         <span class:bad={session.saveStatus === "error" || session.saveStatus === "conflict"}>{session.saveStatus === "saving" ? "Saving…" : session.saveStatus === "dirty" ? "Unsaved" : session.saveStatus === "conflict" ? "Save conflict" : session.saveStatus === "error" ? "Save failed" : "Saved locally"}</span>
       </div>
@@ -593,12 +596,13 @@
 <style>
   .editor-shell { position: fixed; inset: 0; background: #626262; overflow: hidden; }.canvas-region { position: absolute; inset: 0 241px 0 297px; transition: bottom 180ms ease; }.left-hidden .canvas-region,.left-hidden .terminal-dock { left: 0; }.right-hidden .canvas-region,.right-hidden .terminal-dock { right: 0; }
   .terminal-dock { position: absolute; z-index: 45; left: 297px; right: 241px; bottom: 0; min-height: 150px; }.terminal-resize { position: absolute; z-index: 2; top: -3px; left: 0; width: 100%; height: 7px; border: 0; padding: 0; background: transparent; cursor: ns-resize; }.terminal-resize:hover { background: #0d99ff; }
-  .editor-top-left { position: absolute; z-index: 35; top: 0; left: 0; height: 42px; background: #292929e8; border: 1px solid #444; border-top: 0; border-left: 0; border-radius: 0 0 7px 0; display: flex; align-items: center; padding: 0 7px; gap: 3px; box-shadow: 0 4px 14px #0003; }.editor-top-left button { border: 0; background: transparent; color: #ddd; height: 29px; border-radius: 5px; display: flex; align-items: center; cursor: pointer; }.editor-top-left button:hover { background: #3a3a3a; }.editor-top-left .file-title { max-width: 180px; gap: 5px; font-size: 10px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.editor-top-left > span { color: #6f6f76; font-size: 8px; margin-left: 4px; }.editor-top-left > span.bad { color: #fca5a5; }
+  .editor-top-left { position: absolute; z-index: 35; top: 0; left: 0; height: 42px; background: #292929e8; border: 1px solid #444; border-top: 0; border-left: 0; border-radius: 0 0 7px 0; display: flex; align-items: center; padding: 0 7px; gap: 3px; box-shadow: 0 4px 14px #0003; }.editor-top-left button { border: 0; background: transparent; color: #ddd; height: 29px; border-radius: 5px; display: flex; align-items: center; cursor: pointer; }.editor-top-left button:hover { background: #3a3a3a; }.editor-top-left .home-mark { width: 29px; justify-content: center; }.home-mark img { width: 16px; height: 23px; object-fit: contain; filter: drop-shadow(0 2px 4px #0008); }.editor-top-left .file-title { max-width: 180px; gap: 5px; font-size: 10px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.editor-top-left > span { color: #6f6f76; font-size: 8px; margin-left: 4px; }.editor-top-left > span.bad { color: #fca5a5; }
   .panel-toggle { position: absolute; z-index: 35; top: 8px; width: 29px; height: 28px; border: 1px solid #4a4a4a; background: #292929; color: #aaa; border-radius: 5px; display: grid; place-items: center; cursor: pointer; }.panel-toggle.left { left: 7px; opacity: 0; pointer-events: none; }.left-hidden .panel-toggle.left { opacity: 1; pointer-events: auto; }.panel-toggle.right { right: 7px; opacity: 0; pointer-events: none; }.right-hidden .panel-toggle.right { opacity: 1; pointer-events: auto; }
-  .loading, .error-screen { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #1d1d1d; }.loader-mark { display: flex; gap: 4px; animation: pulse 1.2s infinite; }.loader-mark span { width: 12px; height: 30px; border-radius: 8px 3px 3px 8px; background: #f24e1e; }.loader-mark span:nth-child(2) { background: #a259ff; }.loader-mark span:nth-child(3) { background: #1abcfe; }.loading p { color: #777; font-size: 10px; margin-top: 18px; } @keyframes pulse { 50% { transform: scale(.94); opacity: .65; } }
-  .error-screen > div { width: 58px; height: 58px; display: grid; place-items: center; border: 1px solid #512727; background: #321d1d; color: #f87171; border-radius: 15px; }.error-screen h1 { font-size: 17px; margin: 17px 0 4px; }.error-screen p { color: #888; font-size: 10px; }.error-screen button { margin-top: 13px; height: 32px; border: 1px solid #414141; border-radius: 6px; background: #2c2c2c; color: white; display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 0 11px; font-size: 10px; }
+  .loading, .error-screen { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #1d1d1d; }.loader-logo { width: 92px; height: 129px; object-fit: contain; filter: drop-shadow(0 16px 30px #000a); animation: logo-breathe 1.8s ease-in-out infinite; }.loading strong { margin-top: 20px; font-size: 15px; letter-spacing: -.02em; }.loading p { color: #777; font-size: 10px; margin: 6px 0 0; } @keyframes logo-breathe { 50% { transform: translateY(-3px) scale(.985); opacity: .78; } }
+  .screen-brand { width: 38px; height: 54px; object-fit: contain; margin-bottom: 19px; opacity: .9; filter: drop-shadow(0 7px 14px #0009); }.error-icon { width: 58px; height: 58px; display: grid; place-items: center; border: 1px solid #512727; background: #321d1d; color: #f87171; border-radius: 15px; }.error-screen h1 { font-size: 17px; margin: 17px 0 4px; }.error-screen p { color: #888; font-size: 10px; }.error-screen button { margin-top: 13px; height: 32px; border: 1px solid #414141; border-radius: 6px; background: #2c2c2c; color: white; display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 0 11px; font-size: 10px; }
   .editor-context { position: fixed; z-index: 100; width: 225px; padding: 6px; border: 1px solid #444; border-radius: 7px; background: #202020; box-shadow: 0 15px 45px #0009; }.editor-context.small { width: 165px; }.editor-context button { width: 100%; min-height: 31px; border: 0; border-radius: 4px; background: transparent; color: #eee; padding: 0 8px; display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 10px; }.editor-context button:hover { background: #373737; }.editor-context kbd,.editor-context button > span { margin-left: auto; color: #888; font: inherit; }.editor-context hr { height: 1px; border: 0; background: #3d3d3d; margin: 5px -6px; }.editor-context .danger { color: #fca5a5; }
   .save-error { position: fixed; z-index: 80; left: 50%; top: 13px; transform: translateX(-50%); min-width: 380px; min-height: 48px; background: #3a2020; border: 1px solid #7f3737; border-radius: 8px; box-shadow: 0 8px 30px #0007; display: flex; align-items: center; gap: 10px; padding: 8px 9px 8px 13px; }.save-error > div { flex: 1; display: flex; flex-direction: column; }.save-error strong { font-size: 10px; }.save-error span { color: #d4a1a1; font-size: 8px; margin-top: 3px; }.save-error button { height: 28px; border: 0; border-radius: 5px; background: #693333; color: #fff; display: flex; align-items: center; gap: 5px; padding: 0 9px; cursor: pointer; font-size: 9px; }.save-error .dismiss { width: 28px; padding: 0; justify-content: center; background: transparent; }
   .copy-notice { position: fixed; z-index: 90; left: 50%; bottom: 24px; transform: translateX(-50%); min-height: 34px; display: flex; align-items: center; gap: 7px; padding: 0 13px; border: 1px solid #4a4a4a; border-radius: 7px; background: #252525; color: #f4f4f5; box-shadow: 0 8px 28px #0008; font-size: 9px; }
+  @media (prefers-reduced-motion: reduce) { .loader-logo { animation: none; } }
   @media (max-width: 1050px) { .canvas-region,.terminal-dock { left: 56px; }.editor-shell :global(.left-shell) { width: 56px; grid-template-columns: 56px 0; }.editor-shell :global(.left-shell .panel) { display: none; } }
 </style>

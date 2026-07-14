@@ -6,6 +6,77 @@ A local-first desktop interface design tool built with Tauri and SvelteKit.
 
 Figma Boy includes a companion `figmaboy-mcp` stdio server. The app remains the source of truth: MCP edits are applied to the design currently open in the editor, appear immediately, participate in undo/redo, and use normal autosave.
 
+### Runtime architecture
+
+The desktop app and MCP server are separate processes with separate responsibilities:
+
+```text
+Codex (or another MCP client)
+        │ JSON-RPC over stdio
+        ▼
+figmaboy-mcp
+        │ authenticated JSON over 127.0.0.1
+        ▼
+Figma Boy desktop bridge
+        │ Tauri event + reply
+        ▼
+The currently open editor
+```
+
+1. Figma Boy starts an editor bridge on a random loopback-only port when the desktop app opens.
+2. The app writes `editor-bridge.json`, containing the port, a random authentication token, and its process ID, to the local application-data directory. On Unix the file is restricted to the current user with mode `0600`.
+3. The MCP client launches `figmaboy-mcp` as a normal stdio server. The desktop app does **not** launch it.
+4. `figmaboy-mcp` reads the discovery file, connects to the authenticated bridge, and forwards tool calls to the active editor.
+5. The editor performs the operation and returns the result through the same path.
+
+The MCP process does not edit the SQLite database directly. This keeps validation, undo/redo, live rendering, revision checks, and autosave inside the desktop app.
+
+The default discovery file is located at:
+
+| Platform | Path |
+| --- | --- |
+| Linux | `${XDG_DATA_HOME:-$HOME/.local/share}/com.miki.figmaboy/editor-bridge.json` |
+| macOS | `~/Library/Application Support/com.miki.figmaboy/editor-bridge.json` |
+| Windows | `%LOCALAPPDATA%\com.miki.figmaboy\editor-bridge.json` |
+
+Set `FIGMABOY_BRIDGE_FILE` for the MCP process only when a non-default discovery path is required.
+
+### Install and register with Codex
+
+The desktop package must install both the GUI and the companion `figmaboy-mcp` executable. The current NixOS package exposes both on `PATH`. Register its absolute path so Codex does not depend on the environment from which it was launched:
+
+```console
+MCP_BIN="$(command -v figmaboy-mcp)"
+test -n "$MCP_BIN"
+codex mcp add figmaboy -- "$MCP_BIN"
+codex mcp list
+```
+
+If `figmaboy` is already registered to a binary inside an old repository checkout, replace that entry first:
+
+```console
+codex mcp remove figmaboy
+codex mcp add figmaboy -- "$(command -v figmaboy-mcp)"
+```
+
+On macOS or a non-Nix Linux package, use the absolute installed path in the same command:
+
+```console
+codex mcp add figmaboy -- /absolute/path/to/figmaboy-mcp
+```
+
+On Windows, run the equivalent command in PowerShell with the installed `.exe` path:
+
+```powershell
+codex mcp add figmaboy -- "C:\absolute\path\to\figmaboy-mcp.exe"
+```
+
+After registration, start Figma Boy, open a design, and begin a new Codex session. If the app is closed, tools report that Figma Boy is not running; if no design is open, they report `NO_ACTIVE_EDITOR`.
+
+Tauri's `externalBin` setting ensures that release artifacts contain the MCP executable, but it does not register the server with Codex and does not automatically expose the executable on `PATH`. Each platform installer must provide a stable executable path for the registration command. The NixOS package already does this.
+
+### Tools and authoring contract
+
 The server exposes tools to inspect editor state and nodes, retrieve exact coordinate geometry, atomically create/update/delete/reparent/reorder layers, place generated image assets, center layers horizontally/vertically, set border radii, control selection and viewport focus, undo/redo/save, and capture a complete frame as PNG evidence.
 
 Codex builds designs entirely from native frames, groups, shapes, text, images, and icons. Every visible element remains addressable through MCP and editable in the layer panel. The `design_capabilities` tool returns the current node/style contract plus the expected semantic grouping model; Codex should call it before authoring a design.
@@ -20,14 +91,27 @@ The machine-readable TypeScript contract lives at [`mcp/types.ts`](mcp/types.ts)
 
 Codex can create hero art, backgrounds, product imagery, textures, illustrations, logos, or transparent cutouts with its image-generation capability and then call `image_place` with the final local PNG, JPEG, or WebP path. Figma Boy validates and persists the file in its asset database and creates a normal editable image layer. For a background, pass the containing frame as `parentId`, use `placement: "fill-parent"`, `fit: "cover"`, and `index: 0`; for a logo or cutout, use a transparent PNG with natural placement and an explicit position/size. Finish by calling `frame_screenshot` and reviewing the composition.
 
-Build and register the development server:
+### Development server
+
+Build and register an MCP binary directly from this checkout:
 
 ```console
-nix-shell --run 'cargo build --release --manifest-path src-tauri/Cargo.toml --bin figmaboy-mcp'
-codex mcp add figmaboy -- ./src-tauri/target/release/figmaboy-mcp
+nix-shell --run 'cargo build --locked --release --manifest-path src-tauri/mcp/Cargo.toml'
+codex mcp add figmaboy -- "$(pwd)/src-tauri/target/release/figmaboy-mcp"
 ```
 
-Start Figma Boy and open a design before calling its tools. Codex loads newly added MCP servers in a new session.
+Remove an existing `figmaboy` entry first when switching between an installed package and a repository build.
+
+### Bundled sidecar
+
+Tauri builds include `figmaboy-mcp` as an external binary. The development and release hooks compile it for the selected target and stage it with Tauri's required target-triple filename automatically. To prepare and validate the current host binary directly:
+
+```console
+nix-shell --run 'bun run sidecar:prepare'
+nix-shell --run 'bun run sidecar:smoke'
+```
+
+Generated sidecar binaries live under `src-tauri/binaries/` and are not committed. `bun run tauri dev` prepares a debug sidecar; production Tauri builds prepare a release sidecar.
 
 ## Development
 

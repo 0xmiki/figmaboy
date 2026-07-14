@@ -1,3 +1,5 @@
+//! Stdio MCP server that forwards design operations to a running Figmaboy app.
+
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use directories::BaseDirs;
 use rmcp::{
@@ -545,6 +547,11 @@ fn tool_error(message: String) -> CallToolResult {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    if matches!(std::env::args().nth(1).as_deref(), Some("--version" | "-V")) {
+        println!("figmaboy-mcp {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+
     let bridge = BridgeClient::from_env().map_err(std::io::Error::other)?;
     let service = FigmaboyMcp::new(bridge)
         .serve(rmcp::transport::stdio())

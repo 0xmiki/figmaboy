@@ -2,7 +2,7 @@
  * Public TypeScript contract for the Figma Boy MCP server.
  *
  * This file is also returned verbatim by the MCP `types_get` tool. Keep it in
- * sync with src/lib/domain.ts and src-tauri/src/bin/figmaboy-mcp.rs.
+ * sync with src/lib/domain.ts and src-tauri/mcp/src/main.rs.
  */
 
 export type Id = string;

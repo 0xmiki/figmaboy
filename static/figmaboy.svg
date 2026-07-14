@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="800" height="1120" viewBox="0 0 800 1120"
+     fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">Abstract modular technology logo</title>
+  <desc id="desc">Five softly rounded ivory modules with perforations, controls, and small colored accents on a transparent background.</desc>
+
+  <defs>
+    <linearGradient id="panel" x1="70" y1="25" x2="715" y2="1060" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fffefa"/>
+      <stop offset="0.52" stop-color="#f5f2ed"/>
+      <stop offset="1" stop-color="#e9e5df"/>
+    </linearGradient>
+    <linearGradient id="panelReverse" x1="760" y1="80" x2="425" y2="720" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fffefa"/>
+      <stop offset="1" stop-color="#ece8e2"/>
+    </linearGradient>
+    <linearGradient id="orange" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#ffb300"/>
+      <stop offset="1" stop-color="#ff6a00"/>
+    </linearGradient>
+    <linearGradient id="cyan" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#00c9ee"/>
+      <stop offset="1" stop-color="#008ab5"/>
+    </linearGradient>
+    <radialGradient id="hole" cx="35%" cy="30%" r="70%">
+      <stop stop-color="#292929"/>
+      <stop offset="0.65" stop-color="#55514d"/>
+      <stop offset="1" stop-color="#918b84"/>
+    </radialGradient>
+    <pattern id="perforations" width="20" height="20" patternUnits="userSpaceOnUse">
+      <circle cx="6" cy="6" r="4.25" fill="url(#hole)"/>
+      <circle cx="5.1" cy="5.1" r="1.1" fill="#f8f6f1" opacity=".72"/>
+    </pattern>
+    <filter id="shadow" x="-15%" y="-15%" width="130%" height="140%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="7" stdDeviation="9" flood-color="#403b35" flood-opacity=".16"/>
+    </filter>
+    <filter id="smallShadow" x="-50%" y="-50%" width="200%" height="200%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="1.5" stdDeviation="1.3" flood-color="#221d18" flood-opacity=".35"/>
+    </filter>
+  </defs>
+
+  <!-- The SVG intentionally has no background rectangle, so the canvas is transparent. -->
+  <g transform="translate(5 5)" stroke-linejoin="round">
+    <!-- Top-left module -->
+    <path d="M155 0H395V340H155C69.4 340 0 270.6 0 185v-30C0 69.4 69.4 0 155 0Z"
+          fill="url(#panel)" stroke="#cbc6bf" stroke-width="1.35" filter="url(#shadow)"/>
+
+    <!-- Main speaker grille -->
+    <rect x="66" y="45" width="160" height="127" fill="url(#perforations)"/>
+
+    <!-- Orange calibration details -->
+    <g fill="url(#orange)" stroke="#d96a00" stroke-width=".65" filter="url(#smallShadow)">
+      <rect x="154" y="35" width="3" height="10" rx="1.5" stroke="none"/>
+      <rect x="39" y="102" width="11" height="2.5" rx="1.25" stroke="none"/>
+      <rect x="42" y="279" width="28" height="2.5" rx="1.25" stroke="none"/>
+      <rect x="83" y="273" width="61" height="11" rx="5.5"/>
+    </g>
+    <path d="M103 274v9M124 274v9" stroke="#7e5b3c" stroke-width="1" opacity=".75"/>
+
+    <!-- Grey plus -->
+    <path d="M339 280h24M351 268v24" stroke="#74726e" stroke-width="1.4"/>
+
+    <!-- Top-right module -->
+    <path d="M395 0h240c85.6 0 155 69.4 155 155v30c0 85.6-69.4 155-155 155H395V0Z"
+          fill="url(#panelReverse)" stroke="#cbc6bf" stroke-width="1.35" filter="url(#shadow)"/>
+    <circle cx="727" cy="74" r="5.7" fill="#f0574d" stroke="#a53c36" stroke-width=".9" filter="url(#smallShadow)"/>
+    <g fill="url(#hole)">
+      <circle cx="660" cy="274" r="2.1"/>
+      <circle cx="669" cy="274" r="2.1"/>
+      <circle cx="678" cy="274" r="2.1"/>
+      <circle cx="660" cy="283" r="2.1"/>
+      <circle cx="669" cy="283" r="2.1"/>
+      <circle cx="678" cy="283" r="2.1"/>
+    </g>
+    <path d="M696 274h26" stroke="#f1574b" stroke-width="2"/>
+
+    <!-- Middle-left module -->
+    <path d="M155 340h240v390H155C69.4 730 0 660.6 0 575v-80c0-85.6 69.4-155 155-155Z"
+          fill="url(#panel)" stroke="#cbc6bf" stroke-width="1.35" filter="url(#shadow)"/>
+    <rect x="67" y="407" width="16" height="16" rx="2.8" fill="#a743e4" stroke="#672590" stroke-width="1" filter="url(#smallShadow)"/>
+    <g fill="url(#hole)">
+      <circle cx="313" cy="656" r="4.1"/>
+      <circle cx="331" cy="656" r="4.1"/>
+      <circle cx="313" cy="674" r="4.1"/>
+      <circle cx="331" cy="674" r="4.1"/>
+    </g>
+
+    <!-- Circular middle-right module -->
+    <circle cx="590" cy="535" r="195" fill="url(#panelReverse)" stroke="#cbc6bf" stroke-width="1.35" filter="url(#shadow)"/>
+    <circle cx="590" cy="535" r="171" stroke="#827e78" stroke-width="1.45"/>
+    <path d="M441.9 449.5A171 171 0 0 1 495 392.6" stroke="url(#cyan)" stroke-width="7" stroke-linecap="square"/>
+    <path d="M578 535h24M590 523v24" stroke="#00a6cc" stroke-width="1.7"/>
+    <circle cx="741" cy="535" r="5.6" fill="#00a9d0" stroke="#007a98" stroke-width=".8" filter="url(#smallShadow)"/>
+
+    <!-- Bottom module -->
+    <path d="M155 730h240v225c0 85.6-69.4 155-155 155h-85C69.4 1110 0 1040.6 0 955v-70c0-85.6 69.4-155 155-155Z"
+          fill="url(#panel)" stroke="#cbc6bf" stroke-width="1.35" filter="url(#shadow)"/>
+
+    <!-- Top registration crosses -->
+    <g stroke="#74726e" stroke-width="1.4">
+      <path d="M71 784h23M82.5 772.5v23"/>
+      <path d="M331 784h23M342.5 772.5v23"/>
+    </g>
+
+    <!-- Vertical fader -->
+    <path d="M343 794v142" stroke="#5d5b57" stroke-width="1.3"/>
+    <g stroke="#aaa59e" stroke-width="1">
+      <path d="M343 809h6M343 827h6M343 845h6M343 863h6M343 881h6M343 899h6M343 917h6"/>
+    </g>
+    <rect x="338.5" y="870" width="9" height="18" rx="2.5" fill="#10c66b" stroke="#087c47" stroke-width="1" filter="url(#smallShadow)"/>
+
+    <!-- Lower grille and status light -->
+    <rect x="62" y="927" width="130" height="111" fill="url(#perforations)"/>
+    <circle cx="294" cy="1040" r="5.7" fill="#13c976" stroke="#07844c" stroke-width=".85" filter="url(#smallShadow)"/>
+  </g>
+</svg>

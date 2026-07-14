@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="800" height="1120" viewBox="0 0 800 1120"
+     fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">Abstract modular technology logo — dark mode</title>
+  <desc id="desc">Five softly rounded charcoal modules with perforations, controls, and luminous colored accents on a transparent background.</desc>
+
+  <defs>
+    <linearGradient id="panel" x1="70" y1="25" x2="715" y2="1060" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#252a31"/>
+      <stop offset="0.52" stop-color="#191d22"/>
+      <stop offset="1" stop-color="#101318"/>
+    </linearGradient>
+    <linearGradient id="panelReverse" x1="760" y1="80" x2="425" y2="720" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#272c34"/>
+      <stop offset="1" stop-color="#12151a"/>
+    </linearGradient>
+    <linearGradient id="orange" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#ffd03d"/>
+      <stop offset="1" stop-color="#ff7900"/>
+    </linearGradient>
+    <linearGradient id="cyan" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#30e2ff"/>
+      <stop offset="1" stop-color="#00a6dc"/>
+    </linearGradient>
+    <radialGradient id="hole" cx="35%" cy="30%" r="70%">
+      <stop stop-color="#020304"/>
+      <stop offset="0.7" stop-color="#090b0e"/>
+      <stop offset="1" stop-color="#333940"/>
+    </radialGradient>
+    <pattern id="perforations" width="20" height="20" patternUnits="userSpaceOnUse">
+      <circle cx="6" cy="6" r="4.25" fill="url(#hole)"/>
+      <circle cx="5.1" cy="5.1" r="1.05" fill="#69727c" opacity=".58"/>
+    </pattern>
+    <filter id="shadow" x="-15%" y="-15%" width="130%" height="140%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#000000" flood-opacity=".58"/>
+    </filter>
+    <filter id="smallShadow" x="-60%" y="-60%" width="220%" height="220%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="0" stdDeviation="2.2" flood-color="#000000" flood-opacity=".8"/>
+    </filter>
+    <filter id="glow" x="-100%" y="-100%" width="300%" height="300%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="2.8" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- No background rectangle: the SVG canvas remains fully transparent. -->
+  <g transform="translate(5 5)" stroke-linejoin="round">
+    <!-- Top-left module -->
+    <path d="M155 0H395V340H155C69.4 340 0 270.6 0 185v-30C0 69.4 69.4 0 155 0Z"
+          fill="url(#panel)" stroke="#4b535e" stroke-width="1.35" filter="url(#shadow)"/>
+
+    <rect x="66" y="45" width="160" height="127" fill="url(#perforations)"/>
+
+    <g fill="url(#orange)" stroke="#ff9d14" stroke-width=".65" filter="url(#glow)">
+      <rect x="154" y="35" width="3" height="10" rx="1.5" stroke="none"/>
+      <rect x="39" y="102" width="11" height="2.5" rx="1.25" stroke="none"/>
+      <rect x="42" y="279" width="28" height="2.5" rx="1.25" stroke="none"/>
+      <rect x="83" y="273" width="61" height="11" rx="5.5"/>
+    </g>
+    <path d="M103 274v9M124 274v9" stroke="#8a5a20" stroke-width="1" opacity=".9"/>
+    <path d="M339 280h24M351 268v24" stroke="#aeb6c0" stroke-width="1.4"/>
+
+    <!-- Top-right module -->
+    <path d="M395 0h240c85.6 0 155 69.4 155 155v30c0 85.6-69.4 155-155 155H395V0Z"
+          fill="url(#panelReverse)" stroke="#4b535e" stroke-width="1.35" filter="url(#shadow)"/>
+    <circle cx="727" cy="74" r="5.7" fill="#ff625b" stroke="#ff9b96" stroke-width=".9" filter="url(#glow)"/>
+    <g fill="url(#hole)">
+      <circle cx="660" cy="274" r="2.1"/>
+      <circle cx="669" cy="274" r="2.1"/>
+      <circle cx="678" cy="274" r="2.1"/>
+      <circle cx="660" cy="283" r="2.1"/>
+      <circle cx="669" cy="283" r="2.1"/>
+      <circle cx="678" cy="283" r="2.1"/>
+    </g>
+    <path d="M696 274h26" stroke="#ff635d" stroke-width="2" filter="url(#glow)"/>
+
+    <!-- Middle-left module -->
+    <path d="M155 340h240v390H155C69.4 730 0 660.6 0 575v-80c0-85.6 69.4-155 155-155Z"
+          fill="url(#panel)" stroke="#4b535e" stroke-width="1.35" filter="url(#shadow)"/>
+    <rect x="67" y="407" width="16" height="16" rx="2.8" fill="#bd62ff" stroke="#ddadff" stroke-width="1" filter="url(#glow)"/>
+    <g fill="url(#hole)">
+      <circle cx="313" cy="656" r="4.1"/>
+      <circle cx="331" cy="656" r="4.1"/>
+      <circle cx="313" cy="674" r="4.1"/>
+      <circle cx="331" cy="674" r="4.1"/>
+    </g>
+
+    <!-- Circular middle-right module -->
+    <circle cx="590" cy="535" r="195" fill="url(#panelReverse)" stroke="#4b535e" stroke-width="1.35" filter="url(#shadow)"/>
+    <circle cx="590" cy="535" r="171" stroke="#8e98a3" stroke-width="1.45"/>
+    <path d="M441.9 449.5A171 171 0 0 1 495 392.6" stroke="url(#cyan)" stroke-width="7" stroke-linecap="square" filter="url(#glow)"/>
+    <path d="M578 535h24M590 523v24" stroke="#1dd7ff" stroke-width="1.7"/>
+    <circle cx="741" cy="535" r="5.6" fill="#17d7ff" stroke="#8decff" stroke-width=".8" filter="url(#glow)"/>
+
+    <!-- Bottom module -->
+    <path d="M155 730h240v225c0 85.6-69.4 155-155 155h-85C69.4 1110 0 1040.6 0 955v-70c0-85.6 69.4-155 155-155Z"
+          fill="url(#panel)" stroke="#4b535e" stroke-width="1.35" filter="url(#shadow)"/>
+
+    <g stroke="#aeb6c0" stroke-width="1.4">
+      <path d="M71 784h23M82.5 772.5v23"/>
+      <path d="M331 784h23M342.5 772.5v23"/>
+    </g>
+
+    <path d="M343 794v142" stroke="#aeb6c0" stroke-width="1.3"/>
+    <g stroke="#626a74" stroke-width="1">
+      <path d="M343 809h6M343 827h6M343 845h6M343 863h6M343 881h6M343 899h6M343 917h6"/>
+    </g>
+    <rect x="338.5" y="870" width="9" height="18" rx="2.5" fill="#25ec8e" stroke="#9affc9" stroke-width="1" filter="url(#glow)"/>
+
+    <rect x="62" y="927" width="130" height="111" fill="url(#perforations)"/>
+    <circle cx="294" cy="1040" r="5.7" fill="#25ec8e" stroke="#9affc9" stroke-width=".85" filter="url(#glow)"/>
+  </g>
+</svg>

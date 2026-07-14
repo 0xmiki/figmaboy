@@ -138,7 +138,7 @@
 <div class="browser-shell">
   <aside class="sidebar">
     <div class="brand">
-      <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+      <img class="brand-mark" src="/figmaboy.svg" alt="" />
       <div><strong>Figmaboy</strong><small>Local workspace</small></div>
       <ChevronDown size={14} />
     </div>
@@ -183,7 +183,11 @@
       {#if error}<div class="error-banner"><span>{error}</span><button onclick={() => (error = "")}><X size={15} /></button></div>{/if}
 
       {#if loading}
-        <div class="loading-grid">{#each Array(6) as _}<div class="skeleton"></div>{/each}</div>
+        <div class="workspace-loading" role="status" aria-live="polite">
+          <img src="/figmaboy.svg" alt="" />
+          <strong>Figmaboy</strong>
+          <span>Opening your local workspace…</span>
+        </div>
       {:else}
         {#if section === "projects" || section === "trash"}
           {#if visibleProjects.length > 0}
@@ -276,9 +280,7 @@
   .brand { height: 66px; padding: 0 16px; display: flex; gap: 10px; align-items: center; border-bottom: 1px solid #303030; }
   .brand > div:nth-child(2) { display: flex; flex-direction: column; flex: 1; min-width: 0; }
   .brand strong { font-size: 13px; letter-spacing: -.01em; }.brand small { color: #8f8f96; font-size: 10px; margin-top: 2px; }
-  .brand-mark { width: 28px; height: 28px; position: relative; display: grid; grid-template-columns: 1fr 1fr; border-radius: 7px; overflow: hidden; }
-  .brand-mark span:nth-child(1) { background: #f24e1e; }.brand-mark span:nth-child(2) { background: #ff7262; }
-  .brand-mark span:nth-child(3) { background: #a259ff; }.brand-mark span:nth-child(4) { background: #1abcfe; border-radius: 50% 0 0 50%; }
+  .brand-mark { width: 28px; height: 36px; object-fit: contain; filter: drop-shadow(0 3px 7px #0007); }
   nav { padding: 14px 10px 8px; display: grid; gap: 2px; }
   nav button, .project-links button { border: 0; background: transparent; height: 34px; border-radius: 6px; padding: 0 10px; display: flex; align-items: center; gap: 10px; color: #b9b9be; text-align: left; cursor: pointer; font-size: 12px; }
   nav button:hover, nav button.active, .project-links button:hover, .project-links button.active { background: #303030; color: white; }
@@ -299,7 +301,11 @@
   .view-controls { display: flex; align-items: center; gap: 10px; }.view-controls label { color: #777; font-size: 10px; display: flex; align-items: center; gap: 7px; }.view-controls select { background-color: #252525; border: 1px solid #383838; color: #c9c9ce; height: 32px; border-radius: 6px; padding: 0 26px 0 9px; font-size: 11px; }
   .segmented { display: flex; border: 1px solid #393939; border-radius: 6px; overflow: hidden; }.segmented button { width: 32px; height: 30px; border: 0; background: #232323; color: #777; display: grid; place-items: center; cursor: pointer; }.segmented button.active { background: #353535; color: white; }
   h2 { font-size: 11px; margin: 28px 0 12px; color: #aaaab0; text-transform: uppercase; letter-spacing: .06em; }
-  .project-grid, .file-grid, .loading-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 16px; }
+  .project-grid, .file-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 16px; }
+  .workspace-loading { min-height: 54vh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+  .workspace-loading img { width: 86px; height: 120px; object-fit: contain; filter: drop-shadow(0 14px 26px #0009); animation: logo-breathe 1.8s ease-in-out infinite; }
+  .workspace-loading strong { margin-top: 19px; font-size: 15px; letter-spacing: -.02em; }
+  .workspace-loading span { margin-top: 6px; color: #74747c; font-size: 10px; }
   .project-card, .file-card { min-width: 0; position: relative; border: 1px solid #353535; border-radius: 10px; background: #222; overflow: hidden; cursor: pointer; transition: border-color .15s, transform .15s, background .15s; }.project-card:hover, .file-card:hover { border-color: #555; transform: translateY(-1px); background: #252525; }
   .project-card { min-height: 116px; display: flex; align-items: center; padding: 15px; gap: 14px; }.folder-art { width: 78px; height: 78px; flex: 0 0 auto; border-radius: 8px; background: linear-gradient(145deg,#333,#292929); display: grid; place-items: center; color: #a78bfa; position: relative; }.mini-files { position: absolute; bottom: 7px; right: 7px; display: flex; }.mini-files span { width: 17px; height: 20px; background: #555 center/cover; border: 1px solid #777; border-radius: 2px; margin-left: -5px; }.project-card > div:nth-child(2) { display: flex; flex-direction: column; min-width: 0; }.project-card strong, .file-info strong { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }.project-card span, .file-info span { margin-top: 6px; color: #777; font-size: 10px; }
   .thumbnail { height: 160px; background: #313131 center/cover no-repeat; border-bottom: 1px solid #353535; position: relative; display: grid; place-items: center; }.thumbnail.empty { background: radial-gradient(circle at 50% 25%,#383838,#2a2a2a); }.blank-file { width: 76px; height: 58px; border: 1px solid #505050; background: #303030; border-radius: 3px; padding: 13px; display: grid; gap: 6px; box-shadow: 0 8px 24px #0003; }.blank-file span { display: block; height: 3px; border-radius: 2px; background: #555; }.blank-file span:nth-child(2) { width: 70%; }.blank-file span:nth-child(3) { width: 45%; }
@@ -309,8 +315,9 @@
   .file-list { display: grid; gap: 1px; border: 1px solid #333; border-radius: 9px; overflow: hidden; }.file-list .file-card { border: 0; border-radius: 0; display: grid; grid-template-columns: 74px 1fr; height: 64px; }.file-list .thumbnail { height: 64px; border: 0; }.file-list .blank-file { transform: scale(.45); }.file-list .file-info { justify-content: center; }
   .empty-state { min-height: 48vh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }.empty-state .empty-icon { width: 64px; height: 64px; display: grid; place-items: center; border: 1px solid #3a3a3a; border-radius: 16px; background: #242424; color: #777; }.empty-state h2 { margin: 18px 0 0; color: white; text-transform: none; font-size: 16px; letter-spacing: -.01em; }.empty-state p { color: #777; font-size: 11px; margin: 8px 0 18px; max-width: 310px; line-height: 1.5; }
   .error-banner { margin: -12px 0 18px; border: 1px solid #7f1d1d; background: #451a1a; color: #fecaca; min-height: 38px; border-radius: 7px; padding: 9px 11px; font-size: 11px; display: flex; justify-content: space-between; align-items: center; }.error-banner button { border: 0; background: transparent; color: inherit; display: grid; cursor: pointer; }
-  .skeleton { height: 220px; border-radius: 10px; background: linear-gradient(90deg,#222,#292929,#222); background-size: 200%; animation: shimmer 1.4s infinite; } @keyframes shimmer { to { background-position: -200% 0; } }
+  @keyframes logo-breathe { 50% { transform: translateY(-3px) scale(.985); opacity: .78; } }
   .context-menu { position: fixed; z-index: 100; width: 205px; padding: 6px; border: 1px solid #444; border-radius: 8px; background: #282828; box-shadow: 0 16px 50px #0009; }.context-menu button { width: 100%; min-height: 32px; border: 0; border-radius: 5px; background: transparent; color: #eee; padding: 0 9px; display: flex; align-items: center; gap: 8px; justify-content: flex-start; cursor: pointer; font-size: 11px; }.context-menu button span { margin-left: auto; color: #777; }.context-menu button:hover { background: #3b3b3b; }.context-menu hr { height: 1px; border: 0; background: #424242; margin: 5px -6px; }.context-menu .danger { color: #fca5a5; }
   .modal-backdrop { position: fixed; inset: 0; z-index: 150; background: #0009; display: grid; place-items: center; backdrop-filter: blur(2px); }.modal { width: min(380px, calc(100vw - 40px)); padding: 25px; border: 1px solid #444; background: #282828; border-radius: 12px; box-shadow: 0 30px 80px #000b; }.modal-icon { width: 40px; height: 40px; display: grid; place-items: center; background: #0d99ff20; color: #38bdf8; border-radius: 10px; }.modal h2 { color: white; text-transform: none; letter-spacing: -.02em; font-size: 17px; margin: 16px 0 6px; }.modal p { color: #888; font-size: 11px; line-height: 1.5; margin: 0 0 18px; }.modal input { width: 100%; height: 38px; border: 1px solid #444; border-radius: 7px; background: #1d1d1d; color: white; padding: 0 10px; outline: none; font-size: 12px; }.modal input:focus { border-color: var(--blue); }.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+  @media (prefers-reduced-motion: reduce) { .workspace-loading img { animation: none; } }
   @media (max-width: 820px) { .browser-shell { grid-template-columns: 190px 1fr; }.topbar { padding: 0 15px; }.content { padding-inline: 20px; }.topbar .secondary { display: none; }.view-controls label { display: none; } }
 </style>

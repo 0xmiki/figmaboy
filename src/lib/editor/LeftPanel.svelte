@@ -53,7 +53,6 @@
 
 <aside class="left-shell">
   <nav class="rail" aria-label="Editor panels">
-    <div class="figma-mark"><span></span><span></span><span></span></div>
     <button class:active={session.leftTab === "file"} title="File" onclick={() => (session.leftTab = "file")}><File size={17} /><span>File</span></button>
     <button class:active={session.leftTab === "assets"} title="Assets" onclick={() => (session.leftTab = "assets")}><Shapes size={17} /><span>Assets</span></button>
   </nav>
@@ -93,7 +92,7 @@
 </aside>
 
 <style>
-  .left-shell { position: absolute; inset: 0 auto 0 0; width: 297px; z-index: 30; display: grid; grid-template-columns: 56px 241px; background: #292929; border-right: 1px solid #444; }.rail { border-right: 1px solid #3c3c3c; display: flex; flex-direction: column; align-items: center; padding-top: 8px; gap: 8px; }.figma-mark { width: 35px; height: 34px; position: relative; margin-bottom: 2px; border-bottom: 1px solid #3b3b3b; }.figma-mark span { position: absolute; width: 7px; height: 7px; border: 1.5px solid white; border-radius: 50%; left: 11px; top: 7px; }.figma-mark span:nth-child(2) { left: 18px; border-radius: 50% 50% 50% 0; }.figma-mark span:nth-child(3) { top: 14px; border-radius: 50% 0 50% 50%; }
+  .left-shell { position: absolute; inset: 0 auto 0 0; width: 297px; z-index: 30; display: grid; grid-template-columns: 56px 241px; background: #292929; border-right: 1px solid #444; }.rail { border-right: 1px solid #3c3c3c; display: flex; flex-direction: column; align-items: center; padding-top: 8px; gap: 8px; }
   .rail button { width: 42px; min-height: 48px; border: 0; border-radius: 6px; background: transparent; color: #ddd; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-size: 8px; cursor: pointer; }.rail button:hover { background: #333; }.rail button.active { background: #3e4d70; color: white; }
   .panel { min-width: 0; overflow: hidden; display: flex; flex-direction: column; }.panel > header { height: 56px; padding: 0 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #3b3b3b; }.panel > header strong { font-size: 11px; max-width: 180px; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
   .section-title { height: 38px; padding: 0 10px 0 15px; display: flex; align-items: center; justify-content: space-between; color: #ddd; font-size: 10px; font-weight: 600; }.section-title div { display: flex; }.section-title button { border: 0; background: transparent; color: #bbb; width: 25px; height: 25px; display: grid; place-items: center; border-radius: 4px; cursor: pointer; }.section-title button:hover { background: #3b3b3b; color: white; }

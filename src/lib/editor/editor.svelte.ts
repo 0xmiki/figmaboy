@@ -91,6 +91,8 @@ export class EditorSession {
   saveStatus = $state<"saved" | "dirty" | "saving" | "error" | "conflict">("saved");
   errorMessage = $state("");
   changeToken = $state(0);
+  thumbnailChangeToken = $state(0);
+  thumbnailDirty = $state(false);
   editingTextId = $state<string | null>(null);
   imageSources = $state<Record<string, string>>({});
   clipboard = $state<ClipboardPayload | null>(null);
@@ -110,6 +112,8 @@ export class EditorSession {
     normalizeTextSizes(this.document);
     if (sanitized.recovered) {
       this.changeToken = 1;
+      this.thumbnailChangeToken = 1;
+      this.thumbnailDirty = true;
       this.saveStatus = "dirty";
     }
   }
@@ -144,8 +148,12 @@ export class EditorSession {
     this.document.viewport = viewport;
   }
 
-  private changed(): void {
+  private changed(refreshThumbnail = true): void {
     this.changeToken += 1;
+    if (refreshThumbnail) {
+      this.thumbnailChangeToken += 1;
+      this.thumbnailDirty = true;
+    }
     this.saveStatus = "dirty";
   }
 
@@ -184,6 +192,8 @@ export class EditorSession {
   }
 
   gestureChanged(): void { this.changed(); }
+
+  viewportChanged(): void { this.changed(false); }
 
   /** Notify Svelte of a temporary preview without making it eligible for autosave. */
   previewGesture(): void { /* deep $state mutations are already reactive */ }
@@ -668,6 +678,10 @@ export class EditorSession {
     this.undoStack = [];
     this.redoStack = [];
     this.saveStatus = sanitized.recovered ? "dirty" : "saved";
-    if (sanitized.recovered) this.changeToken += 1;
+    this.thumbnailDirty = sanitized.recovered;
+    if (sanitized.recovered) {
+      this.changeToken += 1;
+      this.thumbnailChangeToken += 1;
+    }
   }
 }

@@ -93,6 +93,21 @@ describe("editor commands", () => {
     expect(session.changeToken).toBe(token + 1);
   });
 
+  it("persists viewport changes without regenerating the canvas thumbnail", () => {
+    const session = new EditorSession(opened());
+    session.document.viewport = { x: 120, y: -40, zoom: 1.75 };
+    session.viewportChanged();
+
+    expect(session.changeToken).toBe(1);
+    expect(session.saveStatus).toBe("dirty");
+    expect(session.thumbnailChangeToken).toBe(0);
+    expect(session.thumbnailDirty).toBe(false);
+
+    session.addNode(defaultNode("rectangle", 10, 20));
+    expect(session.thumbnailChangeToken).toBe(1);
+    expect(session.thumbnailDirty).toBe(true);
+  });
+
   it("restores the gesture snapshot when cancellation is requested", () => {
     const session = new EditorSession(opened());
     const node = defaultNode("rectangle", 10, 10);

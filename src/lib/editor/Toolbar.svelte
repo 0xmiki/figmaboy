@@ -34,7 +34,7 @@
     viewport.x = point.x - world.x * next;
     viewport.y = point.y - world.y * next;
     viewport.zoom = next;
-    session.gestureChanged();
+    session.viewportChanged();
   }
 </script>
 

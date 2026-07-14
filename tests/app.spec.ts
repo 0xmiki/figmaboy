@@ -303,8 +303,8 @@ test("pans with Space without moving objects and supports copy, paste, delete, a
   await page.mouse.up();
   const node = canvas.locator("g[data-node-id]").first();
   const nodeTransform = await node.getAttribute("transform");
-  const world = canvas.locator("g.world");
-  const worldBefore = await world.getAttribute("style");
+  const viewportLayer = canvas.locator("svg.viewport-layer");
+  const viewportBefore = await viewportLayer.getAttribute("style");
 
   await page.keyboard.down("Space");
   await page.mouse.move(bounds.x + 700, bounds.y + 500);
@@ -312,7 +312,7 @@ test("pans with Space without moving objects and supports copy, paste, delete, a
   await page.mouse.move(bounds.x + 760, bounds.y + 550);
   await page.mouse.up();
   await page.keyboard.up("Space");
-  await expect(world).not.toHaveAttribute("style", worldBefore!);
+  await expect(viewportLayer).not.toHaveAttribute("style", viewportBefore!);
   await expect(node).toHaveAttribute("transform", nodeTransform!);
 
   await page.keyboard.press("Control+C");
@@ -330,10 +330,10 @@ test("zooms around a trackpad pinch position", async ({ page }) => {
   const before = await page.locator(".toolbar .zoom").textContent();
   await canvas.dispatchEvent("wheel", { deltaY: -120, ctrlKey: true, clientX: 500, clientY: 350 });
   await expect(page.locator(".toolbar .zoom")).not.toHaveText(before ?? "100%");
-  const world = canvas.locator("g.world");
-  await expect(world).not.toHaveAttribute("transform");
-  await expect(world).toHaveCSS("will-change", "transform");
-  await expect(world).toHaveAttribute("style", /transform: translate3d\(.+px, .+px, 0(?:px)?\) scale\(.+\)/);
+  const viewportLayer = canvas.locator("svg.viewport-layer");
+  await expect(canvas.locator("g.world")).not.toHaveAttribute("transform");
+  await expect(viewportLayer).toHaveCSS("will-change", "transform");
+  await expect(viewportLayer).toHaveAttribute("style", /transform: translate3d\(.+px, .+px, 0(?:px)?\) scale\(.+\)/);
 });
 
 test("creates, types, places the caret, and re-edits text", async ({ page }) => {
