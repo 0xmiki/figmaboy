@@ -45,17 +45,19 @@ a { color: inherit; text-decoration: none; }
 .nav-links a { font-size: 11px; font-weight: 720; letter-spacing: .1em; text-transform: uppercase; }
 .nav-links a:hover { color: var(--red); }
 .nav-download { min-width: 176px; min-height: 56px; }
+.nav-download-icon { display: none; width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: square; stroke-linejoin: miter; }
 
 /* Hero */
 .hero { min-height: 880px; overflow: hidden; background: var(--paper); }
 .hero-grid { min-height: 800px; display: grid; grid-template-columns: 1.05fr .95fr; gap: 70px; padding-top: 56px; }
 .hero-copy { padding-top: 16px; }
 .hero h1 { margin-top: 58px; font-size: clamp(64px, 5.7vw, 82px); }
+.hero h1 span { display: block; }
 .hero-lede { max-width: 540px; margin: 35px 0 0 3px; color: #34332f; font-size: 21px; line-height: 1.4; letter-spacing: -.01em; }
 .hero-actions { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 34px; }
 .hero-meta { margin: 28px 0 0 3px; color: #6c6961; font-size: 12px; font-weight: 550; letter-spacing: .03em; line-height: 1.55; }
-.codex-badge { margin-top: 30px; display: inline-flex; align-items: center; gap: 10px; border-radius: 99px; padding: 9px 15px; color: var(--paper); background: var(--ink); font-size: 9px; font-weight: 750; letter-spacing: .12em; }
-.codex-badge .signal { width: 10px; height: 10px; }
+.cli-badge { margin-top: 30px; display: inline-flex; align-items: center; gap: 10px; border-radius: 99px; padding: 9px 15px; color: var(--paper); background: var(--ink); font-size: 9px; font-weight: 750; letter-spacing: .12em; }
+.cli-badge .signal { width: 10px; height: 10px; }
 .product-object { min-width: 0; }
 .product-labels { height: 42px; display: flex; align-items: center; font-size: 10px; font-weight: 750; letter-spacing: .13em; }
 .product-labels .live { margin-left: auto; display: flex; align-items: center; gap: 8px; color: #4e4b45; }
@@ -273,7 +275,7 @@ a { color: inherit; text-decoration: none; }
   .nav-download { min-width: auto; min-height: 44px; padding-inline: 18px; font-size: 10px; }
   .hero { min-height: 0; }
   .hero-grid { grid-template-columns: 1fr; padding-top: 44px; }
-  .hero h1 { margin-top: 38px; font-size: clamp(52px, 16vw, 72px); }
+  .hero h1 { margin-top: 38px; font-size: clamp(44px, 13vw, 60px); }
   .hero-lede { font-size: 19px; }
   .product-object { margin-top: 12px; }
   .app-window { height: 440px; }
@@ -324,7 +326,8 @@ a { color: inherit; text-decoration: none; }
 
 @media (max-width: 430px) {
   .button.nav-download { width: 46px; min-width: 46px; flex: 0 0 46px; padding: 0; font-size: 0; }
-  .nav-download::after { content: "↓"; font-size: 18px; }
+  .nav-download [data-download-copy] { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+  .nav-download-icon { display: block; }
   .button { width: 100%; }
   .hero-actions { display: grid; }
   .app-main { grid-template-columns: 1fr; }
