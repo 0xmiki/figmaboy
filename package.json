@@ -16,6 +16,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "site:dev": "bun run --cwd website dev",
+    "site:check": "bun run --cwd website check",
+    "site:build": "bun run --cwd website build",
     "tauri": "tauri"
   },
   "license": "MIT",

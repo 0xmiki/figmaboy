@@ -11,3 +11,5 @@ result
 !.env.example
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+/website/.astro
+/website/dist

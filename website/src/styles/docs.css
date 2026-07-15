@@ -1,0 +1,103 @@
+:root {
+  --sl-color-accent-low: #f5d5cf;
+  --sl-color-accent: #d74332;
+  --sl-color-accent-high: #6f1f17;
+  --sl-color-white: #171714;
+  --sl-color-gray-1: #292925;
+  --sl-color-gray-2: #4f4f49;
+  --sl-color-gray-3: #74736c;
+  --sl-color-gray-4: #b8b5ad;
+  --sl-color-gray-5: #dad6cd;
+  --sl-color-gray-6: #ebe7de;
+  --sl-color-black: #f7f4ed;
+}
+
+:root[data-theme="dark"] {
+  --sl-color-accent-low: #531d17;
+  --sl-color-accent: #ef6a59;
+  --sl-color-accent-high: #ffd6cf;
+  --sl-color-white: #f7f4ed;
+  --sl-color-gray-1: #e6e2da;
+  --sl-color-gray-2: #b7b4ad;
+  --sl-color-gray-3: #85827c;
+  --sl-color-gray-4: #4d4c48;
+  --sl-color-gray-5: #31312e;
+  --sl-color-gray-6: #252522;
+  --sl-color-black: #171714;
+}
+
+body {
+  letter-spacing: -0.01em;
+}
+
+header.header {
+  border-bottom-color: color-mix(in srgb, var(--sl-color-gray-5) 72%, transparent);
+  backdrop-filter: blur(18px);
+}
+
+.site-title {
+  font-weight: 760;
+  letter-spacing: -0.04em;
+}
+
+.site-title img {
+  border-radius: 8px;
+}
+
+.hero h1,
+.content-panel h1,
+.content-panel h2,
+.content-panel h3 {
+  letter-spacing: -0.045em;
+}
+
+.content-panel h1 {
+  font-size: clamp(2.35rem, 5vw, 4.1rem);
+  line-height: 0.98;
+}
+
+.content-panel h2 {
+  margin-top: 2.8rem;
+}
+
+.sl-markdown-content a:not(.sl-link-button) {
+  text-decoration-color: color-mix(in srgb, var(--sl-color-accent) 55%, transparent);
+  text-underline-offset: 0.16em;
+}
+
+.sl-markdown-content code:not(:where(.not-content *)) {
+  border: 1px solid var(--sl-color-gray-5);
+  border-radius: 0.35rem;
+  background: var(--sl-color-gray-6);
+}
+
+.expressive-code {
+  --ec-brdRad: 0.75rem;
+  margin-block: 1.4rem;
+}
+
+.card-grid .card {
+  border-radius: 0.85rem;
+  box-shadow: none;
+}
+
+.sl-markdown-content table {
+  display: table;
+  width: 100%;
+  font-size: 0.9rem;
+}
+
+.sl-markdown-content th {
+  font-family: var(--sl-font-mono);
+  font-size: 0.74rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.docs-home-note {
+  border: 1px solid var(--sl-color-gray-5);
+  border-left: 4px solid var(--sl-color-accent);
+  border-radius: 0.8rem;
+  padding: 1rem 1.1rem;
+  background: color-mix(in srgb, var(--sl-color-gray-6) 62%, transparent);
+}
