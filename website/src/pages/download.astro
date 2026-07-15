@@ -1,0 +1,230 @@
+---
+import "../styles/landing.css";
+import "../styles/download.css";
+
+const base = `${import.meta.env.BASE_URL.replace(/\/$/, "")}/`;
+const github = "https://github.com/0xmiki/figmaboy";
+const docs = `${base}docs/`;
+const releaseTag = "v0.2.0";
+const releaseBase = `${github}/releases/download/${releaseTag}`;
+const asset = (name: string) => `${releaseBase}/${name}`;
+
+const assets = {
+  macArmDmg: asset("Figmaboy_0.2.0_darwin_aarch64.dmg"),
+  macIntelDmg: asset("Figmaboy_0.2.0_darwin_x64.dmg"),
+  macArmMcp: asset("figmaboy-mcp-aarch64-apple-darwin"),
+  macIntelMcp: asset("figmaboy-mcp-x86_64-apple-darwin"),
+  windowsNsis: asset("Figmaboy_0.2.0_windows_x64.exe"),
+  windowsMsi: asset("Figmaboy_0.2.0_windows_x64.msi"),
+  windowsMcp: asset("figmaboy-mcp-x86_64-pc-windows-msvc.exe"),
+  linuxAppImage: asset("Figmaboy_0.2.0_linux_amd64.AppImage"),
+  linuxDeb: asset("Figmaboy_0.2.0_linux_amd64.deb"),
+  linuxRpm: asset("Figmaboy_0.2.0_linux_x86_64.rpm"),
+  linuxMcp: asset("figmaboy-mcp-x86_64-unknown-linux-gnu"),
+};
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="theme-color" content="#f2f0e8" />
+    <meta name="description" content="Download Figmaboy for macOS, Windows, or Linux, including its local Codex MCP companion." />
+    <meta property="og:title" content="Download Figmaboy" />
+    <meta property="og:description" content="Choose the Figmaboy desktop installer for your platform and connect its included MCP companion to Codex." />
+    <meta property="og:type" content="website" />
+    <link rel="icon" href={`${base}favicon.png`} />
+    <link rel="canonical" href="https://0xmiki.github.io/figmaboy/download/" />
+    <title>Download Figmaboy</title>
+  </head>
+  <body class="download-page">
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="site-nav">
+      <div class="wrap nav-inner">
+        <a class="brand" href={base} aria-label="Figmaboy home"><span class="signal"></span>FIGMABOY<sup>®</sup></a>
+        <nav class="nav-links" aria-label="Primary navigation">
+          <a href={`${base}#codex`}>Codex CLI</a>
+          <a href={`${base}#features`}>Features</a>
+          <a href={`${base}#compare`}>Compare</a>
+          <a href={docs}>Docs</a>
+        </nav>
+        <span class="download-version"><span class="signal"></span><span data-version>v0.2.0</span>&nbsp; LATEST</span>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="download-hero" aria-labelledby="download-title">
+        <div class="wrap download-hero-grid">
+          <div class="download-intro">
+            <p class="eyebrow">01&nbsp; / &nbsp;Download</p>
+            <h1 class="display" id="download-title">Your canvas.<br />On your machine.</h1>
+            <p>Choose the desktop build for your system. Figmaboy stays local, keeps every layer editable, and every release includes a matching Codex MCP companion.</p>
+            <div class="platform-index" aria-label="Supported platforms"><span>macOS</span><span>Windows</span><span>Linux</span></div>
+          </div>
+
+          <article class="detected-download" aria-live="polite">
+            <div class="detected-top"><span><i></i> SYSTEM READOUT</span><span data-detected-label>DETECTING…</span></div>
+            <div class="detected-body">
+              <p class="detected-kicker">RECOMMENDED DOWNLOAD</p>
+              <h2 data-detected-title>Choose your platform</h2>
+              <p data-detected-copy>We’ll suggest the right build when your browser shares its operating system.</p>
+
+              <div class="detected-actions" data-actions="unknown">
+                <a class="download-button primary" href="#all-downloads">View all downloads <span>↓</span></a>
+              </div>
+              <div class="detected-actions" data-actions="macos" hidden>
+                <a class="download-button primary" data-asset="mac-arm-dmg" href={assets.macArmDmg}>Apple Silicon <span>↓</span></a>
+                <a class="download-button secondary" data-asset="mac-intel-dmg" href={assets.macIntelDmg}>Intel Mac <span>↓</span></a>
+              </div>
+              <div class="detected-actions" data-actions="windows" hidden>
+                <a class="download-button primary" data-asset="windows-nsis" href={assets.windowsNsis}>Download .exe <span>↓</span></a>
+                <a class="download-button secondary" data-asset="windows-msi" href={assets.windowsMsi}>Get MSI <span>↓</span></a>
+              </div>
+              <div class="detected-actions" data-actions="linux" hidden>
+                <a class="download-button primary" data-asset="linux-appimage" href={assets.linuxAppImage}>Get AppImage <span>↓</span></a>
+                <a class="download-button secondary" data-asset="linux-mcp" href={assets.linuxMcp}>Get MCP <span>↓</span></a>
+                <a class="download-button secondary" href="#linux">.deb / .rpm <span>↓</span></a>
+              </div>
+            </div>
+            <div class="detected-foot"><span>OPEN SOURCE / MIT</span><span>DESKTOP + MCP</span><span>LOCAL FIRST</span></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="release-band" aria-label="Latest release information">
+        <div class="wrap release-band-grid">
+          <div><span>RELEASE</span><strong data-version>v0.2.0</strong></div>
+          <div><span>STATUS</span><strong><i></i> LATEST</strong></div>
+          <div><span>PLATFORMS</span><strong>03</strong></div>
+          <div><span>COMPANION</span><strong>FIGMABOY–MCP</strong></div>
+        </div>
+      </section>
+
+      <section class="all-downloads" id="all-downloads" aria-labelledby="all-downloads-title">
+        <div class="wrap">
+          <header class="download-section-head">
+            <div><p class="eyebrow">02&nbsp; / &nbsp;All platforms</p><h2 class="display" id="all-downloads-title">Pick the build<br />that fits.</h2></div>
+            <p>Version <span data-version>v0.2.0</span>. Installer packages include the MCP companion. AppImage users should also download the standalone Linux MCP binary.</p>
+          </header>
+
+          <div class="platform-grid">
+            <article class="platform-card" id="macos" data-platform-card="macos">
+              <header><span class="platform-mark">01</span><div><p>APPLE</p><h3>macOS</h3></div><span class="platform-status">DMG</span></header>
+              <div class="asset-list">
+                <a data-asset="mac-arm-dmg" href={assets.macArmDmg}><span><b>Apple Silicon</b><small>DMG · ARM64 · MCP included</small></span><i>↓</i></a>
+                <a data-asset="mac-intel-dmg" href={assets.macIntelDmg}><span><b>Intel Mac</b><small>DMG · x86_64 · MCP included</small></span><i>↓</i></a>
+              </div>
+              <div class="fallbacks"><span>STANDALONE MCP FALLBACKS</span><a data-asset="mac-arm-mcp" href={assets.macArmMcp}>ARM64 ↓</a><a data-asset="mac-intel-mcp" href={assets.macIntelMcp}>x64 ↓</a></div>
+            </article>
+
+            <article class="platform-card" id="windows" data-platform-card="windows">
+              <header><span class="platform-mark">02</span><div><p>MICROSOFT</p><h3>Windows</h3></div><span class="platform-status">x64</span></header>
+              <div class="asset-list">
+                <a data-asset="windows-nsis" href={assets.windowsNsis}><span><b>Windows installer</b><small>NSIS .exe · per-user · MCP included</small></span><i>↓</i></a>
+                <a data-asset="windows-msi" href={assets.windowsMsi}><span><b>Windows MSI</b><small>MSI · system install · MCP included</small></span><i>↓</i></a>
+              </div>
+              <div class="fallbacks"><span>STANDALONE MCP FALLBACK</span><a data-asset="windows-mcp" href={assets.windowsMcp}>x64 .exe ↓</a></div>
+            </article>
+
+            <article class="platform-card" id="linux" data-platform-card="linux">
+              <header><span class="platform-mark">03</span><div><p>GNU / LINUX</p><h3>Linux</h3></div><span class="platform-status">x64</span></header>
+              <div class="asset-list">
+                <a data-asset="linux-appimage" href={assets.linuxAppImage}><span><b>AppImage</b><small>Portable · standalone MCP also required</small></span><i>↓</i></a>
+                <a data-asset="linux-deb" href={assets.linuxDeb}><span><b>Debian / Ubuntu</b><small>.deb · MCP included</small></span><i>↓</i></a>
+                <a data-asset="linux-rpm" href={assets.linuxRpm}><span><b>Fedora / RHEL</b><small>.rpm · MCP included</small></span><i>↓</i></a>
+              </div>
+              <div class="fallbacks emphasized"><span>APPIMAGE MCP COMPANION</span><a data-asset="linux-mcp" href={assets.linuxMcp}>Download x64 ↓</a></div>
+            </article>
+          </div>
+
+          <div class="release-links"><a href={`${github}/releases/latest`}>Release notes ↗</a><a href={`${github}/releases/latest/download/SHA256SUMS`}>SHA256SUMS ↓</a></div>
+        </div>
+      </section>
+
+      <section class="connect-next" aria-labelledby="connect-title">
+        <div class="wrap connect-next-grid">
+          <div><p class="eyebrow">03&nbsp; / &nbsp;Next step</p><h2 class="display" id="connect-title">Installed?<br />Connect Codex.</h2></div>
+          <div class="connect-copy"><p>Installer packages carry `figmaboy-mcp`, but Codex still needs its executable path once. The guide gives you the exact registration command for your platform.</p><a class="download-button primary" href={`${docs}getting-started/install/`}>Open install &amp; connect guide <span>↗</span></a></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="download-footer">
+      <div class="wrap footer-row"><a class="footer-brand" href={base}>FIGMABOY®</a><span class="footer-made">THIS WEBSITE WAS DESIGNED IN FIGMABOY.</span><span class="footer-links"><a href={docs}>DOCS</a><a href={github}>GITHUB</a><a href={`${github}/issues`}>ISSUES</a></span></div>
+      <div class="wrap copyright">© 2026 FIGMABOY. A SMALL DESKTOP TOOL.</div>
+    </footer>
+
+    <script>
+      type Platform = "macos" | "windows" | "linux" | "unknown";
+
+      const browserNavigator = navigator as Navigator & { userAgentData?: { platform?: string } };
+      const userAgent = browserNavigator.userAgent.toLowerCase();
+      const platformHint = `${browserNavigator.userAgentData?.platform ?? ""} ${browserNavigator.platform ?? ""} ${userAgent}`.toLowerCase();
+      const platform: Platform = /android|iphone|ipad/.test(userAgent)
+        ? "unknown"
+        : /mac/.test(platformHint)
+          ? "macos"
+          : /win/.test(platformHint)
+            ? "windows"
+            : /linux|x11/.test(platformHint)
+              ? "linux"
+              : "unknown";
+
+      const recommendations = {
+        macos: { label: "MACOS DETECTED", title: "Download for macOS", copy: "Choose Apple Silicon for M-series Macs, or Intel for older Macs." },
+        windows: { label: "WINDOWS DETECTED", title: "Download for Windows", copy: "The .exe installer is the simplest choice. MSI is available for system-managed installs." },
+        linux: { label: "LINUX DETECTED", title: "Download for Linux", copy: "Use the AppImage with its MCP companion, or choose a native .deb or .rpm package below." },
+        unknown: { label: "PLATFORM UNKNOWN", title: "Choose your platform", copy: "Select macOS, Windows, or Linux from the complete release below." },
+      } as const;
+
+      const recommendation = recommendations[platform];
+      document.documentElement.dataset.platform = platform;
+      document.querySelector<HTMLElement>("[data-detected-label]")!.textContent = recommendation.label;
+      document.querySelector<HTMLElement>("[data-detected-title]")!.textContent = recommendation.title;
+      document.querySelector<HTMLElement>("[data-detected-copy]")!.textContent = recommendation.copy;
+      document.querySelectorAll<HTMLElement>("[data-actions]").forEach((element) => {
+        element.hidden = element.dataset.actions !== platform;
+      });
+      document.querySelector(`[data-platform-card="${platform}"]`)?.classList.add("detected");
+
+      const assetPatterns: Record<string, RegExp> = {
+        "mac-arm-dmg": /_darwin_aarch64\.dmg$/,
+        "mac-intel-dmg": /_darwin_x64\.dmg$/,
+        "mac-arm-mcp": /^figmaboy-mcp-aarch64-apple-darwin$/,
+        "mac-intel-mcp": /^figmaboy-mcp-x86_64-apple-darwin$/,
+        "windows-nsis": /_windows_x64\.exe$/,
+        "windows-msi": /_windows_x64\.msi$/,
+        "windows-mcp": /^figmaboy-mcp-x86_64-pc-windows-msvc\.exe$/,
+        "linux-appimage": /_linux_amd64\.AppImage$/,
+        "linux-deb": /_linux_amd64\.deb$/,
+        "linux-rpm": /_linux_x86_64\.rpm$/,
+        "linux-mcp": /^figmaboy-mcp-x86_64-unknown-linux-gnu$/,
+      };
+
+      async function hydrateLatestRelease() {
+        try {
+          const response = await fetch("https://api.github.com/repos/0xmiki/figmaboy/releases/latest", {
+            headers: { Accept: "application/vnd.github+json" },
+          });
+          if (!response.ok) return;
+          const release = await response.json() as { tag_name?: string; assets?: Array<{ name: string; browser_download_url: string }> };
+          if (release.tag_name) {
+            document.querySelectorAll<HTMLElement>("[data-version]").forEach((element) => {
+              element.textContent = release.tag_name!;
+            });
+          }
+          for (const element of document.querySelectorAll<HTMLAnchorElement>("[data-asset]")) {
+            const pattern = assetPatterns[element.dataset.asset ?? ""];
+            const matchedAsset = pattern ? release.assets?.find((candidate) => pattern.test(candidate.name)) : undefined;
+            if (matchedAsset) element.href = matchedAsset.browser_download_url;
+          }
+        } catch {
+          // Static v0.2.0 links remain usable when GitHub's API is unavailable.
+        }
+      }
+
+      void hydrateLatestRelease();
+    </script>
+  </body>
+</html>
