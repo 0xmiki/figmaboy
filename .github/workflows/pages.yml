@@ -38,6 +38,16 @@ jobs:
         with:
           bun-version: 1.3.13
 
+      # Astro/Vite scans the parent SvelteKit tsconfig in this monorepo.
+      # Generate its extended config before compiling the standalone site.
+      - name: Install app dependencies
+        working-directory: .
+        run: bun install --frozen-lockfile
+
+      - name: Generate SvelteKit type config
+        working-directory: .
+        run: bunx svelte-kit sync
+
       - name: Install website dependencies
         run: bun install --frozen-lockfile
 
