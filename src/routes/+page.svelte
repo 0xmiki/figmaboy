@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { goto } from "$app/navigation";
   import {
-    ArchiveRestore, ChevronDown, Clock3, FilePlus2, Folder, FolderPlus, Grid2X2, Import,
+    ArchiveRestore, ChevronDown, Clock3, Copy, FilePlus2, Folder, FolderPlus, Grid2X2, Import,
     LayoutGrid, List, MoreHorizontal, Search, Star, Trash2, Upload, X,
   } from "lucide-svelte";
   import type { DesignFile, LibrarySnapshot, Project } from "$lib/domain";
@@ -17,6 +17,7 @@
   let layout = $state<"grid" | "list">("grid");
   let loading = $state(true);
   let error = $state("");
+  let notice = $state("");
   let modal = $state<{ kind: "project" | "rename-project" | "rename-file"; id?: string; value: string } | null>(null);
   let menu = $state<{ kind: "project" | "file"; id: string; x: number; y: number } | null>(null);
 
@@ -90,6 +91,13 @@
   async function fileAction(action: string, file: DesignFile) {
     menu = null;
     try {
+      if (action === "copy-id") {
+        if (!navigator.clipboard?.writeText) throw new Error("Clipboard access is unavailable");
+        await navigator.clipboard.writeText(file.id);
+        notice = `Copied design ID: ${file.id}`;
+        setTimeout(() => { if (notice.includes(file.id)) notice = ""; }, 2600);
+        return;
+      }
       if (action === "open") await goto(`/editor/${file.id}`);
       if (action === "rename") modal = { kind: "rename-file", id: file.id, value: file.name };
       if (action === "star") await repo.starFile(file.id, !file.starred);
@@ -233,6 +241,8 @@
   </main>
 </div>
 
+{#if notice}<div class="id-notice"><Copy size={14} />{notice}</div>{/if}
+
 {#if menu}
   {@const targetFile = menu.kind === "file" ? snapshot.files.find((item) => item.id === menu?.id) : undefined}
   {@const targetProject = menu.kind === "project" ? snapshot.projects.find((item) => item.id === menu?.id) : undefined}
@@ -243,6 +253,7 @@
         <button onclick={() => fileAction("rename", targetFile)}>Rename</button>
         <button onclick={() => fileAction("star", targetFile)}>{targetFile.starred ? "Remove from starred" : "Add to starred"}</button>
         <button onclick={() => fileAction("duplicate", targetFile)}>Duplicate</button>
+        <button onclick={() => fileAction("copy-id", targetFile)}><Copy size={14} /> Copy design ID</button>
         <button onclick={() => fileAction("export", targetFile)}><Upload size={14} /> Export package</button>
         <hr /><button class="danger" onclick={() => fileAction("trash", targetFile)}><Trash2 size={14} /> Move to trash</button>
       {:else}
@@ -315,6 +326,7 @@
   .file-list { display: grid; gap: 1px; border: 1px solid #333; border-radius: 9px; overflow: hidden; }.file-list .file-card { border: 0; border-radius: 0; display: grid; grid-template-columns: 74px 1fr; height: 64px; }.file-list .thumbnail { height: 64px; border: 0; }.file-list .blank-file { transform: scale(.45); }.file-list .file-info { justify-content: center; }
   .empty-state { min-height: 48vh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }.empty-state .empty-icon { width: 64px; height: 64px; display: grid; place-items: center; border: 1px solid #3a3a3a; border-radius: 16px; background: #242424; color: #777; }.empty-state h2 { margin: 18px 0 0; color: white; text-transform: none; font-size: 16px; letter-spacing: -.01em; }.empty-state p { color: #777; font-size: 11px; margin: 8px 0 18px; max-width: 310px; line-height: 1.5; }
   .error-banner { margin: -12px 0 18px; border: 1px solid #7f1d1d; background: #451a1a; color: #fecaca; min-height: 38px; border-radius: 7px; padding: 9px 11px; font-size: 11px; display: flex; justify-content: space-between; align-items: center; }.error-banner button { border: 0; background: transparent; color: inherit; display: grid; cursor: pointer; }
+  .id-notice { position: fixed; z-index: 140; left: 50%; bottom: 24px; transform: translateX(-50%); min-height: 36px; display: flex; align-items: center; gap: 8px; padding: 0 14px; border: 1px solid #4a4a4a; border-radius: 8px; background: #252525; color: #f4f4f5; box-shadow: 0 10px 32px #0009; font-size: 10px; }
   @keyframes logo-breathe { 50% { transform: translateY(-3px) scale(.985); opacity: .78; } }
   .context-menu { position: fixed; z-index: 100; width: 205px; padding: 6px; border: 1px solid #444; border-radius: 8px; background: #282828; box-shadow: 0 16px 50px #0009; }.context-menu button { width: 100%; min-height: 32px; border: 0; border-radius: 5px; background: transparent; color: #eee; padding: 0 9px; display: flex; align-items: center; gap: 8px; justify-content: flex-start; cursor: pointer; font-size: 11px; }.context-menu button span { margin-left: auto; color: #777; }.context-menu button:hover { background: #3b3b3b; }.context-menu hr { height: 1px; border: 0; background: #424242; margin: 5px -6px; }.context-menu .danger { color: #fca5a5; }
   .modal-backdrop { position: fixed; inset: 0; z-index: 150; background: #0009; display: grid; place-items: center; backdrop-filter: blur(2px); }.modal { width: min(380px, calc(100vw - 40px)); padding: 25px; border: 1px solid #444; background: #282828; border-radius: 12px; box-shadow: 0 30px 80px #000b; }.modal-icon { width: 40px; height: 40px; display: grid; place-items: center; background: #0d99ff20; color: #38bdf8; border-radius: 10px; }.modal h2 { color: white; text-transform: none; letter-spacing: -.02em; font-size: 17px; margin: 16px 0 6px; }.modal p { color: #888; font-size: 11px; line-height: 1.5; margin: 0 0 18px; }.modal input { width: 100%; height: 38px; border: 1px solid #444; border-radius: 7px; background: #1d1d1d; color: white; padding: 0 10px; outline: none; font-size: 12px; }.modal input:focus { border-color: var(--blue); }.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }

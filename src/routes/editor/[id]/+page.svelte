@@ -301,6 +301,17 @@
     noticeTimer = setTimeout(() => (notice = ""), 2600);
   }
 
+  async function copyDesignId() {
+    if (!session) return;
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard access is unavailable");
+      await navigator.clipboard.writeText(session.file.id);
+      showNotice(`Copied design ID: ${session.file.id}`);
+    } catch (cause) {
+      session.errorMessage = cause instanceof Error ? cause.message : "Could not copy the design ID";
+    }
+  }
+
   async function rasterizeNodes(ids: string[], requestedScale: number) {
     if (!session || !ids.length) throw new Error("Nothing to render");
     const nodes = ids.map((id) => session!.document.nodes[id]).filter(Boolean);
@@ -554,6 +565,7 @@
       <div class="editor-top-left">
         <button class="home-mark" title="Back to projects" aria-label="Back to projects" onclick={backToFiles}><img src="/figmaboy.svg" alt="" /></button>
         <button class="file-title" onclick={renameFile}>{session.file.name}<ChevronDown size={12} /></button>
+        <button class="copy-file-id" title="Copy design ID" aria-label="Copy design ID" onclick={copyDesignId}><Copy size={12} /></button>
         <span class:bad={session.saveStatus === "error" || session.saveStatus === "conflict"}>{session.saveStatus === "saving" ? "Saving…" : session.saveStatus === "dirty" ? "Unsaved" : session.saveStatus === "conflict" ? "Save conflict" : session.saveStatus === "error" ? "Save failed" : "Saved locally"}</span>
       </div>
       <button class="panel-toggle left" title="Toggle left panel" onclick={() => (panels.left = !panels.left)}><PanelLeftClose size={15} /></button>
@@ -596,7 +608,7 @@
 <style>
   .editor-shell { position: fixed; inset: 0; background: #626262; overflow: hidden; }.canvas-region { position: absolute; inset: 0 241px 0 297px; transition: bottom 180ms ease; }.left-hidden .canvas-region,.left-hidden .terminal-dock { left: 0; }.right-hidden .canvas-region,.right-hidden .terminal-dock { right: 0; }
   .terminal-dock { position: absolute; z-index: 45; left: 297px; right: 241px; bottom: 0; min-height: 150px; }.terminal-resize { position: absolute; z-index: 2; top: -3px; left: 0; width: 100%; height: 7px; border: 0; padding: 0; background: transparent; cursor: ns-resize; }.terminal-resize:hover { background: #0d99ff; }
-  .editor-top-left { position: absolute; z-index: 35; top: 0; left: 0; height: 42px; background: #292929e8; border: 1px solid #444; border-top: 0; border-left: 0; border-radius: 0 0 7px 0; display: flex; align-items: center; padding: 0 7px; gap: 3px; box-shadow: 0 4px 14px #0003; }.editor-top-left button { border: 0; background: transparent; color: #ddd; height: 29px; border-radius: 5px; display: flex; align-items: center; cursor: pointer; }.editor-top-left button:hover { background: #3a3a3a; }.editor-top-left .home-mark { width: 29px; justify-content: center; }.home-mark img { width: 16px; height: 23px; object-fit: contain; filter: drop-shadow(0 2px 4px #0008); }.editor-top-left .file-title { max-width: 180px; gap: 5px; font-size: 10px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.editor-top-left > span { color: #6f6f76; font-size: 8px; margin-left: 4px; }.editor-top-left > span.bad { color: #fca5a5; }
+  .editor-top-left { position: absolute; z-index: 35; top: 0; left: 0; height: 42px; background: #292929e8; border: 1px solid #444; border-top: 0; border-left: 0; border-radius: 0 0 7px 0; display: flex; align-items: center; padding: 0 7px; gap: 3px; box-shadow: 0 4px 14px #0003; }.editor-top-left button { border: 0; background: transparent; color: #ddd; height: 29px; border-radius: 5px; display: flex; align-items: center; cursor: pointer; }.editor-top-left button:hover { background: #3a3a3a; }.editor-top-left .home-mark { width: 29px; justify-content: center; }.home-mark img { width: 16px; height: 23px; object-fit: contain; filter: drop-shadow(0 2px 4px #0008); }.editor-top-left .file-title { max-width: 180px; gap: 5px; font-size: 10px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.editor-top-left .copy-file-id { width: 27px; justify-content: center; color: #929299; }.editor-top-left > span { color: #6f6f76; font-size: 8px; margin-left: 4px; }.editor-top-left > span.bad { color: #fca5a5; }
   .panel-toggle { position: absolute; z-index: 35; top: 8px; width: 29px; height: 28px; border: 1px solid #4a4a4a; background: #292929; color: #aaa; border-radius: 5px; display: grid; place-items: center; cursor: pointer; }.panel-toggle.left { left: 7px; opacity: 0; pointer-events: none; }.left-hidden .panel-toggle.left { opacity: 1; pointer-events: auto; }.panel-toggle.right { right: 7px; opacity: 0; pointer-events: none; }.right-hidden .panel-toggle.right { opacity: 1; pointer-events: auto; }
   .loading, .error-screen { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #1d1d1d; }.loader-logo { width: 92px; height: 129px; object-fit: contain; filter: drop-shadow(0 16px 30px #000a); animation: logo-breathe 1.8s ease-in-out infinite; }.loading strong { margin-top: 20px; font-size: 15px; letter-spacing: -.02em; }.loading p { color: #777; font-size: 10px; margin: 6px 0 0; } @keyframes logo-breathe { 50% { transform: translateY(-3px) scale(.985); opacity: .78; } }
   .screen-brand { width: 38px; height: 54px; object-fit: contain; margin-bottom: 19px; opacity: .9; filter: drop-shadow(0 7px 14px #0009); }.error-icon { width: 58px; height: 58px; display: grid; place-items: center; border: 1px solid #512727; background: #321d1d; color: #f87171; border-radius: 15px; }.error-screen h1 { font-size: 17px; margin: 17px 0 4px; }.error-screen p { color: #888; font-size: 10px; }.error-screen button { margin-top: 13px; height: 32px; border: 1px solid #414141; border-radius: 6px; background: #2c2c2c; color: white; display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 0 11px; font-size: 10px; }

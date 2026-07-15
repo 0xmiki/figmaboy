@@ -193,6 +193,8 @@ struct PackageWorkspace {
     files: Vec<DesignFile>,
     pages: Vec<PageMeta>,
     documents: HashMap<String, Value>,
+    #[serde(default)]
+    previews: HashMap<String, String>,
     assets: Vec<PackageAsset>,
 }
 
@@ -263,7 +265,8 @@ fn initialize_database(path: &Path) -> Result<Connection, String> {
                 name TEXT NOT NULL,
                 position INTEGER NOT NULL,
                 revision INTEGER NOT NULL DEFAULT 0,
-                document_json TEXT NOT NULL
+                document_json TEXT NOT NULL,
+                preview TEXT
             );
             CREATE INDEX IF NOT EXISTS pages_file_idx ON pages(file_id, position);
             CREATE TABLE IF NOT EXISTS assets (
@@ -277,6 +280,28 @@ fn initialize_database(path: &Path) -> Result<Connection, String> {
             );
             INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (1, datetime('now'));
             "#,
+        )
+        .map_err(|error| error.to_string())?;
+    let has_page_preview = {
+        let mut statement = connection
+            .prepare("PRAGMA table_info(pages)")
+            .map_err(|error| error.to_string())?;
+        let names = statement
+            .query_map([], |row| row.get::<_, String>(1))
+            .map_err(|error| error.to_string())?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(|error| error.to_string())?;
+        names.iter().any(|name| name == "preview")
+    };
+    if !has_page_preview {
+        connection
+            .execute("ALTER TABLE pages ADD COLUMN preview TEXT", [])
+            .map_err(|error| error.to_string())?;
+    }
+    connection
+        .execute(
+            "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (2, datetime('now'))",
+            [],
         )
         .map_err(|error| error.to_string())?;
     Ok(connection)
@@ -347,6 +372,16 @@ fn page_document(connection: &Connection, page_id: &str) -> CommandResult<Value>
         )
         .map_err(|_| "Page not found".to_string())?;
     serde_json::from_str(&raw).map_err(|error| format!("The page data is damaged: {error}"))
+}
+
+fn page_preview(connection: &Connection, page_id: &str) -> CommandResult<Option<String>> {
+    connection
+        .query_row(
+            "SELECT preview FROM pages WHERE id = ?1",
+            [page_id],
+            |row| row.get(0),
+        )
+        .map_err(|_| "Page not found".to_string())
 }
 
 #[tauri::command]
@@ -580,9 +615,13 @@ fn duplicate_file(id: String, state: State<'_, AppState>) -> CommandResult<Desig
         trashed_at: None,
         thumbnail: source.thumbnail,
     };
-    let documents: Vec<(PageMeta, Value)> = source_pages
+    let documents: Vec<(PageMeta, Value, Option<String>)> = source_pages
         .into_iter()
-        .map(|page| page_document(&connection, &page.id).map(|document| (page, document)))
+        .map(|page| {
+            let document = page_document(&connection, &page.id)?;
+            let preview = page_preview(&connection, &page.id)?;
+            Ok((page, document, preview))
+        })
         .collect::<CommandResult<_>>()?;
     let transaction = connection
         .transaction()
@@ -593,11 +632,11 @@ fn duplicate_file(id: String, state: State<'_, AppState>) -> CommandResult<Desig
             params![copy.id, copy.project_id, copy.name, copy.created_at, copy.updated_at, copy.thumbnail],
         )
         .map_err(|error| error.to_string())?;
-    for (page, document) in documents {
+    for (page, document, preview) in documents {
         transaction
             .execute(
-                "INSERT INTO pages(id, file_id, name, position, revision, document_json) VALUES (?1, ?2, ?3, ?4, 0, ?5)",
-                params![new_id("page"), copy.id, page.name, page.position, document.to_string()],
+                "INSERT INTO pages(id, file_id, name, position, revision, document_json, preview) VALUES (?1, ?2, ?3, ?4, 0, ?5, ?6)",
+                params![new_id("page"), copy.id, page.name, page.position, document.to_string(), preview],
             )
             .map_err(|error| error.to_string())?;
     }
@@ -691,8 +730,8 @@ fn save_page(
         .map_err(|error| error.to_string())?;
     let changed = transaction
         .execute(
-            "UPDATE pages SET document_json = ?1, revision = revision + 1 WHERE id = ?2 AND revision = ?3",
-            params![document.to_string(), page_id, expected_revision],
+            "UPDATE pages SET document_json = ?1, revision = revision + 1, preview = COALESCE(?4, preview) WHERE id = ?2 AND revision = ?3",
+            params![document.to_string(), page_id, expected_revision, thumbnail.as_deref()],
         )
         .map_err(|error| error.to_string())?;
     if changed == 0 {
@@ -701,7 +740,7 @@ fn save_page(
     transaction
         .execute(
             "UPDATE design_files SET updated_at = ?1, thumbnail = COALESCE(?2, thumbnail) WHERE id = (SELECT file_id FROM pages WHERE id = ?3)",
-            params![now(), thumbnail, page_id],
+            params![now(), thumbnail.as_deref(), page_id],
         )
         .map_err(|error| error.to_string())?;
     transaction.commit().map_err(|error| error.to_string())?;
@@ -792,10 +831,11 @@ fn duplicate_page(page_id: String, state: State<'_, AppState>) -> CommandResult<
         revision: 0,
     };
     let document = page_document(&connection, &page_id)?;
+    let preview = page_preview(&connection, &page_id)?;
     connection
         .execute(
-            "INSERT INTO pages(id, file_id, name, position, revision, document_json) VALUES (?1, ?2, ?3, ?4, 0, ?5)",
-            params![page.id, page.file_id, page.name, page.position, document.to_string()],
+            "INSERT INTO pages(id, file_id, name, position, revision, document_json, preview) VALUES (?1, ?2, ?3, ?4, 0, ?5, ?6)",
+            params![page.id, page.file_id, page.name, page.position, document.to_string(), preview],
         )
         .map_err(|error| error.to_string())?;
     Ok(PagePayload { page, document })
@@ -1109,11 +1149,15 @@ fn package_workspace(
     };
     let mut pages = Vec::new();
     let mut documents = HashMap::new();
+    let mut previews = HashMap::new();
     let mut asset_ids = HashSet::new();
     for file in &files {
         for page in pages_for_file(connection, &file.id)? {
             let document = page_document(connection, &page.id)?;
             collect_asset_ids(&document, &mut asset_ids);
+            if let Some(preview) = page_preview(connection, &page.id)? {
+                previews.insert(page.id.clone(), preview);
+            }
             documents.insert(page.id.clone(), document);
             pages.push(page);
         }
@@ -1152,6 +1196,7 @@ fn package_workspace(
             files,
             pages,
             documents,
+            previews,
             assets,
         },
         asset_data,
@@ -1349,10 +1394,11 @@ fn import_package(app: AppHandle, state: State<'_, AppState>) -> CommandResult<b
                 .get(&source_page.id)
                 .cloned()
                 .unwrap_or_else(empty_document);
+            let preview = workspace.previews.get(&source_page.id);
             transaction
                 .execute(
-                    "INSERT INTO pages(id, file_id, name, position, revision, document_json) VALUES (?1, ?2, ?3, ?4, 0, ?5)",
-                    params![new_id("page"), file_id, source_page.name, source_page.position, document.to_string()],
+                    "INSERT INTO pages(id, file_id, name, position, revision, document_json, preview) VALUES (?1, ?2, ?3, ?4, 0, ?5, ?6)",
+                    params![new_id("page"), file_id, source_page.name, source_page.position, document.to_string(), preview],
                 )
                 .map_err(|error| error.to_string())?;
         }
@@ -1456,6 +1502,65 @@ mod tests {
             )
             .unwrap();
         assert_eq!(pages_for_file(&connection, "file").unwrap()[0].revision, 0);
+        assert_eq!(page_preview(&connection, "page").unwrap(), None);
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM schema_migrations WHERE version = 2",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            1
+        );
+    }
+
+    #[test]
+    fn existing_databases_gain_per_page_previews() {
+        let path = std::env::temp_dir().join(format!(
+            "figmaboy-schema-test-{}.sqlite3",
+            Uuid::new_v4().simple()
+        ));
+        let legacy = Connection::open(&path).unwrap();
+        legacy
+            .execute_batch(
+                r#"
+                CREATE TABLE pages (
+                    id TEXT PRIMARY KEY,
+                    file_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    position INTEGER NOT NULL,
+                    revision INTEGER NOT NULL DEFAULT 0,
+                    document_json TEXT NOT NULL
+                );
+                "#,
+            )
+            .unwrap();
+        drop(legacy);
+
+        let migrated = initialize_database(&path).unwrap();
+        let columns = migrated
+            .prepare("PRAGMA table_info(pages)")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap();
+        assert!(columns.iter().any(|name| name == "preview"));
+        assert_eq!(
+            migrated
+                .query_row(
+                    "SELECT COUNT(*) FROM schema_migrations WHERE version = 2",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            1
+        );
+        drop(migrated);
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_file(path.with_extension("sqlite3-wal"));
+        let _ = fs::remove_file(path.with_extension("sqlite3-shm"));
     }
 
     #[test]
