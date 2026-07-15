@@ -36,7 +36,12 @@ const productScreenshot = `${base}figmaboy-screenshot.png`;
           <a href="#compare">Compare</a>
           <a href={docs}>Docs</a>
         </nav>
-        <a class="button button-dark nav-download" href={download}><span data-download-copy>Download Figmaboy</span></a>
+        <a class="button button-dark nav-download" href={download}>
+          <span data-download-copy>Download Figmaboy</span>
+          <svg class="nav-download-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 4v11m0 0 4-4m-4 4-4-4M6 19h12" />
+          </svg>
+        </a>
       </div>
     </header>
 
@@ -45,14 +50,18 @@ const productScreenshot = `${base}figmaboy-screenshot.png`;
         <div class="wrap hero-grid">
           <div class="hero-copy" data-reveal>
             <p class="eyebrow">Figmaboy + Codex&nbsp; / &nbsp;01</p>
-            <h1 class="display" id="hero-title">A quieter way<br />to make.</h1>
+            <h1 class="display" id="hero-title">
+              <span>Where design</span>
+              <span>meets the</span>
+              <span>command line.</span>
+            </h1>
             <p class="hero-lede">A focused desktop design workspace with the Codex CLI built directly into the canvas. Design, ask, run, and review without leaving the file.</p>
             <div class="hero-actions">
               <a class="button button-dark" href={`${docs}getting-started/install/`}>Get started <svg class="button-arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4h8v8M12 4 4 12" /></svg></a>
               <a class="button button-light" href={download}><span data-download-copy>Download Figmaboy</span> <span class="arrow">↓</span></a>
             </div>
             <p class="hero-meta">Linux · macOS · Windows &nbsp;/&nbsp; v0.2.0<br />Local-first workspace · MCP companion included</p>
-            <div class="codex-badge"><span class="signal"></span>CODEX BUILT IN</div>
+            <div class="cli-badge"><span class="signal"></span>CLI BUILT IN</div>
           </div>
 
           <div class="product-object" data-reveal>
