@@ -257,6 +257,8 @@ codex mcp get figmaboy
 
 Finish any active Codex session, then start a new session so Codex loads the new MCP configuration.
 
+Starting Codex makes the registered Figmaboy tools available; it does not automatically select them for every task. Mention **Figmaboy** in your request and identify either the currently open page or a saved design by name or copied ID.
+
 First test offline context while Figmaboy is closed:
 
 > List my saved Figmaboy designs.

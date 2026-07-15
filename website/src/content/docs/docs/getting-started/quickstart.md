@@ -19,7 +19,21 @@ codex
 
 The shell starts in your home directory by default. Change into the project that should receive any exported assets or implementation code before starting Codex.
 
-## 3. Give one clear design instruction
+## 3. Tell Codex to use Figmaboy
+
+Starting `codex` loads your registered MCP servers, but it does not automatically choose Figmaboy for every request. Name **Figmaboy** in your first instruction and say whether Codex should use the currently open page or a saved design.
+
+For a live editing task, start with:
+
+> Use Figmaboy to inspect and edit the currently open design page.
+
+For a saved design that may not be open, use its copied ID or unique name:
+
+> Use my saved Figmaboy design named “Radio concept” as context for this implementation. Inspect its preview and native layers before writing code.
+
+This makes your intent unambiguous. A request such as “make a radio app” could otherwise mean creating application code instead of editing a Figmaboy design.
+
+## 4. Give one clear design instruction
 
 Paste a prompt like this:
 
@@ -33,13 +47,13 @@ A useful request names:
 - The requirement to use native editable layers.
 - A visual review and save step.
 
-## 4. Watch the layer tree
+## 5. Watch the layer tree
 
 Codex should inspect `design_capabilities` and the open document before editing. New sections should appear as named frames or groups—not as a flat list of unrelated layers.
 
 One MCP operation batch becomes one undo step. Press <kbd>Ctrl</kbd> / <kbd>Cmd</kbd> + <kbd>Z</kbd> if you want to revert the pass.
 
-## 5. Refine instead of restarting
+## 6. Refine instead of restarting
 
 Point to the part that needs work:
 
@@ -47,7 +61,7 @@ Point to the part that needs work:
 
 You can also select a layer first and tell Codex to inspect the current selection.
 
-## 6. Continue by hand
+## 7. Continue by hand
 
 Close or resize the terminal and use the inspector for exact styling. Codex changes are normal Figmaboy nodes, so manual and agent-driven editing can alternate freely.
 
