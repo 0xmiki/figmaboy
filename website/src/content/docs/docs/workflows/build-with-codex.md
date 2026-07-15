@@ -5,6 +5,16 @@ description: A repeatable workflow for turning a product brief into a polished n
 
 Good Codex design work is iterative: establish structure, build a coherent pass, inspect visual evidence, then refine the specific problems you can see.
 
+## Make the target explicit
+
+Codex loads registered MCP tools when the session starts, but chooses whether to use them from the instruction you give it. Mention **Figmaboy** in the first prompt and identify the target:
+
+- For live work: “Use Figmaboy to edit the currently open page.”
+- For offline context: “Use the saved Figmaboy design named **[name]** as context.”
+- For an exact lookup: “Use the Figmaboy design with ID **[design ID]** as context.”
+
+This distinguishes a Figmaboy design task from a request to create or edit code directly in the current directory.
+
 ## Before the first prompt
 
 1. Open the target design and page.

@@ -44,6 +44,8 @@ Mutations are executed by the editor, where they receive the same validation, hi
 
 ## Tool discovery
 
+Codex sees the registered Figmaboy tools when a session starts, but it selects tools based on your request. In the first prompt, explicitly say **Figmaboy** and identify the currently open page or a saved design by name or copied ID. Mentioning Figmaboy is not a special command; it simply removes ambiguity about which workspace Codex should use.
+
 At the start of a design task, Codex should inspect:
 
 1. `editor_status` to confirm the active file and page.
