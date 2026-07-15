@@ -257,7 +257,6 @@ a { color: inherit; text-decoration: none; }
 [data-reveal].visible { opacity: 1; transform: none; }
 
 @media (max-width: 1080px) {
-  .nav-links { display: none; }
   .hero-grid { grid-template-columns: 1fr 1fr; gap: 30px; }
   .hero h1 { font-size: 66px; }
   .section-head { grid-template-columns: 1fr 340px; gap: 40px; }
@@ -272,6 +271,7 @@ a { color: inherit; text-decoration: none; }
   .wrap { width: min(calc(100% - 32px), 560px); }
   .site-nav, .nav-inner { height: 88px; }
   .brand { font-size: 17px; }
+  .nav-links { display: none; }
   .nav-download { min-width: auto; min-height: 44px; padding-inline: 18px; font-size: 10px; }
   .hero { min-height: 0; }
   .hero-grid { grid-template-columns: 1fr; padding-top: 44px; }
