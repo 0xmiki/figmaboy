@@ -25,32 +25,49 @@ macOS builds are currently ad-hoc signed rather than notarized, so the first lau
 
 ## Codex design MCP
 
-Figma Boy includes a companion `figmaboy-mcp` stdio server. The app remains the source of truth: MCP edits are applied to the design currently open in the editor, appear immediately, participate in undo/redo, and use normal autosave.
+Figmaboy includes a companion `figmaboy-mcp` stdio server. It can use saved designs as read-only Codex context while the desktop app is closed, or edit the design currently open in the app with live undo/redo and autosave.
+
+### Use saved designs as Codex context
+
+Right-click a design card in the Figmaboy workspace and choose **Copy design ID**, or use the copy button beside the file name in the editor. IDs are stable and unambiguous, so they are the best way to reference an important design:
+
+> Build the interface from the Figmaboy design `file_…`, page `Home`.
+
+Names work too when they are unique:
+
+> Use the Figmaboy design named `Marketing site` as the visual and layout reference.
+
+The MCP exposes two offline tools:
+
+- `designs_list` searches saved designs and returns their IDs, names, projects, timestamps, and page counts.
+- `design_context_get` accepts either `fileId` or `fileName`, plus an optional `pageId` or `pageName`. It returns the latest autosaved page revision, complete native document, ordered layer tree, asset metadata, and a visual preview.
+
+If multiple active designs have the same name, the MCP returns their project names and IDs so Codex can retry with an exact ID. Offline context is always read-only; open the design in Figmaboy before asking Codex to change it.
 
 ### Runtime architecture
 
-The desktop app and MCP server are separate processes with separate responsibilities:
+The desktop app and MCP server are separate processes with two data paths:
 
 ```text
 Codex (or another MCP client)
         │ JSON-RPC over stdio
         ▼
 figmaboy-mcp
-        │ authenticated JSON over 127.0.0.1
-        ▼
-Figma Boy desktop bridge
-        │ Tauri event + reply
-        ▼
-The currently open editor
+        ├── read-only SQLite ───────────────► saved pages, layers, previews
+        │                                     (app open or closed)
+        │
+        └── authenticated 127.0.0.1 bridge ─► currently open editor
+                                              (live inspect and edit)
 ```
 
-1. Figma Boy starts an editor bridge on a random loopback-only port when the desktop app opens.
-2. The app writes `editor-bridge.json`, containing the port, a random authentication token, and its process ID, to the local application-data directory. On Unix the file is restricted to the current user with mode `0600`.
-3. The MCP client launches `figmaboy-mcp` as a normal stdio server. The desktop app does **not** launch it.
-4. `figmaboy-mcp` reads the discovery file, connects to the authenticated bridge, and forwards tool calls to the active editor.
-5. The editor performs the operation and returns the result through the same path.
+1. Figmaboy autosaves native page documents and per-page previews to its local SQLite workspace.
+2. `figmaboy-mcp` opens that database in SQLite read-only mode for `designs_list` and `design_context_get`. WAL mode keeps reads safe while the app is saving.
+3. Figmaboy starts an editor bridge on a random loopback-only port when the desktop app opens.
+4. The app writes `editor-bridge.json`, containing the port, a random authentication token, and its process ID, to the local application-data directory. On Unix the file is restricted to the current user with mode `0600`.
+5. The MCP client launches `figmaboy-mcp` as a normal stdio server. The desktop app does **not** launch it.
+6. Live tools connect through the bridge; the editor performs mutations and rendering and returns the result through the same path.
 
-The MCP process does not edit the SQLite database directly. This keeps validation, undo/redo, live rendering, revision checks, and autosave inside the desktop app.
+The MCP process never writes to the SQLite database. This keeps validation, undo/redo, live rendering, revision checks, and autosave inside the desktop app.
 
 The default discovery file is located at:
 
@@ -61,6 +78,8 @@ The default discovery file is located at:
 | Windows | `%LOCALAPPDATA%\com.miki.figmaboy\editor-bridge.json` |
 
 Set `FIGMABOY_BRIDGE_FILE` for the MCP process only when a non-default discovery path is required.
+
+Set `FIGMABOY_DB_PATH` to override the saved workspace database path, primarily for portable installations and tests.
 
 ### Install and register with Codex
 
@@ -92,13 +111,13 @@ On Windows, run the equivalent command in PowerShell with the installed `.exe` p
 codex mcp add figmaboy -- "C:\absolute\path\to\figmaboy-mcp.exe"
 ```
 
-After registration, start Figma Boy, open a design, and begin a new Codex session. If the app is closed, tools report that Figma Boy is not running; if no design is open, they report `NO_ACTIVE_EDITOR`.
+After registration, begin a new Codex session. Saved-context tools work whether Figmaboy is open or closed. Live editor and mutation tools require an open design and report a clear error when the app is unavailable.
 
 Tauri's `externalBin` setting ensures that release artifacts contain the MCP executable, but it does not register the server with Codex and does not automatically expose the executable on `PATH`. Each platform installer must provide a stable executable path for the registration command. The NixOS package already does this.
 
 ### Tools and authoring contract
 
-The server exposes tools to inspect editor state and nodes, retrieve exact coordinate geometry, atomically create/update/delete/reparent/reorder layers, place generated image assets, center layers horizontally/vertically, set border radii, control selection and viewport focus, undo/redo/save, and capture a complete frame as PNG evidence.
+The server exposes offline tools to find saved designs and load a page as structured-plus-visual Codex context. Its live tools inspect editor state and nodes, retrieve exact coordinate geometry, atomically create/update/delete/reparent/reorder layers, place generated image assets, center layers horizontally/vertically, set border radii, control selection and viewport focus, undo/redo/save, and capture a complete frame as PNG evidence.
 
 Codex builds designs entirely from native frames, groups, shapes, text, images, and icons. Every visible element remains addressable through MCP and editable in the layer panel. The `design_capabilities` tool returns the current node/style contract plus the expected semantic grouping model; Codex should call it before authoring a design.
 

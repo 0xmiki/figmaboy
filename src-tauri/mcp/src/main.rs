@@ -1,4 +1,6 @@
-//! Stdio MCP server that forwards design operations to a running Figmaboy app.
+//! Stdio MCP server for live Figmaboy editing and read-only saved design context.
+
+mod offline;
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use directories::BaseDirs;
@@ -17,7 +19,9 @@ use tokio::{
 };
 use uuid::Uuid;
 
-const INSTRUCTIONS: &str = "Manipulate the design currently open in Figma Boy. Inspect editor_status, document_get, design_capabilities, and types_get before mutating. Build entirely from native frames, groups, shapes, text, images, and icons. Organize every design as a named semantic tree: one top-level frame per screen; named frames/groups for sections; and named groups for components such as navbars, cards, buttons, feature rows, and media controls. Children use coordinates local to their parent. Prefer a frame when a component has a background or clips content and a group for a structural cluster. Avoid flat piles of root layers. When original raster artwork would improve the design, use Codex image generation, keep the final asset in the active project/workspace, then call image_place with its local path and exact placement. Use nodes_center for precise horizontal/vertical centering. Use nodes_set_border_radius deliberately on cards, buttons, panels, badges, and images instead of leaving every surface square. Use operations_apply for atomic changes and pass expected_change_token. Always call frame_screenshot and visually inspect the resulting image before finishing.";
+use offline::{preview_image, OfflineContext, OfflineLibrary};
+
+const INSTRUCTIONS: &str = "Use designs_list and design_context_get to inspect saved Figmaboy designs by copied file ID or convenient file name, even while the desktop app is closed. design_context_get returns the saved page document, ordered layer tree, asset metadata, and a visual preview when available. Saved context is read-only and reports its revision. To manipulate a design, open it in Figma Boy, then inspect editor_status, document_get, design_capabilities, and types_get before mutating. Build entirely from native frames, groups, shapes, text, images, and icons. Organize every design as a named semantic tree: one top-level frame per screen; named frames/groups for sections; and named groups for components such as navbars, cards, buttons, feature rows, and media controls. Children use coordinates local to their parent. Prefer a frame when a component has a background or clips content and a group for a structural cluster. Avoid flat piles of root layers. When original raster artwork would improve the design, use Codex image generation, keep the final asset in the active project/workspace, then call image_place with its local path and exact placement. Use nodes_center for precise horizontal/vertical centering. Use nodes_set_border_radius deliberately on cards, buttons, panels, badges, and images instead of leaving every surface square. Use operations_apply for atomic changes and pass expected_change_token. Always call frame_screenshot and visually inspect the resulting image before finishing.";
 const TYPESCRIPT_CONTRACT: &str = include_str!("../../../mcp/types.ts");
 
 #[derive(Clone)]
@@ -109,6 +113,31 @@ struct NodesGetParams {
     node_type: Option<String>,
     /// Optional case-insensitive node-name substring.
     name: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DesignsListParams {
+    /// Optional case-insensitive substring matched against design and project names.
+    query: Option<String>,
+    /// Maximum results from 1 through 200. Defaults to 50.
+    limit: Option<usize>,
+    /// Include designs currently in trash. Defaults to false.
+    #[serde(default)]
+    include_trashed: bool,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DesignContextParams {
+    /// Exact stable design ID copied from Figmaboy. Provide this or fileName.
+    file_id: Option<String>,
+    /// Exact case-insensitive design name. Convenient, but ambiguous names require fileId.
+    file_name: Option<String>,
+    /// Exact stable page ID. Omit to use pageName or the first page.
+    page_id: Option<String>,
+    /// Exact case-insensitive page name. Omit to use the first page.
+    page_name: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
@@ -264,16 +293,51 @@ fn image_result(mut value: Value) -> CallToolResult {
     result
 }
 
+fn offline_context_result(mut context: OfflineContext) -> CallToolResult {
+    let image = context
+        .preview_data_url
+        .as_deref()
+        .map(preview_image)
+        .transpose();
+    let preview = context
+        .value
+        .get_mut("preview")
+        .and_then(Value::as_object_mut);
+    match image {
+        Ok(Some((image, mime_type, width, height))) => {
+            if let Some(preview) = preview {
+                preview.insert("mimeType".into(), Value::String(mime_type.clone()));
+                preview.insert("width".into(), Value::from(width));
+                preview.insert("height".into(), Value::from(height));
+            }
+            let mut result = CallToolResult::structured(context.value);
+            result
+                .content
+                .insert(0, ContentBlock::image(image, mime_type));
+            result
+        }
+        Ok(None) => CallToolResult::structured(context.value),
+        Err(error) => {
+            if let Some(preview) = preview {
+                preview.insert("renderError".into(), Value::String(error));
+            }
+            CallToolResult::structured(context.value)
+        }
+    }
+}
+
 #[derive(Clone)]
 struct FigmaboyMcp {
     bridge: BridgeClient,
+    offline: OfflineLibrary,
     tool_router: ToolRouter<Self>,
 }
 
 impl FigmaboyMcp {
-    fn new(bridge: BridgeClient) -> Self {
+    fn new(bridge: BridgeClient, offline: OfflineLibrary) -> Self {
         Self {
             bridge,
+            offline,
             tool_router: Self::tool_router(),
         }
     }
@@ -292,6 +356,45 @@ impl FigmaboyMcp {
 
 #[tool_router]
 impl FigmaboyMcp {
+    #[tool(
+        description = "List saved Figmaboy designs with stable copyable file IDs, names, projects, timestamps, and page counts. Works while Figmaboy is closed. Use query to search by design or project name."
+    )]
+    async fn designs_list(
+        &self,
+        Parameters(params): Parameters<DesignsListParams>,
+    ) -> CallToolResult {
+        match self
+            .offline
+            .list_designs(params.query, params.limit, params.include_trashed)
+            .await
+        {
+            Ok(value) => CallToolResult::structured(value),
+            Err(error) => tool_error(error),
+        }
+    }
+
+    #[tool(
+        description = "Load a saved Figmaboy page as read-only implementation context by exact fileId or convenient fileName. Returns the full native document, ordered layer tree, page revisions, asset metadata, and a visual preview when available. Works while Figmaboy is closed."
+    )]
+    async fn design_context_get(
+        &self,
+        Parameters(params): Parameters<DesignContextParams>,
+    ) -> CallToolResult {
+        match self
+            .offline
+            .design_context(
+                params.file_id,
+                params.file_name,
+                params.page_id,
+                params.page_name,
+            )
+            .await
+        {
+            Ok(context) => offline_context_result(context),
+            Err(error) => tool_error(error),
+        }
+    }
+
     #[tool(
         description = "Get the active Figma Boy file/page, save state, selection, document change token, viewport, and exact canvas client/screen geometry."
     )]
@@ -553,7 +656,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let bridge = BridgeClient::from_env().map_err(std::io::Error::other)?;
-    let service = FigmaboyMcp::new(bridge)
+    let offline = OfflineLibrary::from_env().map_err(std::io::Error::other)?;
+    let service = FigmaboyMcp::new(bridge, offline)
         .serve(rmcp::transport::stdio())
         .await?;
     service.waiting().await?;

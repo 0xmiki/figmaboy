@@ -180,6 +180,15 @@ export interface ImagePlaceParams {
 
 export interface RenderParams { scope?: "design" | "selection"; ids?: Id[]; scale?: number }
 export interface NodesGetParams { ids?: Id[]; type?: NodeType; name?: string }
+export interface DesignsListParams { query?: string; limit?: number; includeTrashed?: boolean }
+export interface DesignContextParams {
+  /** Stable design ID copied from Figmaboy. Provide this or fileName. */
+  fileId?: Id;
+  /** Exact case-insensitive design name. Ambiguous names require fileId. */
+  fileName?: string;
+  pageId?: Id;
+  pageName?: string;
+}
 
 export interface ToolResult {
   changeToken?: number;
@@ -188,6 +197,8 @@ export interface ToolResult {
 
 /** Available MCP tools and their input contracts. */
 export interface FigmaBoyTools {
+  designs_list(params?: DesignsListParams): Promise<ToolResult>;
+  design_context_get(params: DesignContextParams): Promise<ToolResult>;
   editor_status(params?: Record<string, never>): Promise<ToolResult>;
   design_capabilities(params?: Record<string, never>): Promise<ToolResult>;
   types_get(params?: Record<string, never>): Promise<{ language: "typescript"; path: "mcp/types.ts"; source: string }>;

@@ -6,6 +6,25 @@ test.beforeEach(async ({ page }) => {
   await page.reload();
 });
 
+test("copies a stable design ID for MCP lookup", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.getByRole("button", { name: "New design" }).first().click();
+  await expect(page).toHaveURL(/\/editor\/file_/);
+  const fileId = new URL(page.url()).pathname.split("/").at(-1);
+  if (!fileId) throw new Error("The design URL did not contain a file ID");
+
+  await page.getByRole("button", { name: "Copy design ID", exact: true }).click();
+  await expect(page.getByText(`Copied design ID: ${fileId}`)).toBeVisible();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(fileId);
+
+  await page.getByRole("button", { name: "Back to projects" }).click();
+  await page.getByRole("button", { name: "Actions for Untitled", exact: true }).click();
+  await page.getByRole("button", { name: "Copy design ID" }).click();
+
+  await expect(page.getByText(`Copied design ID: ${fileId}`)).toBeVisible();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(fileId);
+});
+
 test("creates a truly blank local design and draws a rectangle", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Recently viewed" })).toBeVisible();
   await page.getByRole("button", { name: "New design" }).first().click();
