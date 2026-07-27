@@ -89,7 +89,9 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: Figmaboy ${{ github.ref_name }}
           releaseBody: |
-            Figmaboy 0.2 adds offline design context for Codex. Reference a saved design by copied file ID or by name, and Codex can inspect its visual preview and native page layers even while Figmaboy is closed.
+            Figmaboy 0.3 adds projects for organizing related design files without disrupting existing standalone designs. Create a project from the home toolbar, open it, and create focused design files inside it; projects and standalone designs stay visible together in the local workspace.
+
+            This release also fixes a Linux desktop freeze when choosing an image for the canvas. Native file dialogs now run asynchronously instead of blocking the application event loop.
 
             Figmaboy is a local-first desktop interface design tool with a native MCP companion for Codex.
 

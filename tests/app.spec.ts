@@ -454,11 +454,24 @@ test("resizes a frame child in place and reparents it when dragged outside", asy
   await expect(canvas.locator("g[data-node-id] g[data-node-id]")).toHaveCount(0);
 });
 
-test("creates and opens a project", async ({ page }) => {
-  await page.getByTitle("New project").click();
+test("keeps projects and standalone designs together on the home screen", async ({ page }) => {
+  await page.getByRole("button", { name: "New design" }).first().click();
+  await page.getByRole("button", { name: "Back to projects" }).click();
+
+  await page.getByRole("button", { name: "New project", exact: true }).last().click();
   await page.getByPlaceholder("Project name").fill("Design system");
   await page.getByRole("button", { name: "Create project" }).click();
   await expect(page.getByRole("heading", { name: "Design system" })).toBeVisible();
   await page.getByRole("button", { name: "New design" }).first().click();
   await expect(page).toHaveURL(/\/editor\/file_/);
+  await page.getByRole("button", { name: "Back to projects" }).click();
+
+  await expect(page.getByRole("heading", { name: "Recently viewed" })).toBeVisible();
+  await expect(page.locator(".project-card").filter({ hasText: "Design system" })).toBeVisible();
+  await expect(page.locator(".file-card").filter({ hasText: "Drafts" })).toHaveCount(1);
+  await expect(page.locator(".file-card").filter({ hasText: "Design system" })).toHaveCount(1);
+
+  await page.locator(".project-card").filter({ hasText: "Design system" }).click();
+  await expect(page.getByRole("heading", { name: "Design system" })).toBeVisible();
+  await expect(page.locator(".file-card")).toHaveCount(1);
 });

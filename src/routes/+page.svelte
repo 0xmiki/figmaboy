@@ -174,6 +174,7 @@
   <main class="workspace">
     <header class="topbar">
       <div class="search"><Search size={17} /><input bind:value={query} placeholder="Search files and projects" aria-label="Search" />{#if query}<button onclick={() => (query = "")}><X size={14} /></button>{/if}</div>
+      <button class="secondary" onclick={() => (modal = { kind: "project", value: "" })}><FolderPlus size={16} /> New project</button>
       <button class="secondary" onclick={importPackage}><Import size={16} /> Import</button>
       <button class="primary" onclick={newDesign}><FilePlus2 size={16} /> New design</button>
     </header>
@@ -197,7 +198,7 @@
           <span>Opening your local workspace…</span>
         </div>
       {:else}
-        {#if section === "projects" || section === "trash"}
+        {#if section === "recents" || section === "projects" || section === "trash"}
           {#if visibleProjects.length > 0}
             <h2>{section === "trash" ? "Deleted projects" : "Projects"}</h2>
             <div class="project-grid">
@@ -227,7 +228,7 @@
                 </div>
               {/each}
             </div>
-          {:else if !(section === "projects" && visibleProjects.length)}
+          {:else if !((section === "recents" || section === "projects") && visibleProjects.length)}
             <div class="empty-state">
               <div class="empty-icon">{#if section === "trash"}<Trash2 size={30} />{:else}<FilePlus2 size={30} />{/if}</div>
               <h2>{section === "trash" ? "Trash is empty" : query ? "No matching designs" : "Nothing here yet"}</h2>
@@ -304,7 +305,7 @@
   .topbar { height: 66px; padding: 0 28px; border-bottom: 1px solid #303030; display: flex; align-items: center; gap: 10px; background: #1d1d1d; }
   .search { width: min(430px, 45vw); height: 36px; border: 1px solid #3a3a3a; background: #272727; border-radius: 8px; display: flex; align-items: center; padding: 0 10px; gap: 8px; color: #8e8e95; }.search:focus-within { border-color: #0d99ff; box-shadow: 0 0 0 1px #0d99ff; }
   .search input { flex: 1; min-width: 0; border: 0; outline: 0; color: white; background: transparent; font-size: 12px; }.search button { border: 0; background: transparent; color: #888; display: grid; padding: 2px; cursor: pointer; }
-  .topbar .secondary { margin-left: auto; }
+  .topbar .search { margin-right: auto; }
   .primary, .secondary { height: 36px; border-radius: 7px; padding: 0 13px; border: 0; display: inline-flex; gap: 7px; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
   .primary { background: var(--blue); color: white; }.primary:hover { background: var(--blue-hover); }.secondary { background: #2c2c2c; border: 1px solid #414141; }.secondary:hover { background: #363636; }.compact { height: 32px; }
   .content { flex: 1; overflow: auto; padding: 30px clamp(24px, 4vw, 56px) 80px; }
