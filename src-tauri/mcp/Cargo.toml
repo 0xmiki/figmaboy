@@ -1,6 +1,6 @@
 [package]
 name = "figmaboy-mcp"
-version = "0.2.0"
+version = "0.3.0"
 description = "MCP server for the Figmaboy desktop application"
 edition = "2021"
 publish = false

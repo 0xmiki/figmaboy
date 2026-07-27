@@ -25,6 +25,12 @@ Release assets include `SHA256SUMS` for verification. The Linux packages install
 
 macOS builds are currently ad-hoc signed rather than notarized, so the first launch may require approval in **System Settings → Privacy & Security**. Windows builds are not code-signed yet and may show a SmartScreen warning.
 
+## Projects and designs
+
+The local workspace supports both standalone design files and projects. Use **New project** from the home toolbar, give the project a name, then open it and choose **New design** to create files inside it. Projects and standalone designs remain visible together on the home screen, while the project view keeps its related files focused in one place.
+
+Existing standalone designs remain in **Drafts** and do not need to be migrated into a project.
+
 ## Codex design MCP
 
 Figmaboy includes a companion `figmaboy-mcp` stdio server. It can use saved designs as read-only Codex context while the desktop app is closed, or edit the design currently open in the app with live undo/redo and autosave.

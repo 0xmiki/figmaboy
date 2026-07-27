@@ -14,8 +14,8 @@ use std::{
 };
 #[cfg(target_os = "linux")]
 use tauri::Emitter;
-use tauri::{AppHandle, Manager, State};
-use tauri_plugin_dialog::DialogExt;
+use tauri::{AppHandle, Manager, Runtime, State};
+use tauri_plugin_dialog::{DialogExt, FileDialogBuilder, FilePath};
 use uuid::Uuid;
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipArchive, ZipWriter};
 
@@ -903,16 +903,37 @@ fn picked_path(path: tauri_plugin_dialog::FilePath) -> CommandResult<PathBuf> {
     path.into_path().map_err(|error| error.to_string())
 }
 
+async fn pick_file<R: Runtime>(dialog: FileDialogBuilder<R>) -> CommandResult<Option<FilePath>> {
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    dialog.pick_file(move |selection| {
+        let _ = sender.send(selection);
+    });
+    receiver
+        .await
+        .map_err(|_| "The file picker closed unexpectedly".to_string())
+}
+
+async fn save_file<R: Runtime>(dialog: FileDialogBuilder<R>) -> CommandResult<Option<FilePath>> {
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    dialog.save_file(move |selection| {
+        let _ = sender.send(selection);
+    });
+    receiver
+        .await
+        .map_err(|_| "The file picker closed unexpectedly".to_string())
+}
+
 #[tauri::command]
-fn import_image(
+async fn import_image(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> CommandResult<Option<ImportedAsset>> {
-    let Some(selection) = app
-        .dialog()
-        .file()
-        .add_filter("Images", &["png", "jpg", "jpeg", "webp"])
-        .blocking_pick_file()
+    let Some(selection) = pick_file(
+        app.dialog()
+            .file()
+            .add_filter("Images", &["png", "jpg", "jpeg", "webp"]),
+    )
+    .await?
     else {
         return Ok(None);
     };
@@ -1076,7 +1097,7 @@ fn safe_filename(name: &str) -> String {
 }
 
 #[tauri::command(rename_all = "camelCase")]
-fn export_render(
+async fn export_render(
     app: AppHandle,
     name: String,
     extension: String,
@@ -1086,12 +1107,13 @@ fn export_render(
         return Err("Unsupported export format".into());
     }
     let file_name = format!("{}.{}", safe_filename(&name), extension);
-    let Some(selection) = app
-        .dialog()
-        .file()
-        .add_filter(extension.to_uppercase(), &[&extension])
-        .set_file_name(&file_name)
-        .blocking_save_file()
+    let Some(selection) = save_file(
+        app.dialog()
+            .file()
+            .add_filter(extension.to_uppercase(), &[&extension])
+            .set_file_name(&file_name),
+    )
+    .await?
     else {
         return Ok(false);
     };
@@ -1204,7 +1226,7 @@ fn package_workspace(
 }
 
 #[tauri::command]
-fn export_package(
+async fn export_package(
     app: AppHandle,
     kind: String,
     id: String,
@@ -1213,20 +1235,23 @@ fn export_package(
     if kind != "project" && kind != "file" {
         return Err("Unsupported package kind".into());
     }
-    let connection = database(&state)?;
-    let (workspace, assets) = package_workspace(&connection, &kind, &id)?;
+    let (workspace, assets) = {
+        let connection = database(&state)?;
+        package_workspace(&connection, &kind, &id)?
+    };
     let suggested = workspace
         .projects
         .first()
         .map(|project| project.name.as_str())
         .or_else(|| workspace.files.first().map(|file| file.name.as_str()))
         .unwrap_or("Figmaboy design");
-    let Some(selection) = app
-        .dialog()
-        .file()
-        .add_filter("Figmaboy package", &["figmaboy"])
-        .set_file_name(format!("{}.figmaboy", safe_filename(suggested)))
-        .blocking_save_file()
+    let Some(selection) = save_file(
+        app.dialog()
+            .file()
+            .add_filter("Figmaboy package", &["figmaboy"])
+            .set_file_name(format!("{}.figmaboy", safe_filename(suggested))),
+    )
+    .await?
     else {
         return Ok(false);
     };
@@ -1297,12 +1322,13 @@ fn read_zip_entry(
 }
 
 #[tauri::command]
-fn import_package(app: AppHandle, state: State<'_, AppState>) -> CommandResult<bool> {
-    let Some(selection) = app
-        .dialog()
-        .file()
-        .add_filter("Figmaboy package", &["figmaboy"])
-        .blocking_pick_file()
+async fn import_package(app: AppHandle, state: State<'_, AppState>) -> CommandResult<bool> {
+    let Some(selection) = pick_file(
+        app.dialog()
+            .file()
+            .add_filter("Figmaboy package", &["figmaboy"]),
+    )
+    .await?
     else {
         return Ok(false);
     };
