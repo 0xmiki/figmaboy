@@ -73,6 +73,7 @@ export type CodexUsage = {
   cachedInputTokens: number;
   outputTokens: number;
   reasoningOutputTokens: number;
+  threadTotalTokens: number;
   modelContextWindow: number | null;
 };
 
@@ -264,12 +265,15 @@ export function reduceCodexEvent(
   if (method === "thread/tokenUsage/updated") {
     const tokenUsage = object(params.tokenUsage);
     const total = object(tokenUsage.total);
+    const last = object(tokenUsage.last);
+    const current = typeof last.totalTokens === "number" ? last : total;
     const usage: CodexUsage = {
-      totalTokens: Number(total.totalTokens ?? 0),
-      inputTokens: Number(total.inputTokens ?? 0),
-      cachedInputTokens: Number(total.cachedInputTokens ?? 0),
-      outputTokens: Number(total.outputTokens ?? 0),
-      reasoningOutputTokens: Number(total.reasoningOutputTokens ?? 0),
+      totalTokens: Number(current.totalTokens ?? 0),
+      inputTokens: Number(current.inputTokens ?? 0),
+      cachedInputTokens: Number(current.cachedInputTokens ?? 0),
+      outputTokens: Number(current.outputTokens ?? 0),
+      reasoningOutputTokens: Number(current.reasoningOutputTokens ?? 0),
+      threadTotalTokens: Number(total.totalTokens ?? current.totalTokens ?? 0),
       modelContextWindow: typeof tokenUsage.modelContextWindow === "number" ? tokenUsage.modelContextWindow : null,
     };
     return { ...timeline, usage };

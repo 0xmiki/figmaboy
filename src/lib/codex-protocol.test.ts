@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildDisplayTimelineRows, emptyTimeline, groupToolItems, reduceCodexEvent, resolveCodexSelection, serviceTierOptions, timelineFromThread, uniqueEnabledSkills, type CodexModel, type CodexTimeline } from "$lib/codex-protocol";
+import { buildDisplayTimelineRows, contextPercentage, emptyTimeline, groupToolItems, reduceCodexEvent, resolveCodexSelection, serviceTierOptions, timelineFromThread, uniqueEnabledSkills, type CodexModel, type CodexTimeline } from "$lib/codex-protocol";
 
 const empty = (): CodexTimeline => emptyTimeline();
 
@@ -45,6 +45,36 @@ describe("Codex app-server timeline", () => {
       params: { threadId: "another", itemId: "one", delta: "!" },
     }, "thread");
     expect(unchanged).toBe(state);
+  });
+
+  it("uses the latest request for context while retaining cumulative thread usage", () => {
+    const state = reduceCodexEvent(empty(), {
+      method: "thread/tokenUsage/updated",
+      params: {
+        threadId: "thread",
+        tokenUsage: {
+          total: { totalTokens: 1_015_449, inputTokens: 1_006_691, cachedInputTokens: 931_072, outputTokens: 8_758, reasoningOutputTokens: 3_014 },
+          last: { totalTokens: 78_171, inputTokens: 77_963, cachedInputTokens: 75_136, outputTokens: 208, reasoningOutputTokens: 104 },
+          modelContextWindow: 828_400,
+        },
+      },
+    }, "thread");
+    expect(state.usage).toMatchObject({
+      totalTokens: 78_171,
+      inputTokens: 77_963,
+      cachedInputTokens: 75_136,
+      outputTokens: 208,
+      threadTotalTokens: 1_015_449,
+      modelContextWindow: 828_400,
+    });
+    expect(contextPercentage(state.usage)).toBeCloseTo(9.436, 3);
+
+    const legacy = reduceCodexEvent(empty(), {
+      method: "thread/tokenUsage/updated",
+      params: { threadId: "thread", tokenUsage: { total: { totalTokens: 50_000, inputTokens: 49_000, cachedInputTokens: 40_000, outputTokens: 1_000 }, modelContextWindow: 100_000 } },
+    }, "thread");
+    expect(legacy.usage).toMatchObject({ totalTokens: 50_000, threadTotalTokens: 50_000 });
+    expect(contextPercentage(legacy.usage)).toBe(50);
   });
 
   it("heals unsupported effort and tier values when the model changes", () => {

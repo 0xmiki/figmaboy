@@ -685,7 +685,7 @@
     pinnedToBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 40;
   }
 
-  function scrollToLatest(smooth = true) {
+  function scrollToLatest(smooth = false) {
     scroller?.scrollTo({ top: scroller.scrollHeight, behavior: smooth ? "smooth" : "auto" });
     pinnedToBottom = true;
   }
@@ -786,7 +786,7 @@
           {:else if row.item.type === "userMessage"}
             <div class="message user"><div>{inputText(row.item.content)}</div></div>
           {:else if row.item.type === "agentMessage"}
-            <article class="message assistant"><div class="assistant-body"><MarkdownText text={String(row.item.text ?? "")} />{#if row.item.text}<button class="copy-message" title="Copy response" onclick={() => copyMessage(row.item.id, String(row.item.text))}>{#if copiedMessage === row.item.id}<Check size={13} />{:else}<Copy size={13} />{/if}</button>{/if}{#if terminalAgent(row.item) && turnMeta(row.item)?.status !== "inProgress"}<div class="turn-meta">{#if timeline.usage}<span>{formatTokenCount(timeline.usage.totalTokens)} tokens</span>{/if}<button title="Undo the last Figmaboy change" onclick={() => runCommand(COMPOSER_COMMANDS.find((command) => command.action === "undo")!)}><Undo2 size={11} />Undo last change</button></div>{/if}</div></article>
+            <article class="message assistant"><div class="assistant-body"><MarkdownText text={String(row.item.text ?? "")} />{#if row.item.text}<button class="copy-message" title="Copy response" onclick={() => copyMessage(row.item.id, String(row.item.text))}>{#if copiedMessage === row.item.id}<Check size={13} />{:else}<Copy size={13} />{/if}</button>{/if}{#if terminalAgent(row.item) && turnMeta(row.item)?.status !== "inProgress"}<div class="turn-meta">{#if timeline.usage}<span>{formatTokenCount(timeline.usage.totalTokens)} context tokens</span>{/if}<button title="Undo the last Figmaboy change" onclick={() => runCommand(COMPOSER_COMMANDS.find((command) => command.action === "undo")!)}><Undo2 size={11} />Undo last change</button></div>{/if}</div></article>
           {:else if row.item.type === "reasoning" && itemText(row.item)}
             <details class="reasoning" open={working}><summary><LoaderCircle class={working ? "spin" : undefined} size={12} /><span>{working ? "Thinking" : "Reasoning"}</span><ChevronDown size={11} /></summary><p>{itemText(row.item)}</p></details>
           {:else if row.item.type === "plan" && itemText(row.item)}

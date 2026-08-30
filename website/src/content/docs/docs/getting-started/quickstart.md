@@ -11,7 +11,7 @@ After completing [Install and connect](../install/), launch Figmaboy and choose 
 
 ## 2. Open Codex inside the editor
 
-Press <kbd>Ctrl</kbd> + <kbd>`</kbd> or select the sparkle button in the bottom toolbar. The Codex sidebar connects to `codex app-server`, loads chats saved for this design, and keeps the composer beside the canvas.
+Press <kbd>Ctrl</kbd> + <kbd>`</kbd> or select the chat button in the bottom toolbar. The Codex sidebar connects to `codex app-server`, loads chats saved for this design, and keeps the composer beside the canvas.
 
 Use the searchable model control at the bottom of the composer to choose a model. The adjacent settings control shows only reasoning levels and service tiers supported by that model. Choices and unsent drafts persist for each design.
 

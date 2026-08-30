@@ -5,21 +5,21 @@ import "../styles/download.css";
 const base = `${import.meta.env.BASE_URL.replace(/\/$/, "")}/`;
 const github = "https://github.com/0xmiki/figmaboy";
 const docs = `${base}docs/`;
-const releaseTag = "v0.2.0";
+const releaseTag = "v0.4.0";
 const releaseBase = `${github}/releases/download/${releaseTag}`;
 const asset = (name: string) => `${releaseBase}/${name}`;
 
 const assets = {
-  macArmDmg: asset("Figmaboy_0.2.0_darwin_aarch64.dmg"),
-  macIntelDmg: asset("Figmaboy_0.2.0_darwin_x64.dmg"),
+  macArmDmg: asset("Figmaboy_0.4.0_darwin_aarch64.dmg"),
+  macIntelDmg: asset("Figmaboy_0.4.0_darwin_x64.dmg"),
   macArmMcp: asset("figmaboy-mcp-aarch64-apple-darwin"),
   macIntelMcp: asset("figmaboy-mcp-x86_64-apple-darwin"),
-  windowsNsis: asset("Figmaboy_0.2.0_windows_x64.exe"),
-  windowsMsi: asset("Figmaboy_0.2.0_windows_x64.msi"),
+  windowsNsis: asset("Figmaboy_0.4.0_windows_x64.exe"),
+  windowsMsi: asset("Figmaboy_0.4.0_windows_x64.msi"),
   windowsMcp: asset("figmaboy-mcp-x86_64-pc-windows-msvc.exe"),
-  linuxAppImage: asset("Figmaboy_0.2.0_linux_amd64.AppImage"),
-  linuxDeb: asset("Figmaboy_0.2.0_linux_amd64.deb"),
-  linuxRpm: asset("Figmaboy_0.2.0_linux_x86_64.rpm"),
+  linuxAppImage: asset("Figmaboy_0.4.0_linux_amd64.AppImage"),
+  linuxDeb: asset("Figmaboy_0.4.0_linux_amd64.deb"),
+  linuxRpm: asset("Figmaboy_0.4.0_linux_x86_64.rpm"),
   linuxMcp: asset("figmaboy-mcp-x86_64-unknown-linux-gnu"),
 };
 ---
@@ -49,7 +49,7 @@ const assets = {
           <a href={`${base}#compare`}>Compare</a>
           <a href={docs}>Docs</a>
         </nav>
-        <span class="download-version"><span class="signal"></span><span data-version>v0.2.0</span>&nbsp; LATEST</span>
+        <span class="download-version"><span class="signal"></span><span data-version>v0.4.0</span>&nbsp; LATEST</span>
       </div>
     </header>
 
@@ -94,7 +94,7 @@ const assets = {
 
       <section class="release-band" aria-label="Latest release information">
         <div class="wrap release-band-grid">
-          <div><span>RELEASE</span><strong data-version>v0.2.0</strong></div>
+          <div><span>RELEASE</span><strong data-version>v0.4.0</strong></div>
           <div><span>STATUS</span><strong><i></i> LATEST</strong></div>
           <div><span>PLATFORMS</span><strong>03</strong></div>
           <div><span>COMPANION</span><strong>FIGMABOY–MCP</strong></div>
@@ -105,7 +105,7 @@ const assets = {
         <div class="wrap">
           <header class="download-section-head">
             <div><p class="eyebrow">02&nbsp; / &nbsp;All platforms</p><h2 class="display" id="all-downloads-title">Pick the build<br />that fits.</h2></div>
-            <p>Version <span data-version>v0.3.0</span>. Installer packages include the MCP companion. AppImage users should also download the standalone Linux MCP binary.</p>
+            <p>Version <span data-version>v0.4.0</span>. Installer packages include the MCP companion. AppImage users should also download the standalone Linux MCP binary.</p>
           </header>
 
           <div class="platform-grid">
@@ -220,7 +220,7 @@ const assets = {
             if (matchedAsset) element.href = matchedAsset.browser_download_url;
           }
         } catch {
-          // Static v0.2.0 links remain usable when GitHub's API is unavailable.
+          // Static v0.4.0 links remain usable when GitHub's API is unavailable.
         }
       }
 

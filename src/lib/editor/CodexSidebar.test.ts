@@ -145,6 +145,40 @@ describe("Codex sidebar diagnostics", () => {
     await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("codex_request", expect.objectContaining({ method: "turn/steer", params: expect.objectContaining({ expectedTurnId: "turn" }) })));
   });
 
+  it("shows current context separately from cumulative thread usage", async () => {
+    render(CodexSidebar, {
+      workspaceId: "file",
+      pageId: "page-1",
+      fileName: "Untitled",
+      visible: true,
+      onAttentionChange: () => {},
+      onClose: () => {},
+    });
+    const textbox = await screen.findByRole("textbox", { name: "Message Codex" });
+    await screen.findByRole("button", { name: /GPT Test/ });
+    await fireEvent.input(textbox, { target: { value: "Rate this design" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("codex_request", expect.objectContaining({ method: "turn/start" })));
+    eventHandlers.get("codex-event")?.({
+      payload: {
+        method: "thread/tokenUsage/updated",
+        params: {
+          threadId: "thread",
+          turnId: "turn",
+          tokenUsage: {
+            total: { totalTokens: 1_015_449, inputTokens: 1_006_691, cachedInputTokens: 931_072, outputTokens: 8_758, reasoningOutputTokens: 3_014 },
+            last: { totalTokens: 78_171, inputTokens: 77_963, cachedInputTokens: 75_136, outputTokens: 208, reasoningOutputTokens: 104 },
+            modelContextWindow: 828_400,
+          },
+        },
+      },
+    });
+    const meter = await screen.findByRole("button", { name: "Context window 9% used" });
+    await fireEvent.click(meter);
+    expect(screen.getByText("78k of 828k tokens")).toBeInTheDocument();
+    expect(screen.getByText("1.0m tokens")).toBeInTheDocument();
+  });
+
   it("shows each skill name once without descriptions", async () => {
     skillFixture.push(
       { name: "agents-sdk", path: "/one", description: "First long description" },

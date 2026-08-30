@@ -7,7 +7,7 @@ description: Install Figmaboy, open its built-in Codex chat, and let Codex handl
 
 ## Let Codex handle the MCP setup
 
-The chat inside Figmaboy needs no MCP registration. Install the [Codex CLI](https://developers.openai.com/codex/cli/), sign in once, open a design, and select the sparkle button. Figmaboy starts the bundled MCP server for that chat.
+The chat inside Figmaboy needs no MCP registration. Install the [Codex CLI](https://developers.openai.com/codex/cli/), sign in once, open a design, and select the chat button. Figmaboy starts the bundled MCP server for that chat.
 
 If you also want Figmaboy tools in Codex CLI, the IDE extension, or the ChatGPT desktop app, ask Codex to set them up:
 

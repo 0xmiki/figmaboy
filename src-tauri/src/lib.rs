@@ -39,8 +39,9 @@ struct NativeTouchpadZoom {
 }
 
 #[cfg(target_os = "linux")]
-fn install_linux_touchpad_zoom(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+fn configure_linux_webview(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     use gtk::prelude::{EventControllerExt, GestureExt};
+    use webkit2gtk::{SettingsExt, WebViewExt};
 
     let window = app
         .get_webview_window("main")
@@ -48,6 +49,13 @@ fn install_linux_touchpad_zoom(app: &tauri::App) -> Result<(), Box<dyn std::erro
     let event_window = window.clone();
     window.with_webview(move |platform_webview| {
         let webview = platform_webview.inner();
+        // WebKitGTK enables animated scrolling for the entire webview by
+        // default, including nested overflow containers such as chat, menus,
+        // and layer lists. Desktop editor scrolling should track the wheel or
+        // touchpad directly instead of easing after input has stopped.
+        if let Some(settings) = webview.settings() {
+            settings.set_enable_smooth_scrolling(false);
+        }
         let gesture = gtk::GestureZoom::new(&webview);
         gesture.set_propagation_phase(gtk::PropagationPhase::Capture);
 
@@ -1484,7 +1492,7 @@ pub fn run() {
                 }
             });
             #[cfg(target_os = "linux")]
-            install_linux_touchpad_zoom(app)?;
+            configure_linux_webview(app)?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

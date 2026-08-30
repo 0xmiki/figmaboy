@@ -10,6 +10,8 @@ Draw and style native layers by hand, or ask Codex to work on the open document.
 [![Latest release](https://img.shields.io/github/v/release/0xmiki/figmaboy)](https://github.com/0xmiki/figmaboy/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
+![Figmaboy showing Codex building and reviewing the editable Figmaboy landing page and documentation](docs/assets/figmaboy-codex-workflow.png)
+
 ## Download
 
 Choose an installer on the [Figmaboy download page](https://0xmiki.github.io/figmaboy/download/), or browse the files on [GitHub Releases](https://github.com/0xmiki/figmaboy/releases/latest):
@@ -106,7 +108,7 @@ Set `FIGMABOY_DB_PATH` to override the saved workspace database path, primarily 
 
 ### Use the integrated Codex sidebar
 
-Install the Codex CLI and sign in once. Open a design, then select the sparkle button in the bottom toolbar. Figmaboy starts the documented `codex app-server` protocol. It does not embed or parse the terminal interface.
+Install the Codex CLI and sign in once. Open a design, then select the chat button in the bottom toolbar. Figmaboy starts the documented `codex app-server` protocol. It does not embed or parse the terminal interface.
 
 Codex stores chat history in a separate local working directory for each design. The sidebar includes model and reasoning controls, saved drafts, image attachments, steering, approvals, context usage, pinned chats, and ChatGPT sign-in.
 
