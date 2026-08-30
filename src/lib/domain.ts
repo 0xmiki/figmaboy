@@ -337,7 +337,7 @@ export function defaultNode(type: NodeType, x: number, y: number, overrides: Par
     } as ImageNode;
   }
   if (type === "icon") {
-    return { ...base, type, fill: solid("#ffffff"), iconName: "sparkles", ...overrides } as IconNode;
+    return { ...base, type, fill: solid("#ffffff"), iconName: "sparkle", ...overrides } as IconNode;
   }
   return { ...base, type, points: type === "star" ? 5 : type === "polygon" ? 6 : undefined, ...overrides } as ShapeNode;
 }

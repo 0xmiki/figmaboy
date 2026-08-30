@@ -8,15 +8,15 @@
 - `document-validation.ts` is the trust boundary for persisted, imported, clipboard, RPC-replaced, and page-switched documents.
 - The repository persists only versioned `PageDocument` values and keeps a last-known-good browser backup.
 
-## Severity-ranked findings and disposition
+## Findings
 
-1. **Data loss / corruption:** autosave could serialize an in-progress drag, draw draft, or Alt-duplicate. Pointer interactions now pause persistence and only advance the change token at commit.
-2. **Broken state:** Escape, pointer cancellation, focus loss, tool changes, zoom changes, and removed targets could leave gestures alive. All paths now converge on one cancellation/reset routine.
-3. **Broken history:** viewport state was embedded in content undo, no-op commands created entries, and repeated nudges created one entry per key event. History now preserves the live viewport, ignores no-ops, and groups gestures/nudges by intention.
-4. **Document corruption:** browser state, imports, clipboard JSON, and external document replacement trusted arbitrary shapes and references. Documents are now normalized, cycles/references repaired, invalid nodes removed, and package assets remapped on collision.
-5. **Surprising geometry:** group/ungroup, layer drag/drop, alignment, and rotation used local coordinates as though every parent were unrotated. These commands now convert through world/parent matrices.
-6. **Interaction friction:** multi-selection collapsed at pointer-down, tiny jitter moved objects, thin lines were hard to hit, repeated paste overlapped, and marquee rules were ambiguous. Selection is canonical, movement has a screen-space threshold, lines have tolerant hit areas/endpoints, paste cascades, and marquee direction has defined containment behavior.
-7. **Polish:** cursors, oriented single-selection handles, pointer-centered zoom, 100% zoom, anchor snapping, and focus isolation now communicate and preserve the intended operation.
+1. Autosave could capture an active drag, drawing draft, or Alt-duplicate. Pointer interactions now pause persistence and advance the change token only when they commit.
+2. Escape, pointer cancellation, focus loss, tool changes, zoom changes, and removed targets could leave a gesture active. They now use one cancellation and reset routine.
+3. Viewport state lived in content history, no-op commands created entries, and repeated nudges created one entry per key event. History now keeps the live viewport, ignores no-ops, and groups each gesture or nudge run.
+4. Browser state, imports, clipboard JSON, and external replacements trusted arbitrary objects and references. Validation now repairs cycles and references, removes invalid nodes, and remaps colliding asset IDs.
+5. Grouping, layer drag and drop, alignment, and rotation treated local coordinates as if every parent had zero rotation. These commands now convert through world and parent matrices.
+6. Multi-selection collapsed on pointer down, small pointer jitter moved objects, thin lines were hard to hit, repeated paste overlapped, and marquee rules were unclear. Selection is now canonical. Movement has a screen-space threshold, lines have larger hit targets, paste offsets each copy, and marquee direction controls containment.
+7. Cursors, oriented selection handles, pointer-centered zoom, 100% zoom, anchor snapping, and focus isolation now match the active operation.
 
 ## Behavior decisions
 

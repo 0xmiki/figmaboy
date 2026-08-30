@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { defaultNode, emptyDocument } from "$lib/domain";
-import { canvasSelectionTarget, isCanvasNodeVisible } from "$lib/editor/canvas-selection";
+import { canvasSelectionTarget, isCanvasNodeSelectable, isCanvasNodeVisible } from "$lib/editor/canvas-selection";
 
 function nestedDocument() {
   const document = emptyDocument();
@@ -15,10 +15,11 @@ function nestedDocument() {
 }
 
 describe("canvas selection depth", () => {
-  it("selects a frame first, then drills into the hit child", () => {
+  it("keeps an ordinary click on the parent and descends one level on double-click", () => {
     const { document, frame, first } = nestedDocument();
     expect(canvasSelectionTarget(document, first.id, [])).toBe(frame.id);
-    expect(canvasSelectionTarget(document, first.id, [frame.id])).toBe(first.id);
+    expect(canvasSelectionTarget(document, first.id, [frame.id])).toBe(frame.id);
+    expect(canvasSelectionTarget(document, first.id, [frame.id], false, true)).toBe(first.id);
   });
 
   it("keeps sibling selection inside an entered frame", () => {
@@ -26,7 +27,7 @@ describe("canvas selection depth", () => {
     expect(canvasSelectionTarget(document, second.id, [first.id])).toBe(second.id);
   });
 
-  it("skips nested frames on the second click but preserves groups as boundaries", () => {
+  it("walks through every nested frame and group one level at a time", () => {
     const { document, frame } = nestedDocument();
     const nestedFrame = defaultNode("frame", 20, 20, { width: 300, height: 240, parentId: frame.id });
     const group = defaultNode("group", 30, 30, { width: 160, height: 80, parentId: nestedFrame.id });
@@ -38,11 +39,12 @@ describe("canvas selection depth", () => {
     Object.assign(document.nodes, { [nestedFrame.id]: nestedFrame, [group.id]: group, [leaf.id]: leaf });
 
     expect(canvasSelectionTarget(document, leaf.id, [])).toBe(frame.id);
-    expect(canvasSelectionTarget(document, leaf.id, [frame.id])).toBe(group.id);
-    expect(canvasSelectionTarget(document, leaf.id, [group.id])).toBe(leaf.id);
+    expect(canvasSelectionTarget(document, leaf.id, [frame.id], false, true)).toBe(nestedFrame.id);
+    expect(canvasSelectionTarget(document, leaf.id, [nestedFrame.id], false, true)).toBe(group.id);
+    expect(canvasSelectionTarget(document, leaf.id, [group.id], false, true)).toBe(leaf.id);
   });
 
-  it("jumps directly to a leaf when nested frames contain no group", () => {
+  it("does not skip a nested frame when its child is a leaf", () => {
     const { document, frame } = nestedDocument();
     const nestedFrame = defaultNode("frame", 20, 20, { width: 300, height: 240, parentId: frame.id });
     const leaf = defaultNode("rectangle", 30, 30, { width: 120, height: 60, parentId: nestedFrame.id });
@@ -51,7 +53,8 @@ describe("canvas selection depth", () => {
     nestedFrame.childIds = [leaf.id];
     Object.assign(document.nodes, { [nestedFrame.id]: nestedFrame, [leaf.id]: leaf });
 
-    expect(canvasSelectionTarget(document, leaf.id, [frame.id])).toBe(leaf.id);
+    expect(canvasSelectionTarget(document, leaf.id, [frame.id], false, true)).toBe(nestedFrame.id);
+    expect(canvasSelectionTarget(document, leaf.id, [nestedFrame.id], false, true)).toBe(leaf.id);
   });
 
   it("stays inside an entered frame when moving between sibling button groups", () => {
@@ -70,11 +73,11 @@ describe("canvas selection depth", () => {
     });
 
     expect(canvasSelectionTarget(document, firstLabel.id, [])).toBe(frame.id);
-    expect(canvasSelectionTarget(document, firstLabel.id, [frame.id])).toBe(firstButton.id);
+    expect(canvasSelectionTarget(document, firstLabel.id, [frame.id], false, true)).toBe(firstButton.id);
     expect(canvasSelectionTarget(document, secondLabel.id, [firstButton.id])).toBe(secondButton.id);
   });
 
-  it("preserves layer-selection intent when moving into a different frame", () => {
+  it("returns to the top-level parent when moving into a different frame", () => {
     const { document, frame, first } = nestedDocument();
     const otherFrame = defaultNode("frame", 600, 0, { width: 400, height: 300 });
     const otherButton = defaultNode("group", 30, 30, { width: 140, height: 52, parentId: otherFrame.id, name: "Other button" });
@@ -85,21 +88,18 @@ describe("canvas selection depth", () => {
     document.rootIds.push(otherFrame.id);
     Object.assign(document.nodes, { [otherFrame.id]: otherFrame, [otherButton.id]: otherButton, [otherLabel.id]: otherLabel });
 
-    // No active layer means the outer frame is the first selection boundary.
     expect(canvasSelectionTarget(document, otherLabel.id, [])).toBe(otherFrame.id);
-    // Once a nested child is active elsewhere, the next click targets the
-    // meaningful layer directly instead of bouncing through the other frame.
     expect(first.parentId).toBe(frame.id);
-    expect(canvasSelectionTarget(document, otherLabel.id, [first.id])).toBe(otherButton.id);
-    // Clearing selection restores frame-first behavior.
+    expect(canvasSelectionTarget(document, otherLabel.id, [first.id])).toBe(otherFrame.id);
     expect(canvasSelectionTarget(document, otherLabel.id, [])).toBe(otherFrame.id);
   });
 
-  it("skips a locked frame but still selects its children", () => {
+  it("treats a locked parent as locking its descendants on the canvas", () => {
     const { document, frame, first } = nestedDocument();
     frame.locked = true;
-    expect(canvasSelectionTarget(document, first.id, [])).toBe(first.id);
+    expect(canvasSelectionTarget(document, first.id, [])).toBeNull();
     expect(canvasSelectionTarget(document, frame.id, [])).toBeNull();
+    expect(isCanvasNodeSelectable(document, first.id)).toBe(false);
   });
 
   it("supports explicit deep selection and rejects hidden subtrees", () => {

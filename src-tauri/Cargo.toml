@@ -1,6 +1,6 @@
 [package]
 name = "figmaboy"
-version = "0.3.0"
+version = "0.4.0"
 description = "A local-first desktop interface design tool"
 authors = ["0xmiki"]
 edition = "2021"
@@ -34,13 +34,12 @@ serde_json = "1"
 base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
-portable-pty = "0.9"
 rusqlite = { version = "0.32", features = ["bundled"] }
 sha2 = "0.10"
 thiserror = "2"
 uuid = { version = "1", features = ["v4", "serde"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
-tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
+tokio = { version = "1", features = ["io-util", "macros", "net", "process", "rt-multi-thread", "sync", "time"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"

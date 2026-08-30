@@ -3,7 +3,7 @@ title: Review and refine
 description: Use screenshots, selections, geometry, undo, and scoped prompts to improve a Figmaboy design safely.
 ---
 
-Treat a Codex-generated screen as a design pass, not an unquestionable final answer. Visual review catches problems that a valid layer tree cannot.
+A valid layer tree can still look wrong. Review every Codex-generated screen before accepting it.
 
 ## Review the complete frame
 
@@ -27,13 +27,13 @@ Name the target and preserve everything else:
 
 > In the `Pricing cards` group only, align the price baselines, make the middle card the clear recommended state, and preserve all copy and outer section geometry. Review the full page afterward.
 
-Clear layer names make this much safer. If the tree contains names like `Group 24`, ask Codex to rename and organize it before a long series of refinements.
+Clear layer names reduce accidental edits. If the tree contains names such as `Group 24`, ask Codex to rename and organize it before further work.
 
 ## Use history
 
 One atomic `operations_apply` batch becomes one undo step. Use the normal keyboard shortcut or ask Codex to call `history_undo`. `history_redo` restores the undone MCP mutation.
 
-If you edit manually while Codex is working, change-token validation can reject its stale operation. That is expected protection: Codex should inspect the document again and reapply only the still-needed edits.
+If you edit manually while Codex is working, change-token validation may reject its stale operation. Codex should inspect the document again and apply only the edits that are still needed.
 
 ## Save the accepted state
 

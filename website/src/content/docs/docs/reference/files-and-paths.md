@@ -15,6 +15,8 @@ The workspace database is `figmaboy.sqlite3`. The live bridge discovery file is 
 
 ## Installed MCP executable
 
+Most users should let [Codex connect Figmaboy](../../getting-started/connect-codex/). Use this reference when checking a registration by hand.
+
 Linux package installs normally expose the executable on `PATH`:
 
 ```bash
@@ -34,7 +36,7 @@ Installer bundles and standalone installs use these stable paths:
 | Windows MSI (typical system install) | `%ProgramFiles%\Figmaboy\figmaboy-mcp.exe` |
 | Windows standalone fallback | `%LOCALAPPDATA%\Figmaboy\bin\figmaboy-mcp.exe` |
 
-The path registered with `codex mcp add` must keep pointing to the executable. Moving or deleting it breaks future Codex sessions until the entry is replaced.
+The path saved by `codex mcp add` must keep pointing to the executable. Moving or deleting it breaks future Codex sessions until you replace the entry.
 
 ## Repository development paths
 
@@ -47,7 +49,8 @@ When building from source:
 | Built release server | `src-tauri/target/release/figmaboy-mcp` |
 | Staged Tauri sidecars | `src-tauri/binaries/figmaboy-mcp-<target-triple>` |
 
-Build and register a development server:
+<details>
+<summary>Build and register a development server</summary>
 
 ```bash
 nix-shell --run 'cargo build --locked --release --manifest-path src-tauri/mcp/Cargo.toml'
@@ -56,6 +59,8 @@ codex mcp add figmaboy -- "$(pwd)/src-tauri/target/release/figmaboy-mcp"
 ```
 
 Start a new Codex session after switching between installed and repository binaries.
+
+</details>
 
 ## Environment overrides
 

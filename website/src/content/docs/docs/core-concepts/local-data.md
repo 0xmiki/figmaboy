@@ -29,7 +29,7 @@ Do not edit the database manually. Copy all three SQLite files together when tak
 
 Document changes are debounced and persisted locally. The editor shows the current save state near the file name. `document_save` lets Codex request an immediate save at the end of a task.
 
-Each page has a revision number. Offline context reports the latest saved revision—not unsaved in-memory changes that exist only in an open editor.
+Each page has a revision number. Offline context reports the latest saved revision. It cannot see unsaved changes that exist only in the open editor.
 
 ## MCP overrides
 
@@ -42,4 +42,4 @@ Set these variables for the `figmaboy-mcp` process only. Most installations shou
 
 ## Privacy boundary
 
-Saved-design lookup is a local read-only database operation. Live access is restricted to `127.0.0.1` and authenticated with a random token. Codex still has the filesystem and tool permissions of the environment in which you launch it, so review your normal Codex sandbox and approval settings separately.
+Saved-design lookup reads the local database without writing to it. Live access binds to `127.0.0.1` and requires a random token. Codex still has the filesystem and tool permissions granted by its own sandbox and approval settings.

@@ -3,13 +3,16 @@ title: Codex and the MCP
 description: Learn how Codex discovers Figmaboy tools and how offline reads differ from live editor mutations.
 ---
 
-`figmaboy-mcp` is a separate local process that Codex launches over stdio. The desktop app does not launch the MCP process itself.
+Figmaboy starts `codex app-server` when you open its Codex sidebar. App-server launches the bundled `figmaboy-mcp` process over stdio using a process-local configuration override, so the integrated chat does not modify your global Codex configuration.
 
 ## Two data paths
 
 ```text
-Codex
-  │ JSON-RPC over stdio
+Figmaboy sidebar
+  │ app-server protocol over stdio
+  ▼
+Codex app-server
+  │ MCP over stdio
   ▼
 figmaboy-mcp
   ├── read-only SQLite ───────────► saved pages, layers, previews
@@ -30,13 +33,13 @@ figmaboy-mcp
 - Asset metadata.
 - A visual page preview when available.
 
-The MCP never writes to SQLite. Offline context is therefore safe to use even when the desktop application is closed.
+The MCP never writes to SQLite. Offline context works while the desktop application is closed.
 
 ### Live editor tools
 
 When Figmaboy is open, it starts a loopback-only bridge on a random port. A discovery file contains that port, a random authentication token, and the desktop process ID. Live MCP tools connect to that bridge.
 
-Mutations are executed by the editor, where they receive the same validation, history, rendering, revision checks, and autosave behavior as manual edits.
+The editor applies each mutation. It uses the same validation, history, rendering, revision checks, and autosave path as a manual edit.
 
 ## Optimistic concurrency
 
@@ -44,7 +47,9 @@ Mutations are executed by the editor, where they receive the same validation, hi
 
 ## Tool discovery
 
-Codex sees the registered Figmaboy tools when a session starts, but it selects tools based on your request. In the first prompt, explicitly say **Figmaboy** and identify the currently open page or a saved design by name or copied ID. Mentioning Figmaboy is not a special command; it simply removes ambiguity about which workspace Codex should use.
+The integrated sidebar tells each new thread which Figmaboy file is open. External Codex clients need the MCP registered in Codex configuration. The [Codex-led setup](../../getting-started/connect-codex/) handles that registration.
+
+The model picker comes from app-server's paginated `model/list` catalog. Figmaboy validates reasoning and service-tier choices against the selected model, then uses the effective values returned by `thread/start` and `thread/resume`. This prevents the composer from displaying a stale model configuration after switching chats.
 
 At the start of a design task, Codex should inspect:
 

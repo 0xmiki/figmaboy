@@ -5,6 +5,17 @@ description: Diagnose MCP registration, offline context, live editor access, Lin
 
 ## Codex does not show Figmaboy tools
 
+Ask Codex to repair the connection:
+
+```text
+Open https://raw.githubusercontent.com/0xmiki/figmaboy/main/docs/INSTALL_FIGMABOY_MCP.md and follow it to install or repair the Figmaboy MCP for this computer. Keep any working custom registration.
+```
+
+If Figmaboy is open, run `/install-mcp` in its chat. Start a new external Codex session after setup.
+
+<details>
+<summary>Check or repair the registration manually</summary>
+
 Check the registration and the exact executable Codex will launch:
 
 ```bash
@@ -20,15 +31,22 @@ codex mcp add figmaboy -- "/absolute/path/to/figmaboy-mcp"
 
 Start a new Codex session after changing MCP configuration.
 
+</details>
+
 ## `figmaboy-mcp` is not found
 
-Linux package users can check:
+Ask Codex to follow the installation prompt above. It will look for the bundled executable first and download a checksum-verified release binary only when needed.
+
+<details>
+<summary>Check the Linux path manually</summary>
 
 ```bash
 command -v figmaboy-mcp
 ```
 
-AppImage users should install the standalone release binary at a stable path. macOS DMG and Windows installer users should first locate the MCP executable bundled with the installed app; a standalone release binary is available as a fallback. Follow the complete [Install and connect](../../getting-started/install/) steps for your platform.
+AppImage users need the standalone release binary at a stable path. macOS DMG and Windows installers bundle the executable with the app. See [Manual MCP installation](../../getting-started/install/#manual-mcp-installation) for platform paths.
+
+</details>
 
 ## No saved workspace was found
 
@@ -56,7 +74,7 @@ If `FIGMABOY_BRIDGE_FILE` is set, confirm it points to the current discovery fil
 
 ## An edit was rejected because the document changed
 
-This is optimistic-concurrency protection. You or another operation changed the page after Codex inspected it. Ask Codex to fetch `document_get` again and apply a new scoped operation using the latest change token.
+You or another operation changed the page after Codex inspected it. Ask Codex to fetch `document_get` again and apply a scoped operation with the latest change token.
 
 ## Linux cannot load `libgdk-3.so.0`
 

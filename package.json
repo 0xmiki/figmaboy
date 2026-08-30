@@ -1,6 +1,6 @@
 {
   "name": "figmaboy",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "A local-first desktop interface design tool",
   "type": "module",
   "scripts": {
@@ -23,13 +23,11 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@iconify-json/lucide": "^1.2.116",
+    "@iconify-json/ph": "^1.2.2",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-opener": "^2",
-    "@xterm/addon-fit": "^0.11.0",
-    "@xterm/xterm": "^6.0.0",
     "immer": "^11.1.11",
-    "lucide-svelte": "^1.0.1"
+    "phosphor-svelte": "^3.1.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",

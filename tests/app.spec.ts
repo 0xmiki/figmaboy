@@ -6,6 +6,102 @@ test.beforeEach(async ({ page }) => {
   await page.reload();
 });
 
+test("opens the Codex chat sidebar and returns to the design inspector", async ({ page }) => {
+  await page.getByRole("button", { name: "New design" }).first().click();
+  const inspector = page.locator("aside.inspector");
+  await expect(inspector).toBeVisible();
+
+  const resize = async (name: string, deltaX: number) => {
+    const handle = page.getByRole("separator", { name });
+    const bounds = await handle.boundingBox();
+    if (!bounds) throw new Error(`${name} handle was not rendered`);
+    const x = bounds.x + bounds.width / 2;
+    const y = bounds.y + Math.min(160, bounds.height / 2);
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x + deltaX, y, { steps: 4 });
+    await page.mouse.up();
+  };
+
+  await resize("Resize left sidebar", 40);
+  await expect(page.locator("aside.left-shell")).toHaveCSS("width", "337px");
+  await resize("Resize inspector", -40);
+  await expect(inspector).toHaveCSS("width", "281px");
+
+  await page.evaluate(() => {
+    let callbackId = 1;
+    const callbacks = new Map<number, (...args: unknown[]) => unknown>();
+    (window as unknown as { __TAURI_INTERNALS__: unknown }).__TAURI_INTERNALS__ = {
+      transformCallback(callback: (...args: unknown[]) => unknown) {
+        const id = callbackId++;
+        callbacks.set(id, callback);
+        return id;
+      },
+      unregisterCallback(id: number) {
+        callbacks.delete(id);
+      },
+      async invoke(command: string, args?: Record<string, unknown>) {
+        if (command === "plugin:event|listen") return callbackId++;
+        if (command === "codex_ui_state_read") return null;
+        if (command === "codex_connect") return { workspaceId: "file", cwd: "/tmp/figmaboy", reused: false };
+        if (command === "codex_mcp_status") return { installed: true, healthy: true, matchesBundled: true, command: "/tmp/figmaboy-mcp", bundledPath: "/tmp/figmaboy-mcp" };
+        if (command !== "codex_request") return null;
+        if (args?.method === "account/read") return { account: { type: "chatgpt" } };
+        if (args?.method === "model/list") return { data: [
+          { id: "gpt-test", model: "gpt-test", displayName: "GPT Test", description: "This description should stay hidden", isDefault: true, hidden: false, supportedReasoningEfforts: [{ reasoningEffort: "medium", description: "Balanced reasoning" }, { reasoningEffort: "high", description: "Deeper reasoning" }], defaultReasoningEffort: "medium", serviceTiers: [{ id: "default", name: "Standard", description: "Normal speed" }, { id: "fast", name: "Fast", description: "Lower latency" }] },
+          { id: "gpt-small", model: "gpt-small", displayName: "GPT Small", description: "Another hidden description", isDefault: false, hidden: false, supportedReasoningEfforts: [{ reasoningEffort: "low" }], defaultReasoningEffort: "low" },
+        ] };
+        if (args?.method === "thread/list") return { data: [] };
+        if (args?.method === "skills/list") return { data: [] };
+        return {};
+      },
+    };
+  });
+
+  await page.getByTitle("Toggle Codex chat (Ctrl + `)").click();
+  const sidebar = page.getByRole("complementary", { name: "Codex chat" });
+  await expect(sidebar).toBeVisible();
+  await expect(inspector).toHaveCount(0);
+  await expect(sidebar.getByPlaceholder("Ask anything about this design")).toBeVisible();
+  await expect(sidebar.getByText("Design with Codex")).toHaveCount(0);
+  await expect(sidebar.getByText("Review the design")).toHaveCount(0);
+  await expect(sidebar.locator(".empty-glyph")).toHaveCount(0);
+  const insideSidebar = async (locator: typeof sidebar) => {
+    const sidebarBox = await sidebar.boundingBox();
+    const popupBox = await locator.boundingBox();
+    if (!sidebarBox || !popupBox) throw new Error("Picker bounds were unavailable");
+    expect(popupBox.x).toBeGreaterThanOrEqual(sidebarBox.x);
+    expect(popupBox.x + popupBox.width).toBeLessThanOrEqual(sidebarBox.x + sidebarBox.width);
+  };
+  await sidebar.getByRole("button", { name: /GPT Test/ }).click();
+  const modelPopup = sidebar.getByRole("region", { name: "Choose a Codex model" });
+  await expect(modelPopup).toBeVisible();
+  await expect(modelPopup.getByText("This description should stay hidden")).toHaveCount(0);
+  await expect(modelPopup.getByRole("textbox", { name: "Search models" })).toHaveCount(0);
+  await expect(modelPopup.getByRole("button", { name: /favorite/i })).toHaveCount(0);
+  await insideSidebar(modelPopup);
+  await page.keyboard.press("Escape");
+  await sidebar.getByTitle("Model settings").click();
+  const traitsPopup = sidebar.getByRole("region", { name: "Codex model settings" });
+  await expect(traitsPopup).toBeVisible();
+  await expect(traitsPopup.getByText("Balanced reasoning")).toHaveCount(0);
+  await insideSidebar(traitsPopup);
+  await sidebar.getByTitle("Model settings").click();
+  await resize("Resize chat sidebar", -50);
+  await expect(sidebar).toHaveCSS("width", "440px");
+  await expect(page.locator(".canvas-region")).toHaveCSS("right", "440px");
+
+  await page.reload();
+  await expect(page.getByRole("complementary", { name: "Codex chat" })).toBeVisible();
+  await expect(page.locator(".canvas-region")).toHaveCSS("right", "440px");
+
+  await page.getByRole("complementary", { name: "Codex chat" }).getByTitle("Close Codex").click();
+  await expect(page.getByRole("complementary", { name: "Codex chat" })).toBeHidden();
+  await expect(page.locator("aside.inspector")).toBeVisible();
+  await expect(page.locator("aside.inspector")).toHaveCSS("width", "281px");
+  await expect(page.locator(".canvas-region")).toHaveCSS("right", "281px");
+});
+
 test("copies a stable design ID for MCP lookup", async ({ page, context }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.getByRole("button", { name: "New design" }).first().click();
@@ -110,7 +206,7 @@ test("draws and Alt-drags layers inside an existing frame", async ({ page }) => 
   await expect(nestedNodes).toHaveCount(3);
 });
 
-test("selects and drags a frame before drilling into children, and marquees through a locked frame", async ({ page }) => {
+test("selects a parent, double-clicks down one level, and respects a locked subtree", async ({ page }) => {
   await page.getByRole("button", { name: "New design" }).first().click();
   const canvas = page.locator("#design-canvas");
   const bounds = await canvas.boundingBox();
@@ -144,15 +240,19 @@ test("selects and drags a frame before drilling into children, and marquees thro
   await expect(frame).toHaveClass(/selected/);
   await expect(child).toHaveAttribute("transform", childTransformBefore!);
 
-  // A click with the frame already selected drills exactly one level inward.
+  // Figma descends one level on double-click, not on an ordinary click.
   const movedChildBounds = await child.boundingBox();
   if (!movedChildBounds) throw new Error("moved frame child was not rendered");
   await page.mouse.click(movedChildBounds.x + movedChildBounds.width / 2, movedChildBounds.y + movedChildBounds.height / 2);
+  await expect(frame).toHaveClass(/selected/);
+  await expect(child).not.toHaveClass(/selected/);
+  await page.waitForTimeout(550);
+  await page.mouse.dblclick(movedChildBounds.x + movedChildBounds.width / 2, movedChildBounds.y + movedChildBounds.height / 2);
   await expect(child).toHaveClass(/selected/);
   await expect(frame).not.toHaveClass(/selected/);
 
-  // Locking the parent turns its empty surface into marquee-starting canvas,
-  // while the unlocked child remains selectable.
+  // Locking a parent also makes its descendants unavailable to canvas
+  // selection. The Layers panel can still select and unlock them.
   const frameRow = page.getByRole("treeitem").filter({ hasText: "Frame" }).first();
   await frameRow.getByRole("button", { name: "Lock" }).click();
   const movedFrameBounds = await frame.boundingBox();
@@ -162,7 +262,7 @@ test("selects and drags a frame before drilling into children, and marquees thro
   await page.mouse.move(movedChildBounds.x - 15, movedChildBounds.y - 15);
   await expect(canvas).toHaveAttribute("data-mode", "marquee");
   await page.mouse.up();
-  await expect(child).toHaveClass(/selected/);
+  await expect(child).not.toHaveClass(/selected/);
   await expect(frame).not.toHaveClass(/selected/);
 });
 
@@ -368,6 +468,9 @@ test("creates, types, places the caret, and re-edits text", async ({ page }) => 
   await expect(editor).toHaveValue("");
 
   await page.keyboard.type("Hello");
+  const textNode = canvas.locator("g[data-node-id]").first();
+  await expect(textNode.locator("text")).toContainText("Hello");
+  await expect(editor).toHaveCSS("color", "rgba(0, 0, 0, 0)");
   await editor.click({ position: { x: 20, y: 12 } });
   await expect(editor).toBeFocused();
   await page.keyboard.press("End");
@@ -380,7 +483,6 @@ test("creates, types, places the caret, and re-edits text", async ({ page }) => 
 
   await page.keyboard.press("Escape");
   await expect(editor).toBeHidden();
-  const textNode = canvas.locator("g[data-node-id]").first();
   const renderedText = textNode.locator("text");
   await expect(renderedText).toContainText("Hello world");
   await expect(renderedText).toHaveAttribute("fill", "#18181b");
@@ -394,12 +496,20 @@ test("creates, types, places the caret, and re-edits text", async ({ page }) => 
   expect(selectStyle.backgroundImage).not.toBe("none");
   expect(selectStyle.color).toBe("rgb(238, 238, 238)");
 
+  await page.getByRole("combobox", { name: "Text case" }).selectOption("upper");
+  await expect(renderedText).toContainText("HELLO WORLD");
+  const beforeReedit = await renderedText.boundingBox();
   await textNode.dblclick();
   await expect(editor).toBeFocused();
+  await expect(editor).toHaveCSS("text-transform", "uppercase");
+  await expect(renderedText).toContainText("HELLO WORLD");
+  const duringReedit = await renderedText.boundingBox();
+  expect(duringReedit?.x).toBeCloseTo(beforeReedit?.x ?? 0, 1);
+  expect(duringReedit?.y).toBeCloseTo(beforeReedit?.y ?? 0, 1);
   await page.keyboard.press("Control+A");
   await page.keyboard.type("Edited text");
   await page.keyboard.press("Escape");
-  await expect(renderedText).toContainText("Edited text");
+  await expect(renderedText).toContainText("EDITED TEXT");
 });
 
 test("resizes a frame child in place and reparents it when dragged outside", async ({ page }) => {

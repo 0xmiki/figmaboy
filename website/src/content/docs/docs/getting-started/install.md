@@ -1,293 +1,124 @@
 ---
 title: Install and connect
-description: Install Figmaboy and register its bundled MCP server with Codex on Linux, NixOS, macOS, or Windows.
+description: Install Figmaboy, open its built-in Codex chat, and let Codex handle optional MCP setup.
 ---
-
-This page completes the whole setup for your platform: install the Figmaboy desktop app, locate or install `figmaboy-mcp`, register it with Codex, and verify the connection.
 
 [Download Figmaboy for your platform](../../../download/)
 
-## How the installation works
+## Let Codex handle the MCP setup
 
-Figmaboy and its MCP server are separate executables:
+The chat inside Figmaboy needs no MCP registration. Install the [Codex CLI](https://developers.openai.com/codex/cli/), sign in once, open a design, and select the sparkle button. Figmaboy starts the bundled MCP server for that chat.
 
-- `figmaboy` is the desktop design app.
-- `figmaboy-mcp` is the local stdio server that Codex launches when it needs Figmaboy tools.
+If you also want Figmaboy tools in Codex CLI, the IDE extension, or the ChatGPT desktop app, ask Codex to set them up:
 
-The `.deb`, `.rpm`, DMG, MSI, and NSIS installers contain both executables. The AppImage also contains the sidecar, but its internal runtime path is temporary, so AppImage users should install the standalone MCP release asset at a stable path.
-
-Installing the app does **not** automatically change your Codex configuration. You must register the MCP executable once with `codex mcp add`. Codex stores that registration in `~/.codex/config.toml`; the Codex CLI, IDE extension, and desktop app share it.
-
-## Before you begin
-
-Install the [Codex CLI](https://developers.openai.com/codex/cli/) and confirm that it runs:
-
-```bash
-codex --version
+```text
+Open https://raw.githubusercontent.com/0xmiki/figmaboy/main/docs/INSTALL_FIGMABOY_MCP.md and follow it to install or repair the Figmaboy MCP for this computer. Verify the checksum before running a downloaded binary. Keep any working custom registration.
 ```
 
-If you previously connected Figmaboy from a repository checkout or another installation, inspect the saved command:
+Already inside Figmaboy? Type this in the chat composer:
 
-```bash
-codex mcp get figmaboy
+```text
+/install-mcp
 ```
 
-If it points to an old or missing executable, remove it before following your platform steps:
+Figmaboy checks the saved Codex configuration, repairs a missing executable, and leaves a working custom entry alone. Start a new external Codex session after it finishes.
 
-```bash
-codex mcp remove figmaboy
-```
+That is the recommended setup. The commands are available under [Manual MCP installation](#manual-mcp-installation) if you need to inspect or repair the configuration yourself.
 
-If Codex reports that no server named `figmaboy` exists, nothing needs to be removed.
+## Install the desktop app
 
-## Linux
+Figmaboy installers contain the desktop app and its matching `figmaboy-mcp` server. The AppImage is different. Its internal sidecar path changes each time it mounts, so external Codex clients need the standalone MCP release asset at a stable path.
 
-### Debian or Ubuntu (`.deb`)
+### Debian or Ubuntu
 
-1. Download the `.deb` file from the latest release.
-2. Open a terminal and install it:
+Download the `.deb` file, then install it:
 
 ```bash
 cd ~/Downloads
 sudo apt install ./Figmaboy_*_amd64.deb
 ```
 
-The package installs both executables under `/usr/bin`. Confirm the MCP binary and register its absolute path:
+Launch Figmaboy from the application menu or run `figmaboy`.
 
-```bash
-MCP_BIN="$(command -v figmaboy-mcp)"
-test -x "$MCP_BIN"
-"$MCP_BIN" --version
-codex mcp add figmaboy -- "$MCP_BIN"
-codex mcp get figmaboy
-```
+### Fedora or RHEL
 
-You can now launch the desktop app from your application menu or with `figmaboy`.
-
-### Fedora or RHEL (`.rpm`)
-
-1. Download the `.rpm` file from the latest release.
-2. Install it with DNF:
+Download the `.rpm` file, then install it:
 
 ```bash
 cd ~/Downloads
 sudo dnf install ./Figmaboy_*_x86_64.rpm
 ```
 
-The RPM contains both the desktop app and MCP server. Register the installed MCP executable:
+### AppImage and other Linux distributions
 
-```bash
-MCP_BIN="$(command -v figmaboy-mcp)"
-test -x "$MCP_BIN"
-"$MCP_BIN" --version
-codex mcp add figmaboy -- "$MCP_BIN"
-codex mcp get figmaboy
-```
-
-### AppImage and other distributions
-
-Download both of these assets from the same release:
-
-- The `Figmaboy_*.AppImage` desktop app.
-- `figmaboy-mcp-x86_64-unknown-linux-gnu`, the standalone MCP server.
-
-Make the AppImage executable, install the MCP binary at a stable user-local path, and register it:
+Download `Figmaboy_*.AppImage`, make it executable, and run it:
 
 ```bash
 chmod +x ~/Downloads/Figmaboy_*.AppImage
-mkdir -p ~/.local/bin
-install -m 755 \
-  ~/Downloads/figmaboy-mcp-x86_64-unknown-linux-gnu \
-  ~/.local/bin/figmaboy-mcp
-
-"$HOME/.local/bin/figmaboy-mcp" --version
-codex mcp add figmaboy -- "$HOME/.local/bin/figmaboy-mcp"
-codex mcp get figmaboy
-```
-
-Keep `~/.local/bin/figmaboy-mcp` in place after registration. Moving or deleting it breaks the saved Codex command.
-
-Launch the AppImage:
-
-```bash
 ~/Downloads/Figmaboy_*.AppImage
 ```
 
-## NixOS
+If you want Figmaboy in external Codex clients, let Codex download and register the matching standalone MCP asset with the prompt above.
 
-### AppImage release
+### NixOS
 
-Download the AppImage and `figmaboy-mcp-x86_64-unknown-linux-gnu`. Install and connect the MCP server exactly once:
-
-```bash
-mkdir -p ~/.local/bin
-install -m 755 \
-  ~/Downloads/figmaboy-mcp-x86_64-unknown-linux-gnu \
-  ~/.local/bin/figmaboy-mcp
-
-"$HOME/.local/bin/figmaboy-mcp" --version
-codex mcp add figmaboy -- "$HOME/.local/bin/figmaboy-mcp"
-codex mcp get figmaboy
-```
-
-Run the desktop AppImage through `appimage-run`:
+Run the AppImage with `appimage-run`:
 
 ```bash
 appimage-run ~/Downloads/Figmaboy_*.AppImage
 ```
 
-### Native Nix package
+A native derivation should expose `figmaboy` and `figmaboy-mcp` in the same profile. Add it to `environment.systemPackages` or Home Manager, rebuild, then use the Codex setup prompt above.
 
-A native Figmaboy derivation should expose both `figmaboy` and `figmaboy-mcp` in the same profile. After adding the package to `environment.systemPackages` or your Home Manager packages and rebuilding, confirm both commands exist:
+### macOS
 
-```bash
-command -v figmaboy
-command -v figmaboy-mcp
-```
+Choose the DMG for your processor:
 
-Register the profile path. Do not resolve it to a versioned `/nix/store` path; the profile symlink remains stable across package updates:
+| Mac | Check with | Download |
+| --- | --- | --- |
+| Apple Silicon | `uname -m` prints `arm64` | `aarch64` DMG |
+| Intel | `uname -m` prints `x86_64` | `x86_64` DMG |
 
-```bash
-MCP_BIN="$(command -v figmaboy-mcp)"
-test -x "$MCP_BIN"
-"$MCP_BIN" --version
-codex mcp add figmaboy -- "$MCP_BIN"
-codex mcp get figmaboy
-```
+Open the DMG and drag **Figmaboy** into **Applications**.
 
-## macOS
+The builds are ad hoc signed but not notarized. If macOS blocks the first launch, verify the release checksum, then approve Figmaboy in **System Settings > Privacy & Security**.
 
-Choose the release that matches your Mac:
+### Windows
 
-| Mac | Check with | Desktop installer | Standalone fallback |
-| --- | --- | --- | --- |
-| Apple Silicon | `uname -m` prints `arm64` | `aarch64` DMG | `figmaboy-mcp-aarch64-apple-darwin` |
-| Intel | `uname -m` prints `x86_64` | `x86_64` DMG | `figmaboy-mcp-x86_64-apple-darwin` |
+Download and run the NSIS `.exe` installer or the MSI package. Both include `figmaboy-mcp.exe` beside the installed desktop app.
 
-Open the DMG and drag **Figmaboy** into **Applications**. The DMG app contains the matching MCP executable inside its application bundle.
+Current Windows builds are not code-signed and may trigger SmartScreen. Download only from the official GitHub release and compare the SHA-256 hash with `SHA256SUMS` before running the installer.
 
-Register that bundled executable:
+## Test the connection
 
-```bash
-MCP_BIN="/Applications/Figmaboy.app/Contents/MacOS/figmaboy-mcp"
-
-if [ ! -x "$MCP_BIN" ]; then
-  MCP_BIN="$HOME/Applications/Figmaboy.app/Contents/MacOS/figmaboy-mcp"
-fi
-
-test -x "$MCP_BIN"
-"$MCP_BIN" --version
-codex mcp add figmaboy -- "$MCP_BIN"
-codex mcp get figmaboy
-```
-
-If you intentionally keep the app somewhere else, change `MCP_BIN` to the matching `Figmaboy.app/Contents/MacOS/figmaboy-mcp` path.
-
-### macOS standalone fallback
-
-If the bundled binary is unavailable, download the standalone MCP asset for your architecture and place it at a stable path. For Apple Silicon:
-
-```bash
-mkdir -p ~/.local/bin
-install -m 755 \
-  ~/Downloads/figmaboy-mcp-aarch64-apple-darwin \
-  ~/.local/bin/figmaboy-mcp
-
-codex mcp add figmaboy -- "$HOME/.local/bin/figmaboy-mcp"
-codex mcp get figmaboy
-```
-
-On an Intel Mac, use `figmaboy-mcp-x86_64-apple-darwin` instead.
-
-Current macOS builds are ad-hoc signed but not notarized. Open Figmaboy once after installation. If macOS blocks it, verify the release checksum and approve Figmaboy in **System Settings → Privacy & Security** before testing the MCP connection.
-
-## Windows
-
-Download and run either the NSIS `.exe` installer or MSI package. Both installers bundle `figmaboy-mcp.exe` beside the installed Figmaboy application.
-
-Open **PowerShell** and locate the bundled server in the standard per-user or system installation directory:
-
-```powershell
-$SearchRoots = @(
-  (Join-Path $env:LOCALAPPDATA "Figmaboy")
-  (Join-Path $env:ProgramFiles "Figmaboy")
-)
-
-if (${env:ProgramFiles(x86)}) {
-  $SearchRoots += Join-Path ${env:ProgramFiles(x86)} "Figmaboy"
-}
-
-$McpBin = Get-ChildItem -Path $SearchRoots -Filter "figmaboy-mcp.exe" -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
-
-if (-not $McpBin) {
-  throw "figmaboy-mcp.exe was not found in the installed Figmaboy directories."
-}
-
-& $McpBin --version
-codex mcp add figmaboy -- "$McpBin"
-codex mcp get figmaboy
-```
-
-### Windows standalone fallback
-
-If the installer path cannot be found, download `figmaboy-mcp-x86_64-pc-windows-msvc.exe` from the same release and copy it to a stable user-local directory:
-
-```powershell
-$McpDir = Join-Path $env:LOCALAPPDATA "Figmaboy\bin"
-$McpBin = Join-Path $McpDir "figmaboy-mcp.exe"
-$DownloadedMcp = Join-Path $HOME "Downloads\figmaboy-mcp-x86_64-pc-windows-msvc.exe"
-
-New-Item -ItemType Directory -Force -Path $McpDir | Out-Null
-Copy-Item -LiteralPath $DownloadedMcp -Destination $McpBin -Force
-
-& $McpBin --version
-codex mcp add figmaboy -- "$McpBin"
-codex mcp get figmaboy
-```
-
-Current Windows releases are not code-signed and may trigger SmartScreen. Download only from the official GitHub release and verify the checksum before running either executable.
-
-## Verify the connection
-
-On every platform, this command should show an enabled stdio server named `figmaboy` and the absolute command you registered:
-
-```bash
-codex mcp get figmaboy
-```
-
-Finish any active Codex session, then start a new session so Codex loads the new MCP configuration.
-
-Starting Codex makes the registered Figmaboy tools available; it does not automatically select them for every task. Mention **Figmaboy** in your request and identify either the currently open page or a saved design by name or copied ID.
-
-First test offline context while Figmaboy is closed:
-
-> List my saved Figmaboy designs.
-
-Then open a design in Figmaboy and test the live bridge:
+For the built-in chat, open a design and ask:
 
 > Inspect the current Figmaboy page and summarize its layer structure. Do not change it.
 
-Offline tools such as `designs_list` and `design_context_get` work while Figmaboy is closed. Live inspection, screenshots, and edits require the desktop app to be open with a design loaded.
+For an external Codex client, start a new session and ask:
 
-## Updating Figmaboy later
+> List my saved Figmaboy designs.
 
-You do not need to remove and re-add the MCP registration when the executable remains at the same path:
+Saved-design tools work while Figmaboy is closed. Screenshots, live inspection, and edits need the desktop app open with a design loaded.
 
-- Package-manager, Nix profile, macOS application-bundle, MSI, and NSIS updates preserve the registered path.
-- AppImage and standalone users should overwrite the existing `~/.local/bin/figmaboy-mcp` or `%LOCALAPPDATA%\Figmaboy\bin\figmaboy-mcp.exe` file instead of moving it.
+## Update Figmaboy
 
-Run `codex mcp remove figmaboy` and register it again only if the executable path changes.
+Package managers and desktop installers keep the MCP executable at the same path, so Codex registration usually survives an update. AppImage and standalone users should replace the binary at its existing stable path instead of moving it.
+
+Run `/install-mcp` again if an update moved or removed the executable.
 
 ## Verify release checksums
 
-Every release includes `SHA256SUMS`. On Linux:
+Every release includes `SHA256SUMS`.
+
+On Linux:
 
 ```bash
 cd ~/Downloads
 sha256sum --ignore-missing --check SHA256SUMS
 ```
 
-On macOS, run `shasum -a 256 <filename>` and compare it with the matching line in `SHA256SUMS`.
+On macOS, run `shasum -a 256 <filename>` and compare the result with the matching line in `SHA256SUMS`.
 
 On Windows PowerShell:
 
@@ -296,4 +127,82 @@ Get-FileHash .\Figmaboy_*.exe -Algorithm SHA256
 Get-FileHash .\figmaboy-mcp-*.exe -Algorithm SHA256
 ```
 
-With the app and MCP connected, continue to the [Quickstart](../quickstart/).
+## Manual MCP installation
+
+<details>
+<summary>Show platform paths and registration commands</summary>
+
+Use this only when the Codex-led setup cannot run.
+
+First inspect the current entry:
+
+```bash
+codex mcp get figmaboy --json
+```
+
+Keep it if its command still works. Remove it only when the executable is missing:
+
+```bash
+codex mcp remove figmaboy
+```
+
+Find the stable executable installed with Figmaboy:
+
+| Installation | Stable MCP path |
+| --- | --- |
+| Linux `.deb` or `.rpm` | `/usr/bin/figmaboy-mcp` |
+| Linux AppImage or standalone | `~/.local/bin/figmaboy-mcp` |
+| Native Nix package | The profile path from `command -v figmaboy-mcp` |
+| macOS Applications | `/Applications/Figmaboy.app/Contents/MacOS/figmaboy-mcp` |
+| macOS user Applications | `~/Applications/Figmaboy.app/Contents/MacOS/figmaboy-mcp` |
+| Windows NSIS | `%LOCALAPPDATA%\Figmaboy\figmaboy-mcp.exe` |
+| Windows MSI | `%ProgramFiles%\Figmaboy\figmaboy-mcp.exe` |
+| Windows standalone | `%LOCALAPPDATA%\Figmaboy\bin\figmaboy-mcp.exe` |
+
+On Linux or macOS, verify and register the absolute path:
+
+```bash
+MCP_BIN="/absolute/path/to/figmaboy-mcp"
+test -x "$MCP_BIN"
+"$MCP_BIN" --version
+codex mcp add figmaboy -- "$MCP_BIN"
+codex mcp get figmaboy --json
+```
+
+For AppImage users, download `figmaboy-mcp-x86_64-unknown-linux-gnu`, verify it against `SHA256SUMS`, then put it at a stable path before registration:
+
+```bash
+mkdir -p ~/.local/bin
+install -m 755 \
+  ~/Downloads/figmaboy-mcp-x86_64-unknown-linux-gnu \
+  ~/.local/bin/figmaboy-mcp
+```
+
+For a standalone macOS fallback, use `figmaboy-mcp-aarch64-apple-darwin` on Apple Silicon or `figmaboy-mcp-x86_64-apple-darwin` on Intel. Install it as `~/.local/bin/figmaboy-mcp`.
+
+On Windows PowerShell, locate the bundled executable and register it:
+
+```powershell
+$SearchRoots = @(
+  (Join-Path $env:LOCALAPPDATA "Figmaboy")
+  (Join-Path $env:ProgramFiles "Figmaboy")
+)
+
+$McpBin = Get-ChildItem -Path $SearchRoots -Filter "figmaboy-mcp.exe" -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+
+if (-not $McpBin) {
+  throw "figmaboy-mcp.exe was not found."
+}
+
+& $McpBin --version
+codex mcp add figmaboy -- "$McpBin"
+codex mcp get figmaboy --json
+```
+
+If Windows has no bundled executable, download `figmaboy-mcp-x86_64-pc-windows-msvc.exe`, verify its checksum, and save it as `%LOCALAPPDATA%\Figmaboy\bin\figmaboy-mcp.exe` before registration.
+
+Do not register an AppImage mount, temporary directory, downloads folder, or repository build path. Start a new Codex session after registration.
+
+</details>
+
+Continue with the [Quickstart](../quickstart/).
