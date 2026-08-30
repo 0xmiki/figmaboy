@@ -51,6 +51,7 @@ export default defineConfig({
             { label: "Canvas and native layers", slug: "docs/core-concepts/canvas-and-layers" },
             { label: "Codex and the MCP", slug: "docs/core-concepts/codex-mcp" },
             { label: "Local data and autosave", slug: "docs/core-concepts/local-data" },
+            { label: "Extensions", slug: "docs/core-concepts/extensions" },
           ],
         },
         {

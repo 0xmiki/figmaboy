@@ -1,0 +1,92 @@
+{
+  "format": "figmaboy-extension",
+  "apiVersion": 1,
+  "id": "examples.selection-tools",
+  "name": "Selection tools",
+  "version": "1.0.0",
+  "permissions": ["ui.sidebar", "design.read", "design.write"],
+  "contributes": {
+    "sidebar": [
+      {
+        "id": "style-selection",
+        "title": "Style selection",
+        "controls": [
+          { "type": "text", "text": "Change native layers through a custom extension panel.", "tone": "muted" },
+          {
+            "type": "row",
+            "controls": [
+              { "type": "number", "id": "radius", "label": "Radius", "default": 20, "min": 0, "max": 999, "step": 1 },
+              {
+                "type": "select",
+                "id": "color",
+                "label": "Fill",
+                "default": "#ff5a36",
+                "options": [
+                  { "label": "Orange", "value": "#ff5a36" },
+                  { "label": "Blue", "value": "#0d99ff" },
+                  { "label": "Graphite", "value": "#25272a" }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "button",
+            "id": "apply-style",
+            "label": "Style selected layers",
+            "variant": "primary",
+            "requiresSelection": true,
+            "action": {
+              "type": "design.transact",
+              "label": "Style selected layers",
+              "mode": "preview",
+              "operations": [
+                {
+                  "kind": "update",
+                  "target": "selection",
+                  "patch": {
+                    "radius": { "$control": "radius" },
+                    "fill": { "type": "solid", "color": { "$control": "color" }, "opacity": 1 }
+                  }
+                }
+              ]
+            }
+          },
+          { "type": "divider" },
+          {
+            "type": "row",
+            "controls": [
+              { "type": "number", "id": "x", "label": "X", "default": 100 },
+              { "type": "number", "id": "y", "label": "Y", "default": 100 }
+            ]
+          },
+          {
+            "type": "button",
+            "id": "create-card",
+            "label": "Create card",
+            "action": {
+              "type": "design.transact",
+              "label": "Create card",
+              "mode": "preview",
+              "selectCreated": true,
+              "operations": [
+                {
+                  "kind": "create",
+                  "node": {
+                    "type": "frame",
+                    "name": "Extension card",
+                    "x": { "$control": "x" },
+                    "y": { "$control": "y" },
+                    "width": 320,
+                    "height": 180,
+                    "radius": 20,
+                    "fill": { "type": "solid", "color": "#ffffff", "opacity": 1 }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

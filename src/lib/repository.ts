@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { DesignFile, ImportedAsset, LibrarySnapshot, OpenedFile, PageDocument, PageMeta, Project } from "$lib/domain";
 import { emptyDocument, uid } from "$lib/domain";
 import { sanitizeDocument } from "$lib/document-validation";
+import type { ExtensionManifest, InstalledExtension } from "$lib/extensions/types";
 
 export interface Repository {
   library(): Promise<LibrarySnapshot>;
@@ -31,6 +32,14 @@ export interface Repository {
   exportPackage(kind: "project" | "file", id: string): Promise<boolean>;
   importPackage(): Promise<boolean>;
   exportRender(name: string, extension: "svg" | "png", data: string): Promise<boolean>;
+  extensionsList(): Promise<InstalledExtension[]>;
+  extensionStage(manifest: ExtensionManifest): Promise<InstalledExtension>;
+  extensionKeep(extensionId: string, hash: string): Promise<InstalledExtension>;
+  extensionDiscard(extensionId: string, hash: string): Promise<InstalledExtension[]>;
+  extensionSetEnabled(extensionId: string, enabled: boolean): Promise<InstalledExtension>;
+  extensionRollback(extensionId: string, hash: string): Promise<InstalledExtension>;
+  extensionRemove(extensionId: string): Promise<InstalledExtension[]>;
+  extensionImport(): Promise<unknown | null>;
 }
 
 interface BrowserState extends LibrarySnapshot {
@@ -41,6 +50,7 @@ interface BrowserState extends LibrarySnapshot {
 
 const STORAGE_KEY = "figmaboy.workspace.v1";
 const STORAGE_BACKUP_KEY = "figmaboy.workspace.v1.backup";
+const EXTENSIONS_STORAGE_KEY = "figmaboy.extensions.v1";
 const now = () => new Date().toISOString();
 
 function isTauri(): boolean {
@@ -119,6 +129,33 @@ function persistBrowserState(state: BrowserState): void {
     try { localStorage.setItem(STORAGE_BACKUP_KEY, previous); } catch { /* a current save is more important than refreshing the backup */ }
   }
   localStorage.setItem(STORAGE_KEY, serialized);
+}
+
+interface BrowserExtensionState {
+  records: InstalledExtension[];
+  manifests: Record<string, ExtensionManifest>;
+}
+
+function loadBrowserExtensions(): BrowserExtensionState {
+  try {
+    const value = JSON.parse(localStorage.getItem(EXTENSIONS_STORAGE_KEY) ?? "{}");
+    return {
+      records: Array.isArray(value.records) ? value.records : [],
+      manifests: value.manifests && typeof value.manifests === "object" && !Array.isArray(value.manifests) ? value.manifests : {},
+    };
+  } catch {
+    return { records: [], manifests: {} };
+  }
+}
+
+function persistBrowserExtensions(state: BrowserExtensionState): void {
+  localStorage.setItem(EXTENSIONS_STORAGE_KEY, JSON.stringify(state));
+}
+
+async function manifestHash(manifest: ExtensionManifest): Promise<string> {
+  const data = new TextEncoder().encode(JSON.stringify(manifest));
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join("");
 }
 
 class BrowserRepository implements Repository {
@@ -461,6 +498,110 @@ class BrowserRepository implements Repository {
     anchor.click();
     return true;
   }
+
+  async extensionsList(): Promise<InstalledExtension[]> {
+    return structuredClone(loadBrowserExtensions().records);
+  }
+
+  async extensionStage(manifest: ExtensionManifest): Promise<InstalledExtension> {
+    const state = loadBrowserExtensions();
+    const hash = await manifestHash(manifest);
+    state.manifests[hash] = structuredClone(manifest);
+    let record = state.records.find((item) => item.id === manifest.id);
+    if (!record) {
+      record = { id: manifest.id, name: manifest.name, enabled: true, activeHash: null, previewHash: null, active: null, preview: null, versions: [] };
+      state.records.push(record);
+    }
+    const previousPreview = record.previewHash;
+    if (previousPreview && previousPreview !== hash) {
+      record.versions = record.versions.filter((version) => version.hash !== previousPreview || version.status === "release");
+      if (!record.versions.some((version) => version.hash === previousPreview) && record.activeHash !== previousPreview) delete state.manifests[previousPreview];
+    }
+    record.name = manifest.name;
+    record.previewHash = hash;
+    record.preview = structuredClone(manifest);
+    if (!record.versions.some((version) => version.hash === hash)) {
+      record.versions.unshift({ hash, version: manifest.version, createdAt: now(), status: "candidate" });
+    }
+    persistBrowserExtensions(state);
+    return structuredClone(record);
+  }
+
+  async extensionKeep(extensionId: string, hash: string): Promise<InstalledExtension> {
+    const state = loadBrowserExtensions();
+    const record = state.records.find((item) => item.id === extensionId);
+    if (!record || record.previewHash !== hash || !record.preview) throw new Error("Only the current preview can be kept");
+    record.activeHash = hash;
+    record.active = structuredClone(record.preview);
+    record.previewHash = null;
+    record.preview = null;
+    record.enabled = true;
+    const version = record.versions.find((item) => item.hash === hash);
+    if (version) version.status = "release";
+    persistBrowserExtensions(state);
+    return structuredClone(record);
+  }
+
+  async extensionDiscard(extensionId: string, hash: string): Promise<InstalledExtension[]> {
+    const state = loadBrowserExtensions();
+    const record = state.records.find((item) => item.id === extensionId);
+    if (!record || record.previewHash !== hash) throw new Error("This candidate is no longer being previewed");
+    record.previewHash = null;
+    record.preview = null;
+    record.versions = record.versions.filter((item) => item.hash !== hash || item.status === "release");
+    if (!record.activeHash) state.records = state.records.filter((item) => item.id !== extensionId);
+    if (!state.records.some((item) => item.activeHash === hash || item.previewHash === hash || item.versions.some((version) => version.hash === hash))) delete state.manifests[hash];
+    persistBrowserExtensions(state);
+    return structuredClone(state.records);
+  }
+
+  async extensionSetEnabled(extensionId: string, enabled: boolean): Promise<InstalledExtension> {
+    const state = loadBrowserExtensions();
+    const record = state.records.find((item) => item.id === extensionId);
+    if (!record?.activeHash) throw new Error("Keep an extension before enabling it");
+    record.enabled = enabled;
+    persistBrowserExtensions(state);
+    return structuredClone(record);
+  }
+
+  async extensionRollback(extensionId: string, hash: string): Promise<InstalledExtension> {
+    const state = loadBrowserExtensions();
+    const record = state.records.find((item) => item.id === extensionId);
+    const version = record?.versions.find((item) => item.hash === hash && item.status === "release");
+    const manifest = state.manifests[hash];
+    if (!record || !version || !manifest) throw new Error("Rollback requires a kept extension version");
+    record.activeHash = hash;
+    record.active = structuredClone(manifest);
+    record.previewHash = null;
+    record.preview = null;
+    record.enabled = true;
+    persistBrowserExtensions(state);
+    return structuredClone(record);
+  }
+
+  async extensionRemove(extensionId: string): Promise<InstalledExtension[]> {
+    const state = loadBrowserExtensions();
+    const record = state.records.find((item) => item.id === extensionId);
+    state.records = state.records.filter((item) => item.id !== extensionId);
+    record?.versions.forEach((version) => delete state.manifests[version.hash]);
+    persistBrowserExtensions(state);
+    return structuredClone(state.records);
+  }
+
+  async extensionImport(): Promise<unknown | null> {
+    return new Promise((resolve) => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = ".json,.figmaboy-extension,application/json";
+      input.onchange = async () => {
+        const file = input.files?.[0];
+        if (!file) return resolve(null);
+        try { resolve(JSON.parse(await file.text())); }
+        catch { resolve(null); }
+      };
+      input.click();
+    });
+  }
 }
 
 class TauriRepository implements Repository {
@@ -491,6 +632,14 @@ class TauriRepository implements Repository {
   exportPackage = (kind: "project" | "file", id: string) => invoke<boolean>("export_package", { kind, id });
   importPackage = () => invoke<boolean>("import_package");
   exportRender = (name: string, extension: "svg" | "png", data: string) => invoke<boolean>("export_render", { name, extension, data });
+  extensionsList = () => invoke<InstalledExtension[]>("extensions_list");
+  extensionStage = (manifest: ExtensionManifest) => invoke<InstalledExtension>("extension_stage", { manifest });
+  extensionKeep = (extensionId: string, hash: string) => invoke<InstalledExtension>("extension_keep", { extensionId, hash });
+  extensionDiscard = (extensionId: string, hash: string) => invoke<InstalledExtension[]>("extension_discard", { extensionId, hash });
+  extensionSetEnabled = (extensionId: string, enabled: boolean) => invoke<InstalledExtension>("extension_set_enabled", { extensionId, enabled });
+  extensionRollback = (extensionId: string, hash: string) => invoke<InstalledExtension>("extension_rollback", { extensionId, hash });
+  extensionRemove = (extensionId: string) => invoke<InstalledExtension[]>("extension_remove", { extensionId });
+  extensionImport = () => invoke<unknown | null>("extension_import");
 }
 
 let instance: Repository | null = null;

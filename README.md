@@ -45,6 +45,12 @@ The local workspace holds standalone designs and projects. Choose **New project*
 
 Existing standalone designs remain in **Drafts** and do not need to be migrated into a project.
 
+## Extensions
+
+Open the puzzle-piece sidebar to add custom panels and canvas buttons. An imported extension starts as a trial. Test its controls, then keep or discard it. Kept versions can be disabled or restored from the Manage tab.
+
+Phase 1 extensions use declarative JSON. Figmaboy renders their controls and runs canvas changes through the same validated, undoable transaction path as Codex. See the [extension format](docs/extensions.md) and the [selection tools example](examples/selection-tools.figmaboy-extension).
+
 ## Codex design MCP
 
 Figmaboy includes a `figmaboy-mcp` stdio server. Codex can read saved designs while the desktop app is closed. With the app open, Codex can edit the current design through normal undo, redo, and autosave.

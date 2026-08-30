@@ -191,7 +191,8 @@ function applyOperation(document: PageDocument, operationValue: unknown, created
   throw new Error(`Unsupported operation kind: ${String(kind)}`);
 }
 
-export function applyExternalOperations(session: EditorSession, paramsValue: unknown) {
+export function prepareExternalOperations(session: EditorSession, paramsValue: unknown) {
+  if (session.hasExternalPreview) throw new Error("DOCUMENT_PREVIEW_ACTIVE: apply or discard the current canvas preview first");
   const params = object(paramsValue, "params");
   checkChangeToken(session, params);
   if (!Array.isArray(params.operations) || !params.operations.length) throw new Error("operations must be a non-empty array");
@@ -199,7 +200,16 @@ export function applyExternalOperations(session: EditorSession, paramsValue: unk
   const createdIds: string[] = [];
   params.operations.forEach((operation) => applyOperation(candidate, operation, createdIds));
   validateDocument(candidate);
-  session.replaceDocumentFromExternal(candidate);
+  return { candidate, createdIds };
+}
+
+export function applyExternalOperations(
+  session: EditorSession,
+  paramsValue: unknown,
+  transaction?: { label?: string; source?: { kind: "extension" | "codex" | "core"; id: string; version?: string } },
+) {
+  const { candidate, createdIds } = prepareExternalOperations(session, paramsValue);
+  session.replaceDocumentFromExternal(candidate, transaction);
   return { changeToken: session.changeToken, createdIds, selectedIds: session.selectedIds };
 }
 

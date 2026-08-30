@@ -8,6 +8,14 @@ import type { Matrix } from "$lib/geometry";
 interface HistoryEntry {
   before: PageDocument;
   after: PageDocument;
+  label?: string;
+  source?: { kind: "extension" | "codex" | "core"; id: string; version?: string };
+}
+
+interface ExternalPreview {
+  before: PageDocument;
+  label: string;
+  source: NonNullable<HistoryEntry["source"]>;
 }
 
 interface ClipboardPayload {
@@ -85,6 +93,7 @@ export class EditorSession {
   toolChangeToken = $state(0);
   gestureVersion = $state(0);
   persistencePaused = $state(false);
+  externalPreviewActive = $state(false);
   cancelInteractionToken = $state(0);
   leftTab = $state<"file" | "assets">("file");
   inspectorTab = $state<"design" | "prototype">("design");
@@ -102,6 +111,7 @@ export class EditorSession {
   private undoStack: HistoryEntry[] = [];
   private redoStack: HistoryEntry[] = [];
   private gestureBefore: PageDocument | null = null;
+  private externalPreview: ExternalPreview | null = null;
   private pasteCount = 0;
 
   constructor(opened: OpenedFile) {
@@ -158,17 +168,54 @@ export class EditorSession {
     this.saveStatus = "dirty";
   }
 
-  replaceDocumentFromExternal(next: PageDocument): void {
+  replaceDocumentFromExternal(next: PageDocument, transaction?: Pick<HistoryEntry, "label" | "source">): void {
+    if (this.externalPreview) this.cancelExternalPreview();
     this.cancelGesture();
     const before = this.snapshot();
     this.document = sanitizeDocument(next).document;
     normalizeTextSizes(this.document);
-    this.undoStack.push({ before, after: this.snapshot() });
+    this.undoStack.push({ before, after: this.snapshot(), ...transaction });
     if (this.undoStack.length > 100) this.undoStack.shift();
     this.redoStack = [];
     this.selectedIds = this.selectedIds.filter((id) => Boolean(this.document.nodes[id]));
     this.changed();
   }
+
+  previewDocumentFromExternal(next: PageDocument, label: string, source: NonNullable<HistoryEntry["source"]>): void {
+    if (this.externalPreview) this.cancelExternalPreview();
+    this.cancelGesture();
+    this.externalPreview = { before: this.snapshot(), label, source };
+    this.document = sanitizeDocument(next).document;
+    normalizeTextSizes(this.document);
+    this.selectedIds = this.selectedIds.filter((id) => Boolean(this.document.nodes[id]));
+    this.persistencePaused = true;
+    this.externalPreviewActive = true;
+  }
+
+  commitExternalPreview(): void {
+    if (!this.externalPreview) return;
+    const preview = this.externalPreview;
+    const after = this.snapshot();
+    this.externalPreview = null;
+    this.persistencePaused = false;
+    this.externalPreviewActive = false;
+    if (JSON.stringify(preview.before) === JSON.stringify(after)) return;
+    this.undoStack.push({ before: preview.before, after, label: preview.label, source: preview.source });
+    if (this.undoStack.length > 100) this.undoStack.shift();
+    this.redoStack = [];
+    this.changed();
+  }
+
+  cancelExternalPreview(): void {
+    if (!this.externalPreview) return;
+    this.document = this.externalPreview.before;
+    this.externalPreview = null;
+    this.persistencePaused = false;
+    this.externalPreviewActive = false;
+    this.selectedIds = this.selectedIds.filter((id) => Boolean(this.document.nodes[id]));
+  }
+
+  get hasExternalPreview(): boolean { return this.externalPreview !== null; }
 
   mutate(mutator: (document: PageDocument) => void, record = true): void {
     if (record && this.gestureBefore) this.cancelGesture();

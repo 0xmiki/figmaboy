@@ -206,6 +206,28 @@ struct PackageWorkspace {
     assets: Vec<PackageAsset>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExtensionVersionSummary {
+    hash: String,
+    version: String,
+    created_at: String,
+    status: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct InstalledExtension {
+    id: String,
+    name: String,
+    enabled: bool,
+    active_hash: Option<String>,
+    preview_hash: Option<String>,
+    active: Option<Value>,
+    preview: Option<Value>,
+    versions: Vec<ExtensionVersionSummary>,
+}
+
 type PackagedWorkspace = (PackageWorkspace, Vec<(String, Vec<u8>)>);
 
 fn now() -> String {
@@ -286,6 +308,31 @@ fn initialize_database(path: &Path) -> Result<Connection, String> {
                 height INTEGER NOT NULL,
                 created_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS extension_versions (
+                hash TEXT PRIMARY KEY,
+                extension_id TEXT NOT NULL,
+                version TEXT NOT NULL,
+                manifest_json TEXT NOT NULL,
+                status TEXT NOT NULL CHECK(status IN ('candidate', 'release')),
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS extension_versions_id_idx ON extension_versions(extension_id, created_at DESC);
+            CREATE TABLE IF NOT EXISTS extension_installs (
+                extension_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                active_hash TEXT,
+                preview_hash TEXT,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS extension_events (
+                sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                extension_id TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                before_hash TEXT,
+                after_hash TEXT,
+                created_at TEXT NOT NULL
+            );
             INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (1, datetime('now'));
             "#,
         )
@@ -309,6 +356,12 @@ fn initialize_database(path: &Path) -> Result<Connection, String> {
     connection
         .execute(
             "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (2, datetime('now'))",
+            [],
+        )
+        .map_err(|error| error.to_string())?;
+    connection
+        .execute(
+            "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (3, datetime('now'))",
             [],
         )
         .map_err(|error| error.to_string())?;
@@ -1130,6 +1183,394 @@ fn safe_filename(name: &str) -> String {
     }
 }
 
+fn extension_manifest_identity(manifest: &Value) -> CommandResult<(String, String, String)> {
+    let object = manifest
+        .as_object()
+        .ok_or_else(|| "Extension manifest must be an object".to_string())?;
+    if object.get("format").and_then(Value::as_str) != Some("figmaboy-extension") {
+        return Err("Extension format must be figmaboy-extension".into());
+    }
+    if object.get("apiVersion").and_then(Value::as_u64) != Some(1) {
+        return Err("This extension API version is not supported".into());
+    }
+    let field = |name: &str, maximum: usize| -> CommandResult<String> {
+        let value = object
+            .get(name)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| format!("Extension {name} is required"))?;
+        if value.len() > maximum {
+            return Err(format!("Extension {name} is too long"));
+        }
+        Ok(value.to_string())
+    };
+    let id = field("id", 120)?;
+    if !id.chars().all(|character| {
+        character.is_ascii_lowercase()
+            || character.is_ascii_digit()
+            || matches!(character, '.' | '-' | '_')
+    }) {
+        return Err("Extension id contains unsupported characters".into());
+    }
+    Ok((id, field("name", 120)?, field("version", 80)?))
+}
+
+fn extension_manifest_by_hash(connection: &Connection, hash: &str) -> CommandResult<Option<Value>> {
+    let manifest: Option<String> = connection
+        .query_row(
+            "SELECT manifest_json FROM extension_versions WHERE hash = ?1",
+            [hash],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+    manifest
+        .map(|value| serde_json::from_str(&value).map_err(|error| error.to_string()))
+        .transpose()
+}
+
+fn extension_record(connection: &Connection, id: &str) -> CommandResult<InstalledExtension> {
+    let (name, active_hash, preview_hash, enabled): (String, Option<String>, Option<String>, i64) = connection
+        .query_row(
+            "SELECT name, active_hash, preview_hash, enabled FROM extension_installs WHERE extension_id = ?1",
+            [id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .map_err(|_| "Extension is not installed".to_string())?;
+    let active = active_hash
+        .as_deref()
+        .map(|hash| extension_manifest_by_hash(connection, hash))
+        .transpose()?
+        .flatten();
+    let preview = preview_hash
+        .as_deref()
+        .map(|hash| extension_manifest_by_hash(connection, hash))
+        .transpose()?
+        .flatten();
+    let mut statement = connection
+        .prepare("SELECT hash, version, created_at, status FROM extension_versions WHERE extension_id = ?1 ORDER BY created_at DESC")
+        .map_err(|error| error.to_string())?;
+    let versions = statement
+        .query_map([id], |row| {
+            Ok(ExtensionVersionSummary {
+                hash: row.get(0)?,
+                version: row.get(1)?,
+                created_at: row.get(2)?,
+                status: row.get(3)?,
+            })
+        })
+        .map_err(|error| error.to_string())?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|error| error.to_string())?;
+    Ok(InstalledExtension {
+        id: id.to_string(),
+        name,
+        enabled: enabled != 0,
+        active_hash,
+        preview_hash,
+        active,
+        preview,
+        versions,
+    })
+}
+
+#[tauri::command]
+fn extensions_list(state: State<'_, AppState>) -> CommandResult<Vec<InstalledExtension>> {
+    let connection = database(&state)?;
+    let mut statement = connection
+        .prepare("SELECT extension_id FROM extension_installs ORDER BY name COLLATE NOCASE")
+        .map_err(|error| error.to_string())?;
+    let ids = statement
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|error| error.to_string())?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|error| error.to_string())?;
+    ids.iter()
+        .map(|id| extension_record(&connection, id))
+        .collect()
+}
+
+#[tauri::command]
+fn extension_stage(
+    manifest: Value,
+    state: State<'_, AppState>,
+) -> CommandResult<InstalledExtension> {
+    let (id, name, version) = extension_manifest_identity(&manifest)?;
+    let bytes = serde_json::to_vec(&manifest).map_err(|error| error.to_string())?;
+    if bytes.len() > 1024 * 1024 {
+        return Err("Extension manifests must be smaller than 1 MB".into());
+    }
+    let hash = format!("{:x}", Sha256::digest(&bytes));
+    let timestamp = now();
+    let mut connection = database(&state)?;
+    let transaction = connection
+        .transaction()
+        .map_err(|error| error.to_string())?;
+    let (before, previous_preview): (Option<String>, Option<String>) = transaction
+        .query_row(
+            "SELECT active_hash, preview_hash FROM extension_installs WHERE extension_id = ?1",
+            [&id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?
+        .unwrap_or((None, None));
+    transaction
+        .execute(
+            "INSERT OR IGNORE INTO extension_versions(hash, extension_id, version, manifest_json, status, created_at) VALUES (?1, ?2, ?3, ?4, 'candidate', ?5)",
+            params![hash, id, version, String::from_utf8(bytes).map_err(|error| error.to_string())?, timestamp],
+        )
+        .map_err(|error| error.to_string())?;
+    if previous_preview.as_deref() != Some(hash.as_str()) {
+        if let Some(previous_hash) = previous_preview {
+            transaction
+                .execute(
+                    "DELETE FROM extension_versions WHERE hash = ?1 AND status = 'candidate'",
+                    [previous_hash],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+    }
+    transaction
+        .execute(
+            "INSERT INTO extension_installs(extension_id, name, preview_hash, enabled, updated_at) VALUES (?1, ?2, ?3, 1, ?4) ON CONFLICT(extension_id) DO UPDATE SET name = excluded.name, preview_hash = excluded.preview_hash, updated_at = excluded.updated_at",
+            params![id, name, hash, timestamp],
+        )
+        .map_err(|error| error.to_string())?;
+    transaction
+        .execute(
+            "INSERT INTO extension_events(extension_id, kind, before_hash, after_hash, created_at) VALUES (?1, 'stage', ?2, ?3, ?4)",
+            params![id, before, hash, timestamp],
+        )
+        .map_err(|error| error.to_string())?;
+    transaction.commit().map_err(|error| error.to_string())?;
+    extension_record(&connection, &id)
+}
+
+#[tauri::command]
+fn extension_keep(
+    extension_id: String,
+    hash: String,
+    state: State<'_, AppState>,
+) -> CommandResult<InstalledExtension> {
+    let timestamp = now();
+    let mut connection = database(&state)?;
+    let transaction = connection
+        .transaction()
+        .map_err(|error| error.to_string())?;
+    let (before, preview): (Option<String>, Option<String>) = transaction
+        .query_row(
+            "SELECT active_hash, preview_hash FROM extension_installs WHERE extension_id = ?1",
+            [&extension_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|_| "Extension is not installed".to_string())?;
+    if preview.as_deref() != Some(hash.as_str()) {
+        return Err("Only the current preview can be kept".into());
+    }
+    transaction
+        .execute(
+            "UPDATE extension_versions SET status = 'release' WHERE hash = ?1 AND extension_id = ?2",
+            params![hash, extension_id],
+        )
+        .map_err(|error| error.to_string())?;
+    transaction
+        .execute(
+            "UPDATE extension_installs SET active_hash = ?2, preview_hash = NULL, enabled = 1, updated_at = ?3 WHERE extension_id = ?1",
+            params![extension_id, hash, timestamp],
+        )
+        .map_err(|error| error.to_string())?;
+    transaction
+        .execute(
+            "INSERT INTO extension_events(extension_id, kind, before_hash, after_hash, created_at) VALUES (?1, 'keep', ?2, ?3, ?4)",
+            params![extension_id, before, hash, timestamp],
+        )
+        .map_err(|error| error.to_string())?;
+    transaction.commit().map_err(|error| error.to_string())?;
+    extension_record(&connection, &extension_id)
+}
+
+#[tauri::command]
+fn extension_discard(
+    extension_id: String,
+    hash: String,
+    state: State<'_, AppState>,
+) -> CommandResult<Vec<InstalledExtension>> {
+    let timestamp = now();
+    let mut connection = database(&state)?;
+    let transaction = connection
+        .transaction()
+        .map_err(|error| error.to_string())?;
+    let preview: Option<String> = transaction
+        .query_row(
+            "SELECT preview_hash FROM extension_installs WHERE extension_id = ?1",
+            [&extension_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?
+        .flatten();
+    if preview.as_deref() != Some(hash.as_str()) {
+        return Err("This candidate is no longer being previewed".into());
+    }
+    transaction
+        .execute("UPDATE extension_installs SET preview_hash = NULL, updated_at = ?2 WHERE extension_id = ?1", params![extension_id, timestamp])
+        .map_err(|error| error.to_string())?;
+    transaction
+        .execute(
+            "DELETE FROM extension_versions WHERE hash = ?1 AND status = 'candidate'",
+            [&hash],
+        )
+        .map_err(|error| error.to_string())?;
+    transaction
+        .execute(
+            "INSERT INTO extension_events(extension_id, kind, before_hash, after_hash, created_at) VALUES (?1, 'discard', ?2, NULL, ?3)",
+            params![extension_id, hash, timestamp],
+        )
+        .map_err(|error| error.to_string())?;
+    transaction
+        .execute("DELETE FROM extension_installs WHERE extension_id = ?1 AND active_hash IS NULL AND preview_hash IS NULL", [&extension_id])
+        .map_err(|error| error.to_string())?;
+    transaction.commit().map_err(|error| error.to_string())?;
+    drop(connection);
+    extensions_list(state)
+}
+
+#[tauri::command]
+fn extension_set_enabled(
+    extension_id: String,
+    enabled: bool,
+    state: State<'_, AppState>,
+) -> CommandResult<InstalledExtension> {
+    let connection = database(&state)?;
+    let active: Option<String> = connection
+        .query_row(
+            "SELECT active_hash FROM extension_installs WHERE extension_id = ?1",
+            [&extension_id],
+            |row| row.get(0),
+        )
+        .map_err(|_| "Extension is not installed".to_string())?;
+    if active.is_none() {
+        return Err("Keep an extension before enabling it".into());
+    }
+    let timestamp = now();
+    connection
+        .execute(
+            "UPDATE extension_installs SET enabled = ?2, updated_at = ?3 WHERE extension_id = ?1",
+            params![extension_id, enabled, timestamp],
+        )
+        .map_err(|error| error.to_string())?;
+    connection
+        .execute(
+            "INSERT INTO extension_events(extension_id, kind, before_hash, after_hash, created_at) VALUES (?1, ?2, ?3, ?3, ?4)",
+            params![extension_id, if enabled { "enable" } else { "disable" }, active, timestamp],
+        )
+        .map_err(|error| error.to_string())?;
+    extension_record(&connection, &extension_id)
+}
+
+#[tauri::command]
+fn extension_rollback(
+    extension_id: String,
+    hash: String,
+    state: State<'_, AppState>,
+) -> CommandResult<InstalledExtension> {
+    let connection = database(&state)?;
+    let status: Option<String> = connection
+        .query_row(
+            "SELECT status FROM extension_versions WHERE extension_id = ?1 AND hash = ?2",
+            params![extension_id, hash],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+    if status.as_deref() != Some("release") {
+        return Err("Rollback requires a kept extension version".into());
+    }
+    let before: Option<String> = connection
+        .query_row(
+            "SELECT active_hash FROM extension_installs WHERE extension_id = ?1",
+            [&extension_id],
+            |row| row.get(0),
+        )
+        .map_err(|_| "Extension is not installed".to_string())?;
+    let timestamp = now();
+    connection
+        .execute("UPDATE extension_installs SET active_hash = ?2, preview_hash = NULL, enabled = 1, updated_at = ?3 WHERE extension_id = ?1", params![extension_id, hash, timestamp])
+        .map_err(|error| error.to_string())?;
+    connection
+        .execute(
+            "INSERT INTO extension_events(extension_id, kind, before_hash, after_hash, created_at) VALUES (?1, 'rollback', ?2, ?3, ?4)",
+            params![extension_id, before, hash, timestamp],
+        )
+        .map_err(|error| error.to_string())?;
+    extension_record(&connection, &extension_id)
+}
+
+#[tauri::command]
+fn extension_remove(
+    extension_id: String,
+    state: State<'_, AppState>,
+) -> CommandResult<Vec<InstalledExtension>> {
+    let mut connection = database(&state)?;
+    let transaction = connection
+        .transaction()
+        .map_err(|error| error.to_string())?;
+    let active_row: Option<Option<String>> = transaction
+        .query_row(
+            "SELECT active_hash FROM extension_installs WHERE extension_id = ?1",
+            [&extension_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+    let active = active_row.ok_or_else(|| "Extension is not installed".to_string())?;
+    transaction
+        .execute(
+            "INSERT INTO extension_events(extension_id, kind, before_hash, after_hash, created_at) VALUES (?1, 'remove', ?2, NULL, ?3)",
+            params![extension_id, active, now()],
+        )
+        .map_err(|error| error.to_string())?;
+    transaction
+        .execute(
+            "DELETE FROM extension_installs WHERE extension_id = ?1",
+            [&extension_id],
+        )
+        .map_err(|error| error.to_string())?;
+    transaction
+        .execute(
+            "DELETE FROM extension_versions WHERE extension_id = ?1",
+            [&extension_id],
+        )
+        .map_err(|error| error.to_string())?;
+    transaction.commit().map_err(|error| error.to_string())?;
+    drop(connection);
+    extensions_list(state)
+}
+
+#[tauri::command]
+async fn extension_import(app: AppHandle) -> CommandResult<Option<Value>> {
+    let Some(selection) = pick_file(
+        app.dialog()
+            .file()
+            .add_filter("Figmaboy extension", &["json", "figmaboy-extension"]),
+    )
+    .await?
+    else {
+        return Ok(None);
+    };
+    let path = picked_path(selection)?;
+    let metadata = fs::metadata(&path).map_err(|error| error.to_string())?;
+    if metadata.len() > 1024 * 1024 {
+        return Err("Extension manifests must be smaller than 1 MB".into());
+    }
+    let bytes = fs::read(path).map_err(|error| error.to_string())?;
+    serde_json::from_slice(&bytes)
+        .map(Some)
+        .map_err(|_| "The extension file is not valid JSON".to_string())
+}
+
 #[tauri::command(rename_all = "camelCase")]
 async fn export_render(
     app: AppHandle,
@@ -1524,6 +1965,14 @@ pub fn run() {
             export_package,
             import_package,
             export_render,
+            extensions_list,
+            extension_stage,
+            extension_keep,
+            extension_discard,
+            extension_set_enabled,
+            extension_rollback,
+            extension_remove,
+            extension_import,
             codex::codex_connect,
             codex::codex_mcp_status,
             codex::codex_mcp_install,
@@ -1572,13 +2021,46 @@ mod tests {
         assert_eq!(
             connection
                 .query_row(
-                    "SELECT COUNT(*) FROM schema_migrations WHERE version = 2",
+                    "SELECT COUNT(*) FROM schema_migrations WHERE version IN (2, 3)",
                     [],
                     |row| row.get::<_, i64>(0),
                 )
                 .unwrap(),
-            1
+            2
         );
+        for table in [
+            "extension_versions",
+            "extension_installs",
+            "extension_events",
+        ] {
+            assert_eq!(
+                connection
+                    .query_row(
+                        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+                        [table],
+                        |row| row.get::<_, i64>(0),
+                    )
+                    .unwrap(),
+                1
+            );
+        }
+    }
+
+    #[test]
+    fn extension_identity_rejects_unsafe_ids() {
+        let valid = json!({
+            "format": "figmaboy-extension",
+            "apiVersion": 1,
+            "id": "local.selection-tools",
+            "name": "Selection tools",
+            "version": "1.0.0"
+        });
+        assert_eq!(
+            extension_manifest_identity(&valid).unwrap().0,
+            "local.selection-tools"
+        );
+        let invalid = json!({ "format": "figmaboy-extension", "apiVersion": 1, "id": "../../Plugin", "name": "Bad", "version": "1.0.0" });
+        assert!(extension_manifest_identity(&invalid).is_err());
     }
 
     #[test]

@@ -165,6 +165,38 @@ test("creates a truly blank local design and draws a rectangle", async ({ page }
   await expect(page.getByText("Ellipse", { exact: true }).first()).toBeVisible();
 });
 
+test("runs an extension canvas action through preview and undoable apply", async ({ page }) => {
+  const manifest = {
+    format: "figmaboy-extension",
+    apiVersion: 1,
+    id: "tests.card-maker",
+    name: "Card maker",
+    version: "1.0.0",
+    permissions: ["ui.sidebar", "design.read", "design.write"],
+    contributes: { sidebar: [{ id: "cards", title: "Cards", controls: [{
+      type: "button", id: "create", label: "Create card", variant: "primary",
+      action: { type: "design.transact", label: "Create card", mode: "preview", selectCreated: true, operations: [{ kind: "create", node: { id: "extension-card", type: "frame", name: "Extension card", x: 100, y: 100, width: 320, height: 180, radius: 20 } }] },
+    }] }] },
+  };
+  await page.evaluate((extension) => localStorage.setItem("figmaboy.extensions.v1", JSON.stringify({
+    manifests: { release: extension },
+    records: [{ id: extension.id, name: extension.name, enabled: true, activeHash: "release", previewHash: null, active: extension, preview: null, versions: [{ hash: "release", version: extension.version, createdAt: new Date(0).toISOString(), status: "release" }] }],
+  })), manifest);
+  await page.getByRole("button", { name: "New design" }).first().click();
+
+  await page.getByTitle("Toggle extensions").click();
+  await expect(page.getByText("Cards", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Create card" }).click();
+  await expect(page.locator("#design-canvas g[data-node-id='extension-card']")).toBeVisible();
+  await expect(page.getByText("Canvas preview", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("Apply or discard it in Extensions.")).toBeVisible();
+  await page.getByRole("button", { name: "Apply" }).click();
+  await expect(page.getByText("Canvas preview", { exact: true })).toHaveCount(0);
+
+  await page.keyboard.press("Control+z");
+  await expect(page.locator("#design-canvas g[data-node-id='extension-card']")).toHaveCount(0);
+});
+
 test("draws and Alt-drags layers inside an existing frame", async ({ page }) => {
   await page.getByRole("button", { name: "New design" }).first().click();
   const canvas = page.locator("#design-canvas");

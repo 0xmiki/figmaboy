@@ -18,6 +18,7 @@
   import { EditorSession } from "$lib/editor/editor.svelte";
   import EditorCanvas from "$lib/editor/EditorCanvas.svelte";
   import Inspector from "$lib/editor/Inspector.svelte";
+  import ExtensionsSidebar from "$lib/extensions/ExtensionsSidebar.svelte";
   import LeftPanel from "$lib/editor/LeftPanel.svelte";
   import PrototypePreview from "$lib/editor/PrototypePreview.svelte";
   import Toolbar from "$lib/editor/Toolbar.svelte";
@@ -34,6 +35,7 @@
   let panels = $state({ left: true, right: true });
   let panelWidths = $state({ left: 297, right: 241, codex: 390 });
   let codexOpen = $state(false);
+  let extensionsOpen = $state(false);
   let codexMounted = $state(false);
   let CodexSidebarComponent = $state<any>(null);
   let codexComponentPromise: Promise<void> | null = null;
@@ -51,6 +53,7 @@
     rightWidth?: number;
     codexWidth?: number;
     codexOpenByPage?: Record<string, boolean>;
+    extensionsOpenByPage?: Record<string, boolean>;
   };
 
   const layoutStorageKey = `figmaboy:editor-layout:${route.params.id ?? "unknown"}`;
@@ -78,15 +81,17 @@
       rightWidth: panelWidths.right,
       codexWidth: panelWidths.codex,
       codexOpenByPage: { ...(previous.codexOpenByPage ?? {}), [pageId]: codexOpen },
+      extensionsOpenByPage: { ...(previous.extensionsOpenByPage ?? {}), [pageId]: extensionsOpen },
     } satisfies StoredEditorLayout));
   }
 
   function restorePageCodexState(pageId: string) {
     const stored = readEditorLayout();
     codexOpen = stored.codexOpenByPage?.[pageId] === true;
+    extensionsOpen = !codexOpen && stored.extensionsOpenByPage?.[pageId] === true;
     codexMounted = codexOpen;
     if (codexOpen) void ensureCodexComponent();
-    if (codexOpen) panels.right = true;
+    if (codexOpen || extensionsOpen) panels.right = true;
   }
 
   function restoreEditorLayout(pageId: string) {
@@ -145,7 +150,7 @@
   });
 
   $effect(() => {
-    panels.left; panels.right; codexOpen; session?.page.id;
+    panels.left; panels.right; codexOpen; extensionsOpen; session?.page.id;
     if (layoutReady) persistEditorLayout();
   });
 
@@ -560,6 +565,7 @@
     if (!session) return;
     if (event.ctrlKey && key === "`") { event.preventDefault(); toggleCodex(); return; }
     if (typing) return;
+    if (session.externalPreviewActive) { event.preventDefault(); return; }
     if (!event.key.startsWith("Arrow")) commitNudge();
     if (mod && key === "a") { event.preventDefault(); session.selectAll(); return; }
     if (mod && key === "z") { event.preventDefault(); event.shiftKey ? session.redo() : session.undo(); return; }
@@ -655,8 +661,10 @@
   }
 
   function setCodexOpen(open: boolean) {
+    if (open && session?.hasExternalPreview) session.cancelExternalPreview();
     codexMounted ||= open;
     codexOpen = open;
+    if (open) extensionsOpen = false;
     if (open) void ensureCodexComponent();
     if (open) panels.right = true;
   }
@@ -673,17 +681,28 @@
     setCodexOpen(!codexOpen);
   }
 
+  function setExtensionsOpen(open: boolean) {
+    if (!open && session?.hasExternalPreview) session.cancelExternalPreview();
+    extensionsOpen = open;
+    if (open) {
+      codexOpen = false;
+      panels.right = true;
+    }
+  }
+
+  function toggleExtensions() { setExtensionsOpen(!extensionsOpen); }
+
   function togglePanel(side: "left" | "right") {
     if (side === "left") panels.left = !panels.left;
     else {
       panels.right = !panels.right;
-      if (!panels.right) codexOpen = false;
+      if (!panels.right) { codexOpen = false; extensionsOpen = false; }
     }
   }
 
   function setPanelsVisible(visible: boolean) {
     panels = { left: visible, right: visible };
-    if (!visible) codexOpen = false;
+    if (!visible) { codexOpen = false; extensionsOpen = false; }
   }
 
   function startPanelResize(event: PointerEvent, side: "left" | "right") {
@@ -739,6 +758,7 @@
   <div class="editor-shell" class:left-hidden={!panels.left} class:right-hidden={!panels.right} class:codex-open={codexOpen && panels.right} style={`--left-panel-width:${panelWidths.left}px;--right-panel-width:${panelWidths.right}px;--codex-panel-width:${panelWidths.codex}px`}>
     <div class="canvas-region">
       <EditorCanvas {session} onContextMenu={showContext} />
+      {#if session.externalPreviewActive}<div class="canvas-preview-lock"><span>Canvas preview</span><small>Apply or discard it in Extensions.</small></div>{/if}
       <div class="editor-top-left">
         <button class="home-mark" title="Back to projects" aria-label="Back to projects" onclick={backToFiles}><img src="/figmaboy.svg" alt="" /></button>
         <button class="file-title" onclick={renameFile}>{session.file.name}<ChevronDown size={12} /></button>
@@ -747,13 +767,14 @@
       </div>
       <button class="panel-toggle left" title="Toggle left panel" onclick={() => togglePanel("left")}><PanelLeftClose size={15} /></button>
       <button class="panel-toggle right" title="Toggle right panel" onclick={() => togglePanel("right")}><PanelRightClose size={15} mirrored /></button>
-      <Toolbar {session} onFit={() => fitCanvas("auto")} {codexOpen} {codexAttention} onToggleCodex={toggleCodex} />
+      <Toolbar {session} onFit={() => fitCanvas("auto")} {codexOpen} {extensionsOpen} {codexAttention} onToggleCodex={toggleCodex} onToggleExtensions={toggleExtensions} />
     </div>
     {#if panels.left}<LeftPanel {session} onCreatePage={createPage} onOpenPage={openPage} onPageMenu={showPageMenu} onLayerContext={layerContext} onPlaceIcon={placeIcon} />{/if}
-    {#if panels.right && !codexOpen}<Inspector {session} onCreatePreset={createPreset} onPresent={() => (preview = true)} onExport={exportSelection} />{/if}
+    {#if panels.right && !codexOpen && !extensionsOpen}<Inspector {session} onCreatePreset={createPreset} onPresent={() => (preview = true)} onExport={exportSelection} />{/if}
+    {#if panels.right && extensionsOpen}<ExtensionsSidebar {session} onClose={() => setExtensionsOpen(false)} />{/if}
     {#if codexMounted && CodexSidebarComponent}{#key session.page.id}<CodexSidebarComponent workspaceId={session.file.id} pageId={session.page.id} fileName={session.file.name} visible={codexOpen && panels.right} onAttentionChange={(attention: typeof codexAttention) => (codexAttention = attention)} onClose={() => setCodexOpen(false)} />{/key}{/if}
     {#if panels.left}<div class="panel-resizer left" role="separator" aria-label="Resize left sidebar" aria-orientation="vertical" onpointerdown={(event) => startPanelResize(event, "left")}></div>{/if}
-    {#if panels.right}<div class:codex={codexOpen} class="panel-resizer right" role="separator" aria-label={codexOpen ? "Resize chat sidebar" : "Resize inspector"} aria-orientation="vertical" onpointerdown={(event) => startPanelResize(event, "right")}></div>{/if}
+    {#if panels.right}<div class:codex={codexOpen} class="panel-resizer right" role="separator" aria-label={codexOpen ? "Resize chat sidebar" : extensionsOpen ? "Resize extensions sidebar" : "Resize inspector"} aria-orientation="vertical" onpointerdown={(event) => startPanelResize(event, "right")}></div>{/if}
 
     {#if session.errorMessage || session.saveStatus === "conflict"}
       <div class="save-error"><div><strong>{session.saveStatus === "conflict" ? "This page changed elsewhere" : "Could not save"}</strong><span>{session.saveStatus === "conflict" ? "Choose which version should win. Neither action happens automatically." : session.errorMessage}</span></div>{#if session.saveStatus === "conflict"}<button onclick={() => resolveConflict("reload")}><RefreshCw size={14} /> Reload</button><button onclick={() => resolveConflict("keep-local")}><Save size={14} /> Keep local</button>{:else}<button onclick={retrySave}><RefreshCw size={14} /> Retry</button><button class="dismiss" onclick={dismissSaveError}><X size={14} /></button>{/if}</div>
@@ -784,6 +805,7 @@
   .editor-top-left { position: absolute; z-index: 35; top: 0; left: 0; height: 42px; background: #292929e8; border: 1px solid #444; border-top: 0; border-left: 0; border-radius: 0 0 7px 0; display: flex; align-items: center; padding: 0 7px; gap: 3px; box-shadow: 0 4px 14px #0003; }.editor-top-left button { border: 0; background: transparent; color: #ddd; height: 29px; border-radius: 5px; display: flex; align-items: center; cursor: pointer; }.editor-top-left button:hover { background: #3a3a3a; }.editor-top-left .home-mark { width: 29px; justify-content: center; }.home-mark img { width: 16px; height: 23px; object-fit: contain; filter: drop-shadow(0 2px 4px #0008); }.editor-top-left .file-title { max-width: 180px; gap: 5px; font-size: var(--text-control); font-weight: var(--weight-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.editor-top-left .copy-file-id { width: 27px; justify-content: center; color: #929299; }.editor-top-left > span { color: #6f6f76; font-size: var(--text-caption); margin-left: 4px; }.editor-top-left > span.bad { color: #fca5a5; }
   .panel-toggle { position: absolute; z-index: 35; top: 8px; width: 29px; height: 28px; border: 1px solid #4a4a4a; background: #292929; color: #aaa; border-radius: 5px; display: grid; place-items: center; cursor: pointer; }.panel-toggle.left { left: 7px; opacity: 0; pointer-events: none; }.left-hidden .panel-toggle.left { opacity: 1; pointer-events: auto; }.panel-toggle.right { right: 7px; opacity: 0; pointer-events: none; }.right-hidden .panel-toggle.right { opacity: 1; pointer-events: auto; }
   .panel-resizer { position: absolute; z-index: 61; top: 0; bottom: 0; width: 7px; cursor: col-resize; touch-action: none; }.panel-resizer::after { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 1px; background: transparent; transition: background 120ms ease; }.panel-resizer:hover::after { background: #6f6f77; }.panel-resizer.left { left: calc(var(--left-panel-width,297px) - 7px); }.panel-resizer.right { right: calc(var(--right-panel-width,241px) - 7px); }.panel-resizer.right.codex { right: calc(var(--codex-panel-width,390px) - 7px); }
+  .canvas-preview-lock { position: absolute; z-index: 34; inset: 0; display: flex; align-items: flex-start; justify-content: center; padding-top: 64px; background: #1111; cursor: not-allowed; }.canvas-preview-lock span { padding: 5px 8px; border: 1px solid #3579a7; border-radius: 5px 0 0 5px; background: #203b4d; color: #d9efff; font-size: var(--text-small); font-weight: var(--weight-semibold); }.canvas-preview-lock small { padding: 5px 8px; border: 1px solid #414146; border-left: 0; border-radius: 0 5px 5px 0; background: #29292c; color: #aaaab0; font-size: var(--text-small); }
   .loading, .error-screen { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #1d1d1d; }.loader-logo { width: 92px; height: 129px; object-fit: contain; filter: drop-shadow(0 16px 30px #000a); animation: logo-breathe 1.8s ease-in-out infinite; }.loading strong { margin-top: 20px; font-size: var(--text-title); letter-spacing: -.02em; }.loading p { color: #777; font-size: var(--text-control); margin: 6px 0 0; } @keyframes logo-breathe { 50% { transform: translateY(-3px) scale(.985); opacity: .78; } }
   .screen-brand { width: 38px; height: 54px; object-fit: contain; margin-bottom: 19px; opacity: .9; filter: drop-shadow(0 7px 14px #0009); }.error-icon { width: 58px; height: 58px; display: grid; place-items: center; border: 1px solid #512727; background: #321d1d; color: #f87171; border-radius: 15px; }.error-screen h1 { font-size: var(--text-large); margin: 17px 0 4px; }.error-screen p { color: #888; font-size: var(--text-control); }.error-screen button { margin-top: 13px; height: 32px; border: 1px solid #414141; border-radius: 6px; background: #2c2c2c; color: white; display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 0 11px; font-size: var(--text-control); }
   .editor-context { position: fixed; z-index: 100; width: 225px; padding: 6px; border: 1px solid #444; border-radius: 7px; background: #202020; box-shadow: 0 15px 45px #0009; }.editor-context.small { width: 165px; }.editor-context button { width: 100%; min-height: 31px; border: 0; border-radius: 4px; background: transparent; color: #eee; padding: 0 8px; display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: var(--text-control); }.editor-context button:hover { background: #373737; }.editor-context kbd,.editor-context button > span { margin-left: auto; color: #888; font: inherit; }.editor-context hr { height: 1px; border: 0; background: #3d3d3d; margin: 5px -6px; }.editor-context .danger { color: #fca5a5; }

@@ -57,4 +57,28 @@ describe("browser persistence adapter", () => {
     expect(opened.document.nodes.card).toMatchObject({ x: -20, width: 30 });
     expect(opened.document.viewport.zoom).toBe(.05);
   });
+
+  it("stages, keeps, disables, and restores immutable extension versions", async () => {
+    const repo = repository();
+    const base = {
+      format: "figmaboy-extension" as const,
+      apiVersion: 1 as const,
+      id: "local.canvas-tools",
+      name: "Canvas tools",
+      version: "1.0.0",
+      permissions: ["ui.sidebar" as const],
+      contributes: { sidebar: [{ id: "main", title: "Canvas tools", controls: [{ type: "text" as const, text: "Ready" }] }] },
+    };
+    const candidate = await repo.extensionStage(base);
+    expect(candidate.preview?.version).toBe("1.0.0");
+    const kept = await repo.extensionKeep(candidate.id, candidate.previewHash!);
+    expect(kept.active?.version).toBe("1.0.0");
+    expect((await repo.extensionSetEnabled(base.id, false)).enabled).toBe(false);
+
+    const second = await repo.extensionStage({ ...base, version: "1.1.0" });
+    const upgraded = await repo.extensionKeep(second.id, second.previewHash!);
+    const firstHash = upgraded.versions.find((version) => version.version === "1.0.0")!.hash;
+    expect((await repo.extensionRollback(base.id, firstHash)).active?.version).toBe("1.0.0");
+    expect((await repo.extensionRemove(base.id)).some((extension) => extension.id === base.id)).toBe(false);
+  });
 });
