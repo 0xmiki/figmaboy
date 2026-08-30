@@ -5,13 +5,12 @@
   import type { ExtensionControl, ExtensionManifest, ExtensionSidebarContribution } from "$lib/extensions/types";
   import { initialControlState, runExtensionAction, type ExtensionControlState } from "$lib/extensions/runtime";
 
-  let { manifest, panel, service, trial, selectionCount, onCanvasPreview }: {
+  let { manifest, panel, service, trial, selectionCount }: {
     manifest: ExtensionManifest;
     panel: ExtensionSidebarContribution;
     service: DesignService;
     trial: boolean;
     selectionCount: number;
-    onCanvasPreview: (label: string) => void;
   } = $props();
 
   let values = $state<ExtensionControlState>({});
@@ -28,8 +27,7 @@
     error = "";
     running = control.id;
     try {
-      const outcome = runExtensionAction(service, manifest, control.action, { ...values }, trial);
-      if (outcome.preview) onCanvasPreview(control.action.label);
+      runExtensionAction(service, manifest, control.action, { ...values });
     } catch (cause) {
       error = cause instanceof Error ? cause.message : "The canvas action failed";
     } finally {

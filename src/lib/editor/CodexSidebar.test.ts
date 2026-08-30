@@ -135,6 +135,8 @@ describe("Codex sidebar diagnostics", () => {
     await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("codex_request", expect.objectContaining({ method: "turn/start" })));
     const threadStart = invokeMock.mock.calls.find(([, args]) => args?.method === "thread/start");
     expect(threadStart?.[1]?.params).not.toHaveProperty("threadSource");
+    expect(threadStart?.[1]?.params?.developerInstructions).toContain("extension_stage");
+    expect(threadStart?.[1]?.params?.developerInstructions).toContain("only the user may run, Keep, or Discard");
 
     eventHandlers.get("codex-event")?.({
       payload: { method: "turn/started", params: { threadId: "thread", turn: { id: "turn", status: "inProgress", items: [], error: null } } },
@@ -143,6 +145,52 @@ describe("Codex sidebar diagnostics", () => {
     await fireEvent.input(textbox, { target: { value: "Make it denser" } });
     await fireEvent.click(screen.getByRole("button", { name: "Steer Codex" }));
     await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("codex_request", expect.objectContaining({ method: "turn/steer", params: expect.objectContaining({ expectedTurnId: "turn" }) })));
+  });
+
+  it("shows the access scope in an approval card", async () => {
+    render(CodexSidebar, {
+      workspaceId: "file",
+      pageId: "page-1",
+      fileName: "Untitled",
+      visible: true,
+      onAttentionChange: () => {},
+      onClose: () => {},
+    });
+    const textbox = await screen.findByRole("textbox", { name: "Message Codex" });
+    await screen.findByRole("button", { name: /GPT Test/ });
+    await fireEvent.input(textbox, { target: { value: "Export the design" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+    await waitFor(() => expect(eventHandlers.has("codex-event")).toBe(true));
+
+    eventHandlers.get("codex-event")?.({
+      payload: {
+        id: 42,
+        method: "item/permissions/requestApproval",
+        params: {
+          threadId: "thread",
+          turnId: "turn",
+          itemId: "tool",
+          cwd: "/tmp/figmaboy",
+          reason: "Save the exported files",
+          permissions: {
+            network: { enabled: true },
+            fileSystem: { read: ["/assets"], write: ["/exports"] },
+          },
+        },
+      },
+    });
+
+    expect(await screen.findByText("Grant extra access?")).toBeInTheDocument();
+    expect(screen.getByText("Save the exported files.")).toBeInTheDocument();
+    expect(screen.getByText("Use the network")).toBeInTheDocument();
+    expect(screen.getByText("Read: /assets")).toBeInTheDocument();
+    expect(screen.getByText("Change: /exports")).toBeInTheDocument();
+
+    await fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("codex_respond", expect.objectContaining({
+      id: 42,
+      result: expect.objectContaining({ scope: "turn" }),
+    })));
   });
 
   it("shows current context separately from cumulative thread usage", async () => {

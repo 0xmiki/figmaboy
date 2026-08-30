@@ -6,6 +6,7 @@ import type { ExtensionManifest, InstalledExtension } from "$lib/extensions/type
 
 export interface Repository {
   library(): Promise<LibrarySnapshot>;
+  fileThumbnail(fileId: string): Promise<string | null>;
   createProject(name: string): Promise<Project>;
   renameProject(id: string, name: string): Promise<void>;
   trashProject(id: string): Promise<void>;
@@ -164,6 +165,10 @@ class BrowserRepository implements Repository {
   async library(): Promise<LibrarySnapshot> {
     const { projects, files } = this.state();
     return { projects, files };
+  }
+
+  async fileThumbnail(fileId: string): Promise<string | null> {
+    return this.state().files.find((file) => file.id === fileId)?.thumbnail ?? null;
   }
 
   async createProject(name: string): Promise<Project> {
@@ -606,6 +611,7 @@ class BrowserRepository implements Repository {
 
 class TauriRepository implements Repository {
   library = () => invoke<LibrarySnapshot>("library_snapshot");
+  fileThumbnail = (fileId: string) => invoke<string | null>("file_thumbnail", { fileId });
   createProject = (name: string) => invoke<Project>("create_project", { name });
   renameProject = (id: string, name: string) => invoke<void>("rename_project", { id, name });
   trashProject = (id: string) => invoke<void>("trash_project", { id });

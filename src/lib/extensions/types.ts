@@ -23,6 +23,7 @@ export interface ExtensionDesignAction {
   label: string;
   operations: ExtensionDesignOperation[];
   selectCreated?: boolean;
+  /** @deprecated Canvas actions now commit immediately as one undo entry. */
   mode?: "commit" | "preview";
 }
 

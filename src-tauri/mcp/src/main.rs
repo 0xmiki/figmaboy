@@ -21,8 +21,14 @@ use uuid::Uuid;
 
 use offline::{preview_image, OfflineContext, OfflineLibrary};
 
-const INSTRUCTIONS: &str = "Use designs_list and design_context_get to inspect saved Figmaboy designs by copied file ID or convenient file name, even while the desktop app is closed. design_context_get returns the saved page document, ordered layer tree, asset metadata, and a visual preview when available. Saved context is read-only and reports its revision. To manipulate a design, open it in Figma Boy, then inspect editor_status, document_get, design_capabilities, and types_get before mutating. Build entirely from native frames, groups, shapes, text, images, and icons. Organize every design as a named semantic tree: one top-level frame per screen; named frames/groups for sections; and named groups for components such as navbars, cards, buttons, feature rows, and media controls. Children use coordinates local to their parent. Prefer a frame when a component has a background or clips content and a group for a structural cluster. Avoid flat piles of root layers. When original raster artwork would improve the design, use Codex image generation, keep the final asset in the active project/workspace, then call image_place with its local path and exact placement. Use nodes_center for precise horizontal/vertical centering. Use nodes_set_border_radius deliberately on cards, buttons, panels, badges, and images instead of leaving every surface square. Use operations_apply for atomic changes and pass expected_change_token. Always call frame_screenshot and visually inspect the resulting image before finishing.";
+const INSTRUCTIONS: &str = "Use designs_list and design_context_get to inspect saved Figmaboy designs by copied file ID or convenient file name, even while the desktop app is closed. design_context_get returns the saved page document, ordered layer tree, asset metadata, and a visual preview when available. Saved context is read-only and reports its revision. To manipulate a design, open it in Figma Boy, then inspect editor_status, document_get, design_capabilities, and types_get before mutating. Build entirely from native frames, groups, shapes, text, images, and icons. Organize every design as a named semantic tree: one top-level frame per screen; named frames/groups for sections; and named groups for components such as navbars, cards, buttons, feature rows, and media controls. Children use coordinates local to their parent. Prefer a frame when a component has a background or clips content and a group for a structural cluster. Avoid flat piles of root layers. When original raster artwork would improve the design, use Codex image generation, keep the final asset in the active project/workspace, then call image_place with its local path and exact placement. Use nodes_center for precise horizontal/vertical centering. Use nodes_set_border_radius deliberately on cards, buttons, panels, badges, and images instead of leaving every surface square. Use operations_apply for atomic changes and pass expected_change_token. When the user asks for a reusable Figmaboy tool or extension, read design_capabilities.extensions, build an API version 1 declarative manifest, and call extension_stage. Staging creates an inert trial only. Never Keep, Discard, enable, run, or approve an extension for the user. Always call frame_screenshot and visually inspect completed design work before finishing.";
 const TYPESCRIPT_CONTRACT: &str = include_str!("../../../mcp/types.ts");
+const EXTENSION_AUTHORING_CONTRACT: &str = include_str!("../../../mcp/extension-authoring.json");
+
+fn extension_authoring_contract() -> Value {
+    serde_json::from_str(EXTENSION_AUTHORING_CONTRACT)
+        .expect("bundled extension authoring contract must be valid JSON")
+}
 
 #[derive(Clone)]
 struct BridgeClient {
@@ -146,6 +152,13 @@ struct IdsParams {
     /// Node IDs. Omit for the current selection where supported.
     #[serde(default)]
     ids: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ExtensionStageParams {
+    /// Complete Phase 1 declarative manifest. Read design_capabilities.extensions before authoring it.
+    manifest: Value,
 }
 
 #[derive(Debug, Deserialize, JsonSchema, Serialize)]
@@ -466,6 +479,7 @@ impl FigmaboyMcp {
             "containers": { "childIds": "managed by operations", "clipContent": "frame-only clipping toggle" },
             "review": { "tool": "frame_screenshot", "rule": "Capture each completed frame and visually review it before finishing." },
             "typescriptContract": { "tool": "types_get", "path": "mcp/types.ts" },
+            "extensions": extension_authoring_contract(),
             "workflow": ["inspect types/capabilities", "create semantic parents", "create children with parentId", "center and round surfaces", "frame_screenshot", "visually inspect", "refine", "save"]
         }))
     }
@@ -479,6 +493,16 @@ impl FigmaboyMcp {
             "path": "mcp/types.ts",
             "source": TYPESCRIPT_CONTRACT
         }))
+    }
+
+    #[tool(
+        description = "Stage one API version 1 declarative extension as an inert, reversible trial in the open Figmaboy editor. Read design_capabilities.extensions first. This tool never runs canvas actions and cannot Keep, Discard, enable, or approve the extension for the user."
+    )]
+    async fn extension_stage(
+        &self,
+        Parameters(params): Parameters<ExtensionStageParams>,
+    ) -> CallToolResult {
+        self.call("extension_stage", params).await
     }
 
     #[tool(

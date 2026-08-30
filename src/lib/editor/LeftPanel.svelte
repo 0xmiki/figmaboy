@@ -1,12 +1,13 @@
 <script lang="ts">
   import {
     Cube as Box, File, Stack as Layers3, DotsThree as MoreHorizontal, Plus,
-    MagnifyingGlass as Search, Shapes, SlidersHorizontal, X,
+    MagnifyingGlass as Search, PuzzlePiece, Shapes, SlidersHorizontal, X,
   } from "phosphor-svelte";
   import type { DesignNode } from "$lib/domain";
   import type { EditorSession } from "$lib/editor/editor.svelte";
   import { ensureIconCatalog, iconCatalog, iconData, searchIcons } from "$lib/icon-catalog";
   import LayerRow from "$lib/editor/LayerRow.svelte";
+  import ExtensionsSidebar from "$lib/extensions/ExtensionsSidebar.svelte";
 
   let {
     session, onCreatePage, onOpenPage, onPageMenu, onLayerContext, onPlaceIcon,
@@ -90,10 +91,13 @@
   <nav class="rail" aria-label="Editor panels">
     <button class:active={session.leftTab === "file"} title="File" onclick={() => (session.leftTab = "file")}><File size={17} /><span>File</span></button>
     <button class:active={session.leftTab === "assets"} title="Assets" onclick={() => (session.leftTab = "assets")}><Shapes size={17} /><span>Assets</span></button>
+    <button class:active={session.leftTab === "extensions"} title="Extensions" onclick={() => (session.leftTab = "extensions")}><PuzzlePiece size={17} /><span>Tools</span></button>
   </nav>
 
   <section class="panel">
-    {#if session.leftTab === "file"}
+    {#if session.leftTab === "extensions"}
+      <ExtensionsSidebar {session} onClose={() => (session.leftTab = "file")} />
+    {:else if session.leftTab === "file"}
       <header><strong>{session.file.name}</strong><MoreHorizontal size={15} /></header>
       <div class="section-title"><span>Pages</span><div><button title="Search pages"><Search size={13} /></button><button title="New page" onclick={onCreatePage}><Plus size={14} /></button></div></div>
       <div class="pages">

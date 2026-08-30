@@ -22,6 +22,8 @@
   let notice = $state("");
   let modal = $state<{ kind: "project" | "rename-project" | "rename-file"; id?: string; value: string } | null>(null);
   let menu = $state<{ kind: "project" | "file"; id: string; x: number; y: number } | null>(null);
+  let thumbnails = $state<Record<string, string | null>>({});
+  const loadingThumbnails = new Set<string>();
 
   const activeProjects = $derived(snapshot.projects.filter((project) => !project.trashedAt));
   const activeProject = $derived(section.startsWith("project:") ? activeProjects.find((project) => project.id === section.slice(8)) : null);
@@ -56,6 +58,51 @@
     try { snapshot = await repo.library(); error = ""; }
     catch (cause) { error = cause instanceof Error ? cause.message : "Could not load your workspace"; }
     finally { loading = false; }
+  }
+
+  function thumbnailFor(file: DesignFile): string | null {
+    return Object.hasOwn(thumbnails, file.id) ? thumbnails[file.id] : file.thumbnail;
+  }
+
+  async function loadThumbnail(fileId: string) {
+    if (Object.hasOwn(thumbnails, fileId) || loadingThumbnails.has(fileId)) return;
+    const existing = snapshot.files.find((file) => file.id === fileId)?.thumbnail;
+    if (existing) {
+      thumbnails[fileId] = existing;
+      return;
+    }
+    loadingThumbnails.add(fileId);
+    try {
+      const thumbnail = await repo.fileThumbnail(fileId);
+      thumbnails = { ...thumbnails, [fileId]: thumbnail };
+    } catch {
+      thumbnails = { ...thumbnails, [fileId]: null };
+    } finally {
+      loadingThumbnails.delete(fileId);
+    }
+  }
+
+  function lazyThumbnail(node: Element, fileId: string) {
+    let currentId = fileId;
+    let observer: IntersectionObserver | null = null;
+    const observe = () => {
+      observer?.disconnect();
+      if (!("IntersectionObserver" in window)) {
+        void loadThumbnail(currentId);
+        return;
+      }
+      observer = new IntersectionObserver(([entry]) => {
+        if (!entry?.isIntersecting) return;
+        observer?.disconnect();
+        void loadThumbnail(currentId);
+      }, { rootMargin: "240px" });
+      observer.observe(node);
+    };
+    observe();
+    return {
+      update(nextId: string) { currentId = nextId; observe(); },
+      destroy() { observer?.disconnect(); },
+    };
   }
 
   function projectName(file: DesignFile): string {
@@ -100,7 +147,10 @@
         setTimeout(() => { if (notice.includes(file.id)) notice = ""; }, 2600);
         return;
       }
-      if (action === "open") await goto(`/editor/${file.id}`);
+      if (action === "open") {
+        await goto(`/editor/${file.id}`);
+        return;
+      }
       if (action === "rename") modal = { kind: "rename-file", id: file.id, value: file.name };
       if (action === "star") await repo.starFile(file.id, !file.starred);
       if (action === "duplicate") await repo.duplicateFile(file.id);
@@ -115,7 +165,10 @@
   async function projectAction(action: string, project: Project) {
     menu = null;
     try {
-      if (action === "open") section = `project:${project.id}`;
+      if (action === "open") {
+        section = `project:${project.id}`;
+        return;
+      }
       if (action === "rename") modal = { kind: "rename-project", id: project.id, value: project.name };
       if (action === "trash") await repo.trashProject(project.id);
       if (action === "restore") await repo.restoreItem("project", project.id);
@@ -202,34 +255,44 @@
       {:else}
         {#if section === "recents" || section === "projects" || section === "trash"}
           {#if visibleProjects.length > 0}
-            <h2>{section === "trash" ? "Deleted projects" : "Projects"}</h2>
-            <div class="project-grid">
-              {#each visibleProjects as project}
-                <div class="project-card" role="button" tabindex="0" onclick={() => section === "trash" ? undefined : (section = `project:${project.id}`)} onkeydown={(event) => event.key === "Enter" && (section = `project:${project.id}`)} oncontextmenu={(event) => showMenu(event, "project", project.id)}>
-                  <div class="folder-art"><Folder size={34} weight="light" /><div class="mini-files">{#each snapshot.files.filter((file) => file.projectId === project.id).slice(0, 3) as file}<span style:background-image={file.thumbnail ? `url(${file.thumbnail})` : "none"}></span>{/each}</div></div>
-                  <div><strong>{project.name}</strong><span>{snapshot.files.filter((file) => file.projectId === project.id && !file.trashedAt).length} files · Updated {formatDate(project.updatedAt)}</span></div>
-                  <button class="more" onclick={(event) => showMenu(event, "project", project.id)} aria-label={`Actions for ${project.name}`}><MoreHorizontal size={17} /></button>
-                </div>
-              {/each}
-            </div>
+            <section class="library-group project-group" aria-labelledby="projects-heading">
+              <div class="section-heading">
+                <div><h2 id="projects-heading">{section === "trash" ? "Deleted projects" : "Projects"}</h2><p>Folders that keep related designs together</p></div>
+                <span>{visibleProjects.length}</span>
+              </div>
+              <div class="project-grid">
+                {#each visibleProjects as project}
+                  <div class="project-card" role="button" tabindex="0" onclick={() => section === "trash" ? undefined : (section = `project:${project.id}`)} onkeydown={(event) => event.key === "Enter" && (section = `project:${project.id}`)} oncontextmenu={(event) => showMenu(event, "project", project.id)}>
+                  <div class="folder-art"><Folder size={34} weight="light" /><div class="mini-files">{#each snapshot.files.filter((file) => file.projectId === project.id).slice(0, 3) as file}<span use:lazyThumbnail={file.id} style:background-image={thumbnailFor(file) ? `url(${thumbnailFor(file)})` : "none"}></span>{/each}</div></div>
+                    <div><strong>{project.name}</strong><span>{snapshot.files.filter((file) => file.projectId === project.id && !file.trashedAt).length} files · Updated {formatDate(project.updatedAt)}</span></div>
+                    <button class="more" onclick={(event) => showMenu(event, "project", project.id)} aria-label={`Actions for ${project.name}`}><MoreHorizontal size={17} /></button>
+                  </div>
+                {/each}
+              </div>
+            </section>
           {/if}
         {/if}
 
         {#if section !== "projects" || activeProject}
           {#if visibleFiles.length > 0}
-            {#if section === "trash"}<h2>Deleted files</h2>{/if}
-            <div class:file-list={layout === "list"} class:file-grid={layout === "grid"}>
-              {#each visibleFiles as file}
-                <div class="file-card" role="button" tabindex="0" onclick={() => section === "trash" ? undefined : fileAction("open", file)} onkeydown={(event) => event.key === "Enter" && section !== "trash" && fileAction("open", file)} oncontextmenu={(event) => showMenu(event, "file", file.id)}>
-                  <div class="thumbnail" class:empty={!file.thumbnail} style:background-image={file.thumbnail ? `url(${file.thumbnail})` : "none"}>
-                    {#if !file.thumbnail}<div class="blank-file"><span></span><span></span><span></span></div>{/if}
-                    <button class:starred={file.starred} class="star" title={file.starred ? "Remove from starred" : "Add to starred"} onclick={(event) => { event.stopPropagation(); fileAction("star", file); }}><Star size={16} weight={file.starred ? "fill" : "regular"} /></button>
+            <section class="library-group design-group" aria-labelledby="designs-heading">
+              <div class="section-heading">
+                <div><h2 id="designs-heading">{section === "trash" ? "Deleted designs" : "Designs"}</h2><p>{activeProject ? `Files inside ${activeProject.name}` : "Design files you can open and edit"}</p></div>
+                <span>{visibleFiles.length}</span>
+              </div>
+              <div class:file-list={layout === "list"} class:file-grid={layout === "grid"}>
+                {#each visibleFiles as file}
+                  <div class="file-card" role="button" tabindex="0" onclick={() => section === "trash" ? undefined : fileAction("open", file)} onkeydown={(event) => event.key === "Enter" && section !== "trash" && fileAction("open", file)} oncontextmenu={(event) => showMenu(event, "file", file.id)}>
+                  <div class="thumbnail" use:lazyThumbnail={file.id} class:empty={!thumbnailFor(file)} style:background-image={thumbnailFor(file) ? `url(${thumbnailFor(file)})` : "none"}>
+                    {#if !thumbnailFor(file)}<div class="blank-file"><span></span><span></span><span></span></div>{/if}
+                      <button class:starred={file.starred} class="star" title={file.starred ? "Remove from starred" : "Add to starred"} onclick={(event) => { event.stopPropagation(); fileAction("star", file); }}><Star size={16} weight={file.starred ? "fill" : "regular"} /></button>
+                    </div>
+                    <div class="file-info"><strong>{file.name}</strong><span>{projectName(file)} · {formatDate(file.updatedAt)}</span></div>
+                    <button class="more" onclick={(event) => showMenu(event, "file", file.id)} aria-label={`Actions for ${file.name}`}><MoreHorizontal size={17} /></button>
                   </div>
-                  <div class="file-info"><strong>{file.name}</strong><span>{projectName(file)} · {formatDate(file.updatedAt)}</span></div>
-                  <button class="more" onclick={(event) => showMenu(event, "file", file.id)} aria-label={`Actions for ${file.name}`}><MoreHorizontal size={17} /></button>
-                </div>
-              {/each}
-            </div>
+                {/each}
+              </div>
+            </section>
           {:else if !((section === "recents" || section === "projects") && visibleProjects.length)}
             <div class="empty-state">
               <div class="empty-icon">{#if section === "trash"}<Trash2 size={30} />{:else}<FilePlus2 size={30} />{/if}</div>
@@ -238,6 +301,13 @@
               {#if section !== "trash" && !query}<button class="primary" onclick={newDesign}><FilePlus2 size={16} /> New design</button>{/if}
             </div>
           {/if}
+        {:else if section === "projects" && visibleProjects.length === 0}
+          <div class="empty-state">
+            <div class="empty-icon"><FolderPlus size={30} /></div>
+            <h2>{query ? "No matching projects" : "No projects yet"}</h2>
+            <p>{query ? "Try a different search term." : "Create a project to keep related design files together."}</p>
+            {#if !query}<button class="primary" onclick={() => (modal = { kind: "project", value: "" })}><FolderPlus size={16} /> New project</button>{/if}
+          </div>
         {/if}
       {/if}
     </section>
@@ -289,8 +359,8 @@
 {/if}
 
 <style>
-  .browser-shell { width: 100vw; height: 100vh; display: grid; grid-template-columns: 248px 1fr; background: #191919; }
-  .sidebar { background: #202020; border-right: 1px solid #333; display: flex; flex-direction: column; min-width: 0; }
+  .browser-shell { width: 100vw; height: 100vh; min-height: 0; overflow: hidden; display: grid; grid-template-columns: 248px minmax(0, 1fr); background: #191919; }
+  .sidebar { min-width: 0; min-height: 0; overflow: hidden; background: #202020; border-right: 1px solid #333; display: flex; flex-direction: column; }
   .brand { height: 66px; padding: 0 16px; display: flex; gap: 10px; align-items: center; border-bottom: 1px solid #303030; }
   .brand > div:nth-child(2) { display: flex; flex-direction: column; flex: 1; min-width: 0; }
   .brand strong { font-size: var(--text-heading); letter-spacing: -.01em; }.brand small { color: #8f8f96; font-size: var(--text-control); margin-top: 2px; }
@@ -303,18 +373,25 @@
   .project-links { padding: 0 10px; overflow: auto; }.project-links button { width: 100%; }.project-links button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.project-links p { margin: 9px 10px; color: #666; font-size: var(--text-body); }
   .local-badge { margin: auto 12px 14px; border: 1px solid #343434; border-radius: 8px; padding: 10px; display: flex; gap: 9px; align-items: center; background: #242424; }
   .local-badge > span { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 0 3px #22c55e22; }.local-badge div { display: flex; flex-direction: column; }.local-badge strong { font-size: var(--text-control); }.local-badge small { color: #777; font-size: var(--text-small); margin-top: 2px; }
-  .workspace { min-width: 0; display: flex; flex-direction: column; background: #181818; }
-  .topbar { height: 66px; padding: 0 28px; border-bottom: 1px solid #303030; display: flex; align-items: center; gap: 10px; background: #1d1d1d; }
+  .workspace { height: 100%; min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; background: #181818; }
+  .topbar { height: 66px; flex: 0 0 66px; padding: 0 28px; border-bottom: 1px solid #303030; display: flex; align-items: center; gap: 10px; background: #1d1d1d; }
   .search { width: min(430px, 45vw); height: 36px; border: 1px solid #3a3a3a; background: #272727; border-radius: 8px; display: flex; align-items: center; padding: 0 10px; gap: 8px; color: #8e8e95; }.search:focus-within { border-color: #0d99ff; box-shadow: 0 0 0 1px #0d99ff; }
   .search input { flex: 1; min-width: 0; border: 0; outline: 0; color: white; background: transparent; font-size: var(--text-emphasis); }.search button { border: 0; background: transparent; color: #888; display: grid; padding: 2px; cursor: pointer; }
   .topbar .search { margin-right: auto; }
   .primary, .secondary { height: 36px; border-radius: 7px; padding: 0 13px; border: 0; display: inline-flex; gap: 7px; align-items: center; justify-content: center; font-size: var(--text-emphasis); font-weight: var(--weight-semibold); cursor: pointer; white-space: nowrap; }
   .primary { background: var(--blue); color: white; }.primary:hover { background: var(--blue-hover); }.secondary { background: #2c2c2c; border: 1px solid #414141; }.secondary:hover { background: #363636; }.compact { height: 32px; }
-  .content { flex: 1; overflow: auto; padding: 30px clamp(24px, 4vw, 56px) 80px; }
+  .content { flex: 1 1 auto; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 30px clamp(24px, 4vw, 56px) 80px; }
   .content-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; margin-bottom: 30px; }.content-heading p { margin: 0 0 5px; color: #73737b; font-size: var(--text-control); text-transform: uppercase; font-weight: var(--weight-bold); letter-spacing: .09em; }.content-heading h1 { margin: 0; font-size: var(--text-display); letter-spacing: -.03em; }.content-heading > div > span { display: inline-block; margin-top: 7px; color: #777; font-size: var(--text-body); }
   .view-controls { display: flex; align-items: center; gap: 10px; }.view-controls label { color: #777; font-size: var(--text-control); display: flex; align-items: center; gap: 7px; }.view-controls select { background-color: #252525; border: 1px solid #383838; color: #c9c9ce; height: 32px; border-radius: 6px; padding: 0 26px 0 9px; font-size: var(--text-body); }
   .segmented { display: flex; border: 1px solid #393939; border-radius: 6px; overflow: hidden; }.segmented button { width: 32px; height: 30px; border: 0; background: #232323; color: #777; display: grid; place-items: center; cursor: pointer; }.segmented button.active { background: #353535; color: white; }
   h2 { font-size: var(--text-body); margin: 28px 0 12px; color: #aaaab0; text-transform: uppercase; letter-spacing: .06em; }
+  .library-group { min-width: 0; }
+  .library-group + .library-group { margin-top: 42px; padding-top: 30px; border-top: 1px solid #303030; }
+  .section-heading { min-height: 34px; margin: 0 0 14px; display: flex; align-items: flex-start; gap: 12px; }
+  .section-heading > div { min-width: 0; }
+  .section-heading h2 { margin: 0; color: #d1d1d5; }
+  .section-heading p { margin: 5px 0 0; color: #707078; font-size: var(--text-control); }
+  .section-heading > span { min-width: 25px; height: 21px; margin-left: auto; border: 1px solid #383838; border-radius: 999px; display: grid; place-items: center; color: #85858d; font-size: var(--text-small); }
   .project-grid, .file-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 16px; }
   .workspace-loading { min-height: 54vh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
   .workspace-loading img { width: 86px; height: 120px; object-fit: contain; filter: drop-shadow(0 14px 26px #0009); animation: logo-breathe 1.8s ease-in-out infinite; }

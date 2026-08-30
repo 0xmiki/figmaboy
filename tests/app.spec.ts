@@ -10,6 +10,7 @@ test("opens the Codex chat sidebar and returns to the design inspector", async (
   await page.getByRole("button", { name: "New design" }).first().click();
   const inspector = page.locator("aside.inspector");
   await expect(inspector).toBeVisible();
+  await expect(inspector).toHaveCSS("width", "280px");
 
   const resize = async (name: string, deltaX: number) => {
     const handle = page.getByRole("separator", { name });
@@ -26,7 +27,7 @@ test("opens the Codex chat sidebar and returns to the design inspector", async (
   await resize("Resize left sidebar", 40);
   await expect(page.locator("aside.left-shell")).toHaveCSS("width", "337px");
   await resize("Resize inspector", -40);
-  await expect(inspector).toHaveCSS("width", "281px");
+  await expect(inspector).toHaveCSS("width", "320px");
 
   await page.evaluate(() => {
     let callbackId = 1;
@@ -98,8 +99,8 @@ test("opens the Codex chat sidebar and returns to the design inspector", async (
   await page.getByRole("complementary", { name: "Codex chat" }).getByTitle("Close Codex").click();
   await expect(page.getByRole("complementary", { name: "Codex chat" })).toBeHidden();
   await expect(page.locator("aside.inspector")).toBeVisible();
-  await expect(page.locator("aside.inspector")).toHaveCSS("width", "281px");
-  await expect(page.locator(".canvas-region")).toHaveCSS("right", "281px");
+  await expect(page.locator("aside.inspector")).toHaveCSS("width", "320px");
+  await expect(page.locator(".canvas-region")).toHaveCSS("right", "320px");
 });
 
 test("copies a stable design ID for MCP lookup", async ({ page, context }) => {
@@ -165,7 +166,7 @@ test("creates a truly blank local design and draws a rectangle", async ({ page }
   await expect(page.getByText("Ellipse", { exact: true }).first()).toBeVisible();
 });
 
-test("runs an extension canvas action through preview and undoable apply", async ({ page }) => {
+test("runs an extension canvas action immediately as one undoable change", async ({ page }) => {
   const manifest = {
     format: "figmaboy-extension",
     apiVersion: 1,
@@ -175,7 +176,7 @@ test("runs an extension canvas action through preview and undoable apply", async
     permissions: ["ui.sidebar", "design.read", "design.write"],
     contributes: { sidebar: [{ id: "cards", title: "Cards", controls: [{
       type: "button", id: "create", label: "Create card", variant: "primary",
-      action: { type: "design.transact", label: "Create card", mode: "preview", selectCreated: true, operations: [{ kind: "create", node: { id: "extension-card", type: "frame", name: "Extension card", x: 100, y: 100, width: 320, height: 180, radius: 20 } }] },
+      action: { type: "design.transact", label: "Create card", selectCreated: true, operations: [{ kind: "create", node: { id: "extension-card", type: "frame", name: "Extension card", x: 100, y: 100, width: 320, height: 180, radius: 20 } }] },
     }] }] },
   };
   await page.evaluate((extension) => localStorage.setItem("figmaboy.extensions.v1", JSON.stringify({
@@ -184,13 +185,12 @@ test("runs an extension canvas action through preview and undoable apply", async
   })), manifest);
   await page.getByRole("button", { name: "New design" }).first().click();
 
-  await page.getByTitle("Toggle extensions").click();
+  await page.getByTitle("Extensions").click();
   await expect(page.getByText("Cards", { exact: true })).toBeVisible();
+  await expect(page.locator("aside.inspector")).toBeVisible();
+  await expect(page.getByTitle("Toggle extensions")).toHaveCount(0);
   await page.getByRole("button", { name: "Create card" }).click();
   await expect(page.locator("#design-canvas g[data-node-id='extension-card']")).toBeVisible();
-  await expect(page.getByText("Canvas preview", { exact: true }).first()).toBeVisible();
-  await expect(page.getByText("Apply or discard it in Extensions.")).toBeVisible();
-  await page.getByRole("button", { name: "Apply" }).click();
   await expect(page.getByText("Canvas preview", { exact: true })).toHaveCount(0);
 
   await page.keyboard.press("Control+z");
@@ -257,7 +257,7 @@ test("selects a parent, double-clicks down one level, and respects a locked subt
 
   const frame = canvas.locator("g.world > g[data-node-id]").first();
   const child = frame.locator("g[data-node-id]").first();
-  await page.mouse.click(bounds.x + 900, bounds.y + 700);
+  await page.mouse.click(bounds.x + bounds.width - 24, bounds.y + bounds.height - 24);
   const frameTransformBefore = await frame.getAttribute("transform");
   const childTransformBefore = await child.getAttribute("transform");
   const childBoundsBefore = await child.boundingBox();
@@ -609,11 +609,80 @@ test("keeps projects and standalone designs together on the home screen", async 
   await page.getByRole("button", { name: "Back to projects" }).click();
 
   await expect(page.getByRole("heading", { name: "Recently viewed" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Projects", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Designs", exact: true })).toBeVisible();
   await expect(page.locator(".project-card").filter({ hasText: "Design system" })).toBeVisible();
   await expect(page.locator(".file-card").filter({ hasText: "Drafts" })).toHaveCount(1);
   await expect(page.locator(".file-card").filter({ hasText: "Design system" })).toHaveCount(1);
 
+  const projectGroup = await page.locator(".project-group").boundingBox();
+  const designGroup = await page.locator(".design-group").boundingBox();
+  if (!projectGroup || !designGroup) throw new Error("Home sections were not rendered");
+  expect(designGroup.y).toBeGreaterThan(projectGroup.y + projectGroup.height + 25);
+
   await page.locator(".project-card").filter({ hasText: "Design system" }).click();
   await expect(page.getByRole("heading", { name: "Design system" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Projects", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Designs", exact: true })).toBeVisible();
   await expect(page.locator(".file-card")).toHaveCount(1);
+
+  await page.getByRole("button", { name: "Drafts", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Drafts", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Designs", exact: true })).toBeVisible();
+  await expect(page.locator(".file-card")).toHaveCount(1);
+
+  await page.getByRole("button", { name: "Starred", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Starred", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Nothing here yet" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Trash", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Trash is empty" })).toBeVisible();
+
+  await page.getByRole("button", { name: "All projects", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "All projects", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Projects", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Designs", exact: true })).toHaveCount(0);
+});
+
+test("scrolls a large home library while keeping its toolbar fixed", async ({ page }) => {
+  await page.getByRole("button", { name: "New design" }).first().click();
+  await page.getByRole("button", { name: "Back to projects" }).click();
+
+  await page.evaluate(() => {
+    const key = "figmaboy.workspace.v1";
+    const state = JSON.parse(localStorage.getItem(key) ?? "{}");
+    const sourceFile = state.files[0];
+    const sourcePage = state.pages[0];
+    const sourceDocument = state.documents[sourcePage.id];
+    for (let index = 1; index < 22; index += 1) {
+      const fileId = `scroll_file_${index}`;
+      const pageId = `scroll_page_${index}`;
+      state.files.push({ ...sourceFile, id: fileId, name: `Scroll design ${index}`, updatedAt: new Date(Date.now() - index * 1_000).toISOString(), thumbnail: null });
+      state.pages.push({ ...sourcePage, id: pageId, fileId });
+      state.documents[pageId] = structuredClone(sourceDocument);
+    }
+    localStorage.setItem(key, JSON.stringify(state));
+  });
+  await page.reload();
+
+  const content = page.locator(".content");
+  await expect(page.getByRole("heading", { name: "Designs", exact: true })).toBeVisible();
+  await expect(page.locator(".file-card")).toHaveCount(22);
+  await expect.poll(() => content.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+
+  const toolbarBefore = await page.locator(".topbar").boundingBox();
+  await content.evaluate((element) => element.scrollTo({ top: element.scrollHeight }));
+  await expect.poll(() => content.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  await expect(page.locator(".file-card").last()).toBeInViewport();
+  const toolbarAfter = await page.locator(".topbar").boundingBox();
+  if (!toolbarBefore || !toolbarAfter) throw new Error("Home toolbar was not rendered");
+  expect(toolbarAfter.y).toBe(toolbarBefore.y);
+
+  await page.getByTitle("List view").click();
+  await expect(page.locator(".file-list")).toBeVisible();
+  await content.evaluate((element) => element.scrollTo({ top: 0 }));
+  await expect.poll(() => content.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+  await content.evaluate((element) => element.scrollTo({ top: element.scrollHeight }));
+  await expect.poll(() => content.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  await expect(page.locator(".file-card").last()).toBeInViewport();
 });

@@ -2,9 +2,21 @@
 
 Phase 1 extensions are declarative JSON files. They add native controls to the Extensions sidebar and run validated canvas transactions. Figmaboy renders every control. An extension cannot inject HTML, CSS, Svelte components, Tauri commands, filesystem access, or network requests.
 
-Open a design, select the puzzle-piece button in the bottom toolbar, then import a `.figmaboy-extension` or JSON file. A new version starts as a trial. You can inspect its panel, test preview actions, then keep or discard it. Kept versions can be disabled or restored from the Manage tab.
+## Ask Codex to make a tool
 
-Keeping a version opens a host-owned confirmation when it requests new permissions. Trial canvas actions always use preview mode, even if their manifest requests an immediate commit.
+Open a design and ask in the Codex sidebar:
+
+> Make me a reusable tool that applies a chosen corner radius and fill color to the current selection.
+
+Codex reads the extension contract from `design_capabilities` and calls `extension_stage` with a declarative manifest. Figmaboy validates it, opens Extensions, and shows the result as a trial. Codex cannot run its buttons, Keep it, or Discard it. Test the controls and make that decision in the Extensions sidebar.
+
+This workflow supports fixed canvas recipes that Phase 1 can express. If a request needs arbitrary calculations, network access, files, or background behavior, Codex should explain that it is not supported instead of generating code.
+
+## Manual import
+
+Open a design, select Tools in the left rail, then import a `.figmaboy-extension` or JSON file. A new version starts as a trial. You can inspect its panel, run its actions, then keep or discard the tool. Kept versions can be disabled or restored from the Manage tab.
+
+Keeping a version opens a host-owned confirmation when it requests new permissions. Every canvas action is committed as one undo entry. Use `Ctrl+Z` or `Cmd+Z` to revert the complete action.
 
 The working example is [`examples/selection-tools.figmaboy-extension`](../examples/selection-tools.figmaboy-extension).
 
@@ -33,7 +45,6 @@ The working example is [`examples/selection-tools.figmaboy-extension`](../exampl
             "action": {
               "type": "design.transact",
               "label": "Round selected layers",
-              "mode": "preview",
               "operations": [
                 {
                   "kind": "update",
@@ -80,9 +91,7 @@ Buttons call `design.transact`. A transaction accepts the native operation kinds
 
 `update`, `delete`, and `reparent` can use `"target": "selection"`. Figmaboy resolves it when the user presses the button.
 
-Set `"mode": "preview"` to apply the transaction to a temporary document. Autosave pauses and the canvas locks until the user selects Apply or Discard. Applying the preview creates one undo entry. Discard restores the exact document from before the action.
-
-Without preview mode, Figmaboy applies the transaction immediately as one undoable edit. Every transaction checks the current document token, clones the document, validates the full layer tree, and rejects the entire batch if one operation is invalid.
+Figmaboy applies each transaction immediately as one undoable edit. Every transaction checks the current document token, clones the document, validates the full layer tree, and rejects the entire batch if one operation is invalid. Use `Ctrl+Z` or `Cmd+Z` to revert every operation from the button together.
 
 ## Storage and lifecycle
 

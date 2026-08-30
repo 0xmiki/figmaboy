@@ -190,6 +190,19 @@ export interface DesignContextParams {
   pageName?: string;
 }
 
+/** Read design_capabilities.extensions for the complete authoring contract and example. */
+export interface ExtensionStageParams {
+  manifest: {
+    format: "figmaboy-extension";
+    apiVersion: 1;
+    id: string;
+    name: string;
+    version: string;
+    permissions: ("ui.sidebar" | "design.read" | "design.write")[];
+    contributes: { sidebar: unknown[] };
+  };
+}
+
 export interface ToolResult {
   changeToken?: number;
   [key: string]: unknown;
@@ -202,6 +215,7 @@ export interface FigmaBoyTools {
   editor_status(params?: Record<string, never>): Promise<ToolResult>;
   design_capabilities(params?: Record<string, never>): Promise<ToolResult>;
   types_get(params?: Record<string, never>): Promise<{ language: "typescript"; path: "mcp/types.ts"; source: string }>;
+  extension_stage(params: ExtensionStageParams): Promise<ToolResult>;
   document_get(params?: Record<string, never>): Promise<ToolResult>;
   nodes_get(params?: NodesGetParams): Promise<ToolResult>;
   geometry_get(params?: { ids?: Id[] }): Promise<ToolResult>;

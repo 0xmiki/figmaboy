@@ -1,7 +1,28 @@
 import { describe, expect, it } from "vitest";
 import { sanitizeDocument } from "$lib/document-validation";
+import { defaultNode, emptyDocument } from "$lib/domain";
+
+function reverseObjectKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(reverseObjectKeys);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.entries(value).reverse().map(([key, item]) => [key, reverseObjectKeys(item)]));
+}
 
 describe("document recovery", () => {
+  it("does not recover a valid document whose object keys arrived in a different order", () => {
+    const original = emptyDocument();
+    const frame = defaultNode("frame", 10, 20, { id: "frame", name: "Frame" });
+    original.rootIds = [frame.id];
+    original.nodes = { [frame.id]: frame };
+
+    const canonical = sanitizeDocument(original).document;
+    const reordered = reverseObjectKeys(canonical);
+    const { document, recovered } = sanitizeDocument(reordered);
+
+    expect(document).toEqual(canonical);
+    expect(recovered).toBe(false);
+  });
+
   it("repairs malformed geometry, references, cycles, paints and viewport values", () => {
     const { document, recovered } = sanitizeDocument({
       schemaVersion: 99,

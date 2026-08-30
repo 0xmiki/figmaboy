@@ -25,6 +25,28 @@ function boolean(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
 }
 
+function jsonEquivalent(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  if (left === null || right === null || typeof left !== typeof right) return false;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false;
+    return left.every((item, index) => jsonEquivalent(item, right[index]));
+  }
+  if (typeof left !== "object" || typeof right !== "object") return false;
+
+  // JSON object key order has no meaning. Rust's serde_json and JavaScript
+  // preserve different insertion orders, so comparing JSON.stringify output
+  // marks an unchanged document as recovered after every Tauri round trip.
+  const leftRecord = left as Record<string, unknown>;
+  const rightRecord = right as Record<string, unknown>;
+  const leftKeys = Object.keys(leftRecord).filter((key) => leftRecord[key] !== undefined);
+  const rightKeys = Object.keys(rightRecord).filter((key) => rightRecord[key] !== undefined);
+  if (leftKeys.length !== rightKeys.length) return false;
+  return leftKeys.every((key) => Object.prototype.hasOwnProperty.call(rightRecord, key)
+    && rightRecord[key] !== undefined
+    && jsonEquivalent(leftRecord[key], rightRecord[key]));
+}
+
 function paint(value: unknown, fallback: Paint | null): Paint | null {
   if (value === null) return null;
   const source = record(value);
@@ -215,6 +237,6 @@ export function sanitizeDocument(value: unknown): { document: PageDocument; reco
   } as PageDocument;
 
   let recovered = true;
-  try { recovered = JSON.stringify(value) !== JSON.stringify(document); } catch { /* cyclic input is recovered */ }
+  try { recovered = !jsonEquivalent(value, document); } catch { /* cyclic or excessively deep input is recovered */ }
   return { document, recovered };
 }

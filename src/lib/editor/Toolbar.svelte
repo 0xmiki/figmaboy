@@ -2,14 +2,14 @@
   import {
     Circle, FrameCorners as Frame, Hand, Image, Minus, Cursor as MousePointer2,
     ArrowRight as MoveRight, Pentagon, Plus, Rectangle as RectangleHorizontal,
-    ChatCircleDots as Sparkles, PuzzlePiece, Star, TextT as Type, MagnifyingGlassPlus as ZoomIn,
+    ChatCircleDots as Sparkles, Star, TextT as Type, MagnifyingGlassPlus as ZoomIn,
     MagnifyingGlassMinus as ZoomOut,
   } from "phosphor-svelte";
   import type { Tool } from "$lib/domain";
   import type { EditorSession } from "$lib/editor/editor.svelte";
   import { screenToWorld } from "$lib/geometry";
 
-  let { session, onFit, codexOpen, extensionsOpen, codexAttention, onToggleCodex, onToggleExtensions }: { session: EditorSession; onFit: () => void; codexOpen: boolean; extensionsOpen: boolean; codexAttention: "idle" | "working" | "approval" | "input" | "complete" | "error"; onToggleCodex: () => void; onToggleExtensions: () => void } = $props();
+  let { session, onFit, codexOpen, codexAttention, onToggleCodex }: { session: EditorSession; onFit: () => void; codexOpen: boolean; codexAttention: "idle" | "working" | "approval" | "input" | "complete" | "error"; onToggleCodex: () => void } = $props();
   let shapeMenu = $state(false);
   const shapeTools: { id: Tool; label: string; shortcut: string; icon: typeof RectangleHorizontal }[] = [
     { id: "rectangle", label: "Rectangle", shortcut: "R", icon: RectangleHorizontal },
@@ -65,7 +65,6 @@
     <button class="zoom" title="Fit selection" onclick={onFit}>{Math.round(session.document.viewport.zoom * 100)}%</button>
     <button title="Zoom in" onclick={() => zoom(1.25)}><ZoomIn size={17} /></button>
     <span class="separator"></span>
-    <button class:active={extensionsOpen} title="Toggle extensions" onclick={onToggleExtensions}><PuzzlePiece size={18} /></button>
     <button class="codex-button" class:active={codexOpen} title="Toggle Codex chat (Ctrl + `)" onclick={onToggleCodex}><Sparkles size={18} weight="duotone" />{#if !codexOpen && codexAttention !== "idle"}<span class={codexAttention} aria-label={`Codex ${codexAttention}`}></span>{/if}</button>
   </div>
 </div>

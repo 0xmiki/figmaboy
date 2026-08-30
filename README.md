@@ -47,7 +47,7 @@ Existing standalone designs remain in **Drafts** and do not need to be migrated 
 
 ## Extensions
 
-Open the puzzle-piece sidebar to add custom panels and canvas buttons. An imported extension starts as a trial. Test its controls, then keep or discard it. Kept versions can be disabled or restored from the Manage tab.
+Ask Codex to turn a repeatable canvas workflow into a reusable tool, or open Tools from the left rail and import one manually. Every generated or imported extension starts as a trial. Test its controls, then keep or discard it. Kept versions can be disabled or restored from the Manage tab.
 
 Phase 1 extensions use declarative JSON. Figmaboy renders their controls and runs canvas changes through the same validated, undoable transaction path as Codex. See the [extension format](docs/extensions.md) and the [selection tools example](examples/selection-tools.figmaboy-extension).
 

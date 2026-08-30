@@ -24,6 +24,11 @@ mod editor_bridge;
 
 type CommandResult<T> = Result<T, String>;
 
+// A home-screen preview is a cache, not document data. Keeping this limit at
+// the bridge prevents one legacy SVG with embedded source images from sending
+// tens of megabytes through the WebView IPC channel.
+const MAX_LIBRARY_THUMBNAIL_BYTES: usize = 512 * 1024;
+
 struct AppState {
     database: Mutex<Connection>,
 }
@@ -448,6 +453,10 @@ fn page_preview(connection: &Connection, page_id: &str) -> CommandResult<Option<
 #[tauri::command]
 fn library_snapshot(state: State<'_, AppState>) -> CommandResult<LibrarySnapshot> {
     let connection = database(&state)?;
+    library_snapshot_from_connection(&connection)
+}
+
+fn library_snapshot_from_connection(connection: &Connection) -> CommandResult<LibrarySnapshot> {
     let projects = {
         let mut statement = connection
             .prepare("SELECT id, name, created_at, updated_at, trashed_at FROM projects ORDER BY updated_at DESC")
@@ -461,7 +470,7 @@ fn library_snapshot(state: State<'_, AppState>) -> CommandResult<LibrarySnapshot
     };
     let files = {
         let mut statement = connection
-            .prepare("SELECT id, project_id, name, starred, created_at, updated_at, last_opened_at, trashed_at, thumbnail FROM design_files ORDER BY updated_at DESC")
+            .prepare("SELECT id, project_id, name, starred, created_at, updated_at, last_opened_at, trashed_at, NULL FROM design_files ORDER BY updated_at DESC")
             .map_err(|error| error.to_string())?;
         let files = statement
             .query_map([], file_from_row)
@@ -471,6 +480,25 @@ fn library_snapshot(state: State<'_, AppState>) -> CommandResult<LibrarySnapshot
         files
     };
     Ok(LibrarySnapshot { projects, files })
+}
+
+#[tauri::command(rename_all = "camelCase")]
+fn file_thumbnail(file_id: String, state: State<'_, AppState>) -> CommandResult<Option<String>> {
+    let connection = database(&state)?;
+    file_thumbnail_from_connection(&connection, &file_id)
+}
+
+fn file_thumbnail_from_connection(
+    connection: &Connection,
+    file_id: &str,
+) -> CommandResult<Option<String>> {
+    connection
+        .query_row(
+            "SELECT CASE WHEN length(CAST(thumbnail AS BLOB)) <= ?2 THEN thumbnail ELSE NULL END FROM design_files WHERE id = ?1",
+            params![file_id, MAX_LIBRARY_THUMBNAIL_BYTES],
+            |row| row.get(0),
+        )
+        .map_err(|_| "Design file not found".to_string())
 }
 
 #[tauri::command]
@@ -604,6 +632,9 @@ fn open_file(id: String, state: State<'_, AppState>) -> CommandResult<OpenedFile
         )
         .map_err(|error| error.to_string())?;
     file.last_opened_at = Some(timestamp);
+    // The editor does not render the home-screen thumbnail. Do not attach a
+    // potentially huge legacy preview to the document-opening response.
+    file.thumbnail = None;
     let pages = pages_for_file(&connection, &file.id)?;
     let page = pages
         .first()
@@ -785,6 +816,12 @@ fn save_page(
     if document.get("schemaVersion").and_then(Value::as_u64) != Some(1) {
         return Err("Unsupported page schema".into());
     }
+    if thumbnail
+        .as_ref()
+        .is_some_and(|value| value.len() > MAX_LIBRARY_THUMBNAIL_BYTES)
+    {
+        return Err("The page preview is too large".into());
+    }
     let mut connection = database(&state)?;
     let transaction = connection
         .transaction()
@@ -814,6 +851,9 @@ fn save_page_preview(
     thumbnail: String,
     state: State<'_, AppState>,
 ) -> CommandResult<()> {
+    if thumbnail.len() > MAX_LIBRARY_THUMBNAIL_BYTES {
+        return Err("The page preview is too large".into());
+    }
     let mut connection = database(&state)?;
     let transaction = connection
         .transaction()
@@ -1938,6 +1978,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             library_snapshot,
+            file_thumbnail,
             create_project,
             rename_project,
             trash_project,
@@ -2044,6 +2085,33 @@ mod tests {
                 1
             );
         }
+    }
+
+    #[test]
+    fn library_metadata_omits_thumbnails_and_preview_loading_has_a_size_limit() {
+        let connection = initialize_database(Path::new(":memory:")).unwrap();
+        let timestamp = now();
+        let small = "data:image/jpeg;base64,small";
+        let oversized = "x".repeat(MAX_LIBRARY_THUMBNAIL_BYTES + 1);
+        for (id, thumbnail) in [("small", small), ("large", oversized.as_str())] {
+            connection
+                .execute(
+                    "INSERT INTO design_files(id, name, created_at, updated_at, thumbnail) VALUES (?1, ?1, ?2, ?2, ?3)",
+                    params![id, timestamp, thumbnail],
+                )
+                .unwrap();
+        }
+
+        let snapshot = library_snapshot_from_connection(&connection).unwrap();
+        assert!(snapshot.files.iter().all(|file| file.thumbnail.is_none()));
+        assert_eq!(
+            file_thumbnail_from_connection(&connection, "small").unwrap(),
+            Some(small.to_string())
+        );
+        assert_eq!(
+            file_thumbnail_from_connection(&connection, "large").unwrap(),
+            None
+        );
     }
 
     #[test]

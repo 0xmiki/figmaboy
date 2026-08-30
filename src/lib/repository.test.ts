@@ -15,6 +15,13 @@ describe("browser persistence adapter", () => {
     expect(library.files.some((file) => file.id === opened.file.id)).toBe(true);
   });
 
+  it("loads a saved thumbnail independently from the library metadata", async () => {
+    const repo = repository();
+    const opened = await repo.createFile(null);
+    await repo.savePagePreview(opened.page.id, "data:image/jpeg;base64,preview");
+    expect(await repo.fileThumbnail(opened.file.id)).toBe("data:image/jpeg;base64,preview");
+  });
+
   it("moves deleted files through Trash and restoration", async () => {
     const repo = repository();
     const opened = await repo.createFile(null);

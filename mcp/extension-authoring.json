@@ -1,0 +1,73 @@
+{
+  "purpose": "Turn a repeatable fixed canvas workflow into native controls that the user can test and keep.",
+  "tool": "extension_stage",
+  "workflow": [
+    "Translate the user's reusable workflow into the manifest contract below.",
+    "Call extension_stage with the complete manifest object.",
+    "If validation fails, correct the named field and retry once.",
+    "Tell the user the trial is ready. Only the user may run its controls, Keep it, or Discard it."
+  ],
+  "manifest": {
+    "format": "figmaboy-extension",
+    "apiVersion": 1,
+    "id": "lowercase stable ID using letters, numbers, dots, dashes, or underscores",
+    "name": "1 to 120 visible characters",
+    "version": "semantic version such as 1.0.0",
+    "permissions": ["ui.sidebar", "design.write when any button changes the canvas"],
+    "contributes": { "sidebar": "1 to 20 panels; each has id, title, and controls" }
+  },
+  "controls": ["heading", "text", "divider", "number", "input", "select", "checkbox", "button", "row"],
+  "buttonAction": {
+    "type": "design.transact",
+    "label": "undo history label",
+    "selectCreated": "optional boolean",
+    "operations": "1 to 250 create, update, delete, reparent, or reorder operations"
+  },
+  "operations": {
+    "create": { "kind": "create", "node": { "type": "native node type and editable properties" }, "parentId": "optional container ID", "index": "optional sibling index" },
+    "update": { "kind": "update", "id": "exact node ID or omit with target=selection", "target": "selection", "patch": "editable property object" },
+    "delete": { "kind": "delete", "ids": "exact IDs or omit with target=selection", "target": "selection" },
+    "reparent": { "kind": "reparent", "ids": "exact IDs or target=selection", "parentId": "frame/group ID or null", "index": "optional index" },
+    "reorder": { "kind": "reorder", "ids": "complete sibling order", "parentId": "container ID or null" }
+  },
+  "controlValues": "Use {\"$control\": \"control-id\"} anywhere inside a node or patch to insert the current input value.",
+  "restrictions": [
+    "declarative JSON only",
+    "no JavaScript or expressions",
+    "no HTML or CSS",
+    "no URLs, files, shell, network, packages, or background behavior"
+  ],
+  "example": {
+    "format": "figmaboy-extension",
+    "apiVersion": 1,
+    "id": "codex.round-selection",
+    "name": "Round selection",
+    "version": "1.0.0",
+    "permissions": ["ui.sidebar", "design.write"],
+    "contributes": {
+      "sidebar": [
+        {
+          "id": "rounding",
+          "title": "Round selection",
+          "controls": [
+            { "type": "number", "id": "radius", "label": "Radius", "default": 16, "min": 0 },
+            {
+              "type": "button",
+              "id": "apply",
+              "label": "Apply radius",
+              "requiresSelection": true,
+              "variant": "primary",
+              "action": {
+                "type": "design.transact",
+                "label": "Round selected layers",
+                "operations": [
+                  { "kind": "update", "target": "selection", "patch": { "radius": { "$control": "radius" } } }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

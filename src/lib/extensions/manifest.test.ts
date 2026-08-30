@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseExtensionManifest } from "$lib/extensions/manifest";
+import authoringContract from "../../../mcp/extension-authoring.json";
 
 function manifest() {
   return {
@@ -39,5 +40,9 @@ describe("extension manifests", () => {
     const value = manifest();
     value.contributes.sidebar[0].controls.unshift({ type: "number", id: "radius", label: "Another radius", default: 4 } as never);
     expect(() => parseExtensionManifest(value)).toThrow("used more than once");
+  });
+
+  it("keeps the bundled Codex example valid against the Phase 1 parser", () => {
+    expect(parseExtensionManifest(authoringContract.example)).toMatchObject({ id: "codex.round-selection", apiVersion: 1 });
   });
 });

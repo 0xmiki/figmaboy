@@ -5,7 +5,9 @@ description: Add custom sidebar controls and native canvas actions with local Fi
 
 Figmaboy extensions add controls to the editor without changing the application. The first extension API supports native sidebar panels and validated canvas actions.
 
-Open a design and select the puzzle-piece button in the bottom toolbar. Import a `.figmaboy-extension` or JSON file. Figmaboy opens the new version as a trial so you can inspect and test it before keeping it.
+Open a design and ask Codex to make a reusable tool. Codex reads the bundled extension contract and stages a declarative manifest through the Figmaboy MCP. The Extensions sidebar opens with the result as a trial. Codex cannot run, Keep, or Discard it for you.
+
+You can also select Tools in the left rail and import a `.figmaboy-extension` or JSON file manually.
 
 ## What extensions can do
 
@@ -13,7 +15,7 @@ An extension can add headings, text, number fields, text inputs, selects, checkb
 
 An action can target fixed layer IDs or the current selection. It can read values from the extension's fields, which makes small tools such as spacing controls, style presets, card builders, and layer cleanup panels possible.
 
-Canvas actions can use preview mode. Figmaboy shows the result on a temporary document and pauses autosave. Select **Apply** to create one undo entry, or **Discard** to restore the document.
+Each canvas action becomes one normal undo entry immediately. Use `Ctrl+Z` or `Cmd+Z` to revert every operation from the extension button together.
 
 ## Trial and version controls
 

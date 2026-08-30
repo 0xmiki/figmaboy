@@ -104,7 +104,7 @@ export type ToolGroup = {
   id: string;
   turnId: string | null;
   items: CodexItem[];
-  status: "inProgress" | "completed" | "failed" | "declined";
+  status: "inProgress" | "completed" | "warning" | "failed" | "declined";
   summary: string;
 };
 
@@ -375,7 +375,7 @@ export function groupToolItems(items: readonly CodexItem[]): ToolGroup[] {
     const status: ToolGroup["status"] = statuses.includes("inProgress")
       ? "inProgress"
       : statuses.some((value) => value === "failed")
-        ? "failed"
+        ? "warning"
         : statuses.some((value) => value === "declined")
           ? "declined"
           : "completed";
@@ -421,7 +421,11 @@ export function buildDisplayTimelineRows(value: CodexTimeline): CodexTimelineRow
         id: `turn-fold:${turn.id}`,
         turnId: turn.id,
         items: hidden,
-        status: tools.some((item) => itemStatus(item) === "failed") ? "failed" : "completed",
+        status: turn.status === "failed"
+          ? "failed"
+          : tools.some((item) => itemStatus(item) === "failed")
+            ? "warning"
+            : "completed",
         summary: tools.length ? summarizeToolItems(tools) : `${hidden.length} agent updates`,
       },
     });

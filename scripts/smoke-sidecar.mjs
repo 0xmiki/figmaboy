@@ -115,8 +115,28 @@ if (!Array.isArray(listed.tools) || listed.tools.length === 0) {
   throw new Error("The sidecar returned no MCP tools");
 }
 const toolNames = new Set(listed.tools.map((tool) => tool.name));
-for (const name of ["designs_list", "design_context_get"]) {
+for (const name of ["designs_list", "design_context_get", "extension_stage"]) {
   if (!toolNames.has(name)) throw new Error(`The sidecar did not expose ${name}`);
+}
+
+const capabilities = await request(5, "tools/call", { name: "design_capabilities", arguments: {} });
+if (
+  capabilities.isError ||
+  capabilities.structuredContent?.extensions?.tool !== "extension_stage" ||
+  capabilities.structuredContent?.extensions?.example?.format !== "figmaboy-extension"
+) {
+  throw new Error(`Extension authoring contract is unavailable: ${JSON.stringify(capabilities)}`);
+}
+const closedAppStage = await request(6, "tools/call", {
+  name: "extension_stage",
+  arguments: { manifest: capabilities.structuredContent.extensions.example },
+});
+if (closedAppStage.isError) {
+  if (!/(not running|Could not connect)/.test(JSON.stringify(closedAppStage))) {
+    throw new Error(`extension_stage returned an unexpected error: ${JSON.stringify(closedAppStage)}`);
+  }
+} else if (closedAppStage.structuredContent?.status !== "trial" || closedAppStage.structuredContent?.canvasActionsRun !== false) {
+  throw new Error(`extension_stage did not create an inert trial: ${JSON.stringify(closedAppStage)}`);
 }
 
 const designs = await request(3, "tools/call", {

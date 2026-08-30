@@ -95,7 +95,7 @@ export class EditorSession {
   persistencePaused = $state(false);
   externalPreviewActive = $state(false);
   cancelInteractionToken = $state(0);
-  leftTab = $state<"file" | "assets">("file");
+  leftTab = $state<"file" | "assets" | "extensions">("file");
   inspectorTab = $state<"design" | "prototype">("design");
   saveStatus = $state<"saved" | "dirty" | "saving" | "error" | "conflict">("saved");
   errorMessage = $state("");

@@ -115,6 +115,35 @@ describe("Codex app-server timeline", () => {
     expect(rows[1]).toMatchObject({ kind: "tools", label: "Worked for 7s", group: { items: [{ id: "read" }, { id: "middle" }, { id: "edit" }] } });
   });
 
+  it("marks recovered tool failures as warnings without failing the completed turn", () => {
+    const timeline: CodexTimeline = {
+      ...emptyTimeline(),
+      turns: { turn: { id: "turn", status: "completed", startedAt: 1, completedAt: 8, durationMs: 7_000, error: "" } },
+      items: [
+        { id: "start", type: "agentMessage", text: "I will try it.", _turnId: "turn" },
+        { id: "failed", type: "mcpToolCall", tool: "extension_stage", status: "failed", _turnId: "turn" },
+        { id: "recovered", type: "mcpToolCall", tool: "extension_stage", status: "completed", _turnId: "turn" },
+        { id: "final", type: "agentMessage", text: "The extension is ready.", _turnId: "turn" },
+      ],
+    };
+    const rows = buildDisplayTimelineRows(timeline);
+    expect(rows[1]).toMatchObject({ kind: "tools", label: "Worked for 7s", group: { status: "warning" } });
+  });
+
+  it("keeps a failed turn red even when its tools also failed", () => {
+    const timeline: CodexTimeline = {
+      ...emptyTimeline(),
+      turns: { turn: { id: "turn", status: "failed", startedAt: 1, completedAt: 8, durationMs: 7_000, error: "Stopped" } },
+      items: [
+        { id: "start", type: "agentMessage", text: "I will try it.", _turnId: "turn" },
+        { id: "failed", type: "mcpToolCall", tool: "extension_stage", status: "failed", _turnId: "turn" },
+        { id: "final", type: "agentMessage", text: "I could not finish.", _turnId: "turn" },
+      ],
+    };
+    const rows = buildDisplayTimelineRows(timeline);
+    expect(rows[1]).toMatchObject({ kind: "tools", group: { status: "failed" } });
+  });
+
   it("shows each enabled skill name once", () => {
     expect(uniqueEnabledSkills([
       { name: "agents-sdk", path: "/one" },

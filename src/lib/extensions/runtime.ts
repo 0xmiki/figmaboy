@@ -70,8 +70,7 @@ export function runExtensionAction(
   manifest: ExtensionManifest,
   action: ExtensionDesignAction,
   controls: ExtensionControlState,
-  trial: boolean,
-): { result: ExtensionTransactionResult; preview: boolean } {
+): ExtensionTransactionResult {
   if (!manifest.permissions.includes("design.write")) throw new Error(`${manifest.name} does not have canvas write access`);
   const context = service.context();
   const operations = materializeExtensionOperations(action.operations, controls, context.selectedIds);
@@ -82,6 +81,5 @@ export function runExtensionAction(
     operations,
     selectCreated: action.selectCreated,
   };
-  const preview = trial || action.mode === "preview";
-  return { result: preview ? service.preview(transaction) : service.transact(transaction), preview };
+  return service.transact(transaction);
 }
