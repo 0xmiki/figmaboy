@@ -89,11 +89,11 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: Figmaboy ${{ github.ref_name }}
           releaseBody: |
-            Figmaboy 0.3 adds projects for organizing related design files without disrupting existing standalone designs. Create a project from the home toolbar, open it, and create focused design files inside it; projects and standalone designs stay visible together in the local workspace.
+            Figmaboy 0.4 replaces the embedded Codex terminal with a native Codex app-server sidebar. Chats persist locally per design page, and the sidebar supports saved threads, streaming replies, tool activity, approvals, image attachments, steering, model controls, and context usage.
 
-            This release also fixes a Linux desktop freeze when choosing an image for the canvas. Native file dialogs now run asynchronously instead of blocking the application event loop.
+            MCP setup is simpler. The app can install or repair the bundled Figmaboy MCP, and the documentation now leads with a prompt that lets Codex handle setup for the current platform.
 
-            Figmaboy is a local-first desktop interface design tool with a native MCP companion for Codex.
+            Large documents now render fewer off-screen canvas nodes and virtualize the Layers panel. Sidebar resizing, autosave previews, snapping, and initial editor loading do less work. This release also adds Figma-style nested selection, fixes text editing typography and position changes, and moves the interface to Phosphor icons with shared typography tokens.
 
             Download the installer for your platform below. This release also includes standalone `figmaboy-mcp` binaries and a `SHA256SUMS` file.
 

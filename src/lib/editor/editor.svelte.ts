@@ -93,6 +93,7 @@ export class EditorSession {
   changeToken = $state(0);
   thumbnailChangeToken = $state(0);
   thumbnailDirty = $state(false);
+  renderAllNodes = $state(false);
   editingTextId = $state<string | null>(null);
   imageSources = $state<Record<string, string>>({});
   clipboard = $state<ClipboardPayload | null>(null);

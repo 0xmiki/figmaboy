@@ -40,7 +40,8 @@ export default defineConfig({
           label: "Getting started",
           items: [
             { label: "Overview", slug: "docs" },
-            { label: "Install & connect", slug: "docs/getting-started/install" },
+            { label: "Let Codex connect Figmaboy", slug: "docs/getting-started/connect-codex" },
+            { label: "Install Figmaboy", slug: "docs/getting-started/install" },
             { label: "Quickstart", slug: "docs/getting-started/quickstart" },
           ],
         },

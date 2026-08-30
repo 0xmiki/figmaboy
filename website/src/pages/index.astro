@@ -16,7 +16,7 @@ const productScreenshot = `${base}figmaboy-screenshot.png`;
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width" />
     <meta name="theme-color" content="#f2f0e8" />
-    <meta name="description" content="Figmaboy is a local-first desktop design workspace with the Codex CLI built directly into the canvas." />
+    <meta name="description" content="Figmaboy is a local-first desktop design workspace with Codex app-server chat built directly into the canvas." />
     <meta property="og:title" content="Figmaboy — design with Codex on canvas" />
     <meta property="og:description" content="Design by hand or ask Codex to build native, editable layers inside a focused desktop canvas." />
     <meta property="og:type" content="website" />
@@ -51,15 +51,15 @@ const productScreenshot = `${base}figmaboy-screenshot.png`;
             <h1 class="display" id="hero-title">
               <span>Where design</span>
               <span>meets the</span>
-              <span>command line.</span>
+              <span>design agent.</span>
             </h1>
-            <p class="hero-lede">A focused desktop design workspace with the Codex CLI built directly into the canvas. Design, ask, run, and review without leaving the file.</p>
+            <p class="hero-lede">A focused desktop design workspace with Codex chat built directly into the canvas. Design, ask, run, and review without leaving the file.</p>
             <div class="hero-actions">
               <a class="button button-dark" href={`${docs}getting-started/install/`}>Get started <svg class="button-arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4h8v8M12 4 4 12" /></svg></a>
               <a class="button button-light" href={download}><span data-download-copy>Download Figmaboy</span> <span class="arrow">↓</span></a>
             </div>
-            <p class="hero-meta">Linux · macOS · Windows &nbsp;/&nbsp; v0.2.0<br />Local-first workspace · MCP companion included</p>
-            <div class="cli-badge"><span class="signal"></span>CLI BUILT IN</div>
+            <p class="hero-meta">Linux · macOS · Windows &nbsp;/&nbsp; v0.3.0<br />Local-first workspace · MCP companion included</p>
+            <div class="cli-badge"><span class="signal"></span>CODEX CONNECTED</div>
           </div>
 
           <div class="product-object" data-reveal>
@@ -89,7 +89,7 @@ const productScreenshot = `${base}figmaboy-screenshot.png`;
 
       <section class="features" id="codex" aria-labelledby="features-title">
         <div class="wrap">
-          <header class="section-head" data-reveal><div><p class="eyebrow">03&nbsp; / &nbsp;Codex CLI</p><h2 class="display" id="features-title">Your command line,<br />on canvas.</h2></div><p class="section-intro">Codex works where the project is already open. Design, ask, inspect, and continue without breaking context.</p></header>
+          <header class="section-head" data-reveal><div><p class="eyebrow">03&nbsp; / &nbsp;Codex chat</p><h2 class="display" id="features-title">Your design agent,<br />on canvas.</h2></div><p class="section-intro">Codex works where the design is already open. Ask, inspect, approve, and continue without breaking context.</p></header>
           <article class="core-card" data-reveal>
             <div class="core-copy"><span class="core-badge">CORE FEATURE / 01</span><h3>Codex is part of<br />the workspace.</h3><p>Ask Codex to build, edit, inspect, run, or explain. It sees the open design through MCP—and its work stays visible beside the canvas.</p><div class="core-meta">PROJECT-AWARE &nbsp;/&nbsp; LOCAL &nbsp;/&nbsp; REVIEWABLE</div></div>
             <div class="terminal"><div class="term-head"><span>▣</span><b>Bash</b><span class="term-path">~/projects/radio</span><span class="term-status"><span class="signal"></span>CODEX</span></div><div class="term-body"><div class="command">› Build the radio screen from this page</div><div>• Reading design capabilities and open document</div><div>• Creating semantic native frames and controls</div><div class="success">✓ Screenshot reviewed&nbsp; · &nbsp;document saved</div><div class="next">› Continue refining on canvas…</div></div></div>
@@ -106,7 +106,7 @@ const productScreenshot = `${base}figmaboy-screenshot.png`;
           <header class="section-head" data-reveal><div><p class="eyebrow">04&nbsp; / &nbsp;The comparison</p><h2 class="display" id="comparison-title">Same idea.<br />A more useful result.</h2></div><p class="section-intro">The visual brief stayed the same. The crucial difference was asking Codex to build through Figmaboy instead of returning one flattened image.</p></header>
           <div class="prompt-compare" data-reveal>
             <div class="prompt-row"><span class="prompt-label">A / GPT-IMAGE</span><q class="prompt-copy">generate a phone ui of a very stunning chill braun deter rams era inpired radio app</q><span class="prompt-kind">RASTER OUTPUT</span></div>
-            <div class="prompt-row featured"><span class="prompt-label">B / FIGMABOY</span><q class="prompt-copy">Use figmaboy mcp and generate a phone ui of a very stunning chill braun deter rams era inpired radio app</q><span class="prompt-kind">NATIVE DESIGN</span></div>
+            <div class="prompt-row featured"><span class="prompt-label">B / FIGMABOY</span><q class="prompt-copy">Use Figmaboy to design a calm mobile radio app inspired by Dieter Rams. Keep every layer native and editable.</q><span class="prompt-kind">NATIVE DESIGN</span></div>
           </div>
           <div class="result-grid">
             <article class="result-card" data-reveal>
@@ -127,8 +127,8 @@ const productScreenshot = `${base}figmaboy-screenshot.png`;
 
       <section class="real-workspace" aria-labelledby="real-workspace-title">
         <div class="wrap">
-          <header class="section-head" data-reveal><div><p class="eyebrow">05&nbsp; / &nbsp;Built in Figmaboy</p><h2 class="display" id="real-workspace-title">This website began<br />on the canvas.</h2></div><p class="section-intro">This is the real Figmaboy workspace behind the site: landing page and docs side by side, with Codex working in the embedded terminal below.</p></header>
-          <figure class="real-screenshot" data-reveal><a href={productScreenshot} target="_blank" rel="noreferrer" aria-label="View the full Figmaboy workspace screenshot"><img src={productScreenshot} alt="The Figmaboy desktop app showing the landing page and documentation designs with Codex in its embedded terminal" loading="lazy" /></a><figcaption><span>ACTUAL FIGMABOY WORKSPACE</span><span>LANDING + DOCS + CODEX CLI</span><a href={productScreenshot} target="_blank" rel="noreferrer">VIEW FULL SCREENSHOT ↗</a></figcaption></figure>
+          <header class="section-head" data-reveal><div><p class="eyebrow">05&nbsp; / &nbsp;Built in Figmaboy</p><h2 class="display" id="real-workspace-title">This website began<br />on the canvas.</h2></div><p class="section-intro">This is the real Figmaboy workspace behind the site: landing page and docs side by side, built with Codex and native editable layers.</p></header>
+          <figure class="real-screenshot" data-reveal><a href={productScreenshot} target="_blank" rel="noreferrer" aria-label="View the full Figmaboy workspace screenshot"><img src={productScreenshot} alt="The Figmaboy desktop app showing the landing page and documentation designs" loading="lazy" /></a><figcaption><span>ACTUAL FIGMABOY WORKSPACE</span><span>LANDING + DOCS + CODEX</span><a href={productScreenshot} target="_blank" rel="noreferrer">VIEW FULL SCREENSHOT ↗</a></figcaption></figure>
         </div>
       </section>
 
@@ -137,7 +137,7 @@ const productScreenshot = `${base}figmaboy-screenshot.png`;
           <header class="showcase-head"><p class="eyebrow">06&nbsp; / &nbsp;The workspace</p><span class="showcase-label">DESIGN + CODE, ONE WORKSPACE.</span></header>
           <div class="showcase-grid">
             <div class="workspace-stage" data-reveal><div class="workspace-window"><div class="ws-bar"><span class="traffic"><i></i><i></i><i></i></span><span class="ws-file">Radio concept&nbsp; — &nbsp;82%</span></div><div class="ws-body"><aside class="ws-side">LAYERS<div class="layer-bars"><i style="--w:94%"></i><i style="--w:88%"></i><i style="--w:80%"></i><i style="--w:72%"></i><i style="--w:64%"></i></div></aside><div class="ws-canvas"><article class="ws-art"><small>FORM / FUNCTION</small><h4>Make less.<br />Mean more.</h4><div class="ws-redbar"></div><div class="ws-blackbar"></div><footer>FIGMABOY STUDIO &nbsp;/&nbsp; 2026</footer></article></div><aside class="ws-side ws-inspector">INSPECTOR<div class="field"><span>X</span><b>080</b></div><div class="field"><span>Y</span><b>112</b></div><div class="field"><span>W</span><b>334</b></div><div class="field"><span>H</span><b>346</b></div><div class="swatch"></div></aside></div><div class="ws-cli"><div class="ws-cli-head"><span>▣</span><b>Bash</b><span class="path">~/projects/radio</span><span class="live">●&nbsp; LIVE</span></div><div class="ws-cli-body"><div class="prompt">› Refine the selected hero frame</div><div>• Reading the open document and project context</div><div class="done">✓ 1 frame reviewed&nbsp; · &nbsp;saved locally</div><div>› Ask Codex…</div></div></div></div></div>
-            <div class="showcase-copy" data-reveal><div class="number">01</div><h2 id="showcase-title">Design and direct,<br />side by side.</h2><p>The embedded terminal and live MCP keep the instruction, canvas, layer tree, and visual evidence in one window.</p><div class="specs"><div class="spec"><span>CONTEXT</span><b>OPEN DESIGN</b></div><div class="spec"><span>LOOP</span><b>DESIGN + CODE</b></div><div class="spec"><span>HANDOFF</span><b>SAVED LOCALLY</b></div></div></div>
+            <div class="showcase-copy" data-reveal><div class="number">01</div><h2 id="showcase-title">Design and direct,<br />side by side.</h2><p>The Codex sidebar and live MCP keep the instruction, canvas, layer tree, approvals, and visual evidence in one window.</p><div class="specs"><div class="spec"><span>CONTEXT</span><b>OPEN DESIGN</b></div><div class="spec"><span>LOOP</span><b>DESIGN + CODE</b></div><div class="spec"><span>HANDOFF</span><b>SAVED LOCALLY</b></div></div></div>
           </div>
         </div>
       </section>

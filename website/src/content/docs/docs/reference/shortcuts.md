@@ -1,9 +1,9 @@
 ---
 title: Keyboard shortcuts
-description: Figmaboy canvas, selection, layer, history, zoom, panel, and terminal shortcuts.
+description: Figmaboy canvas, selection, layer, history, zoom, panel, and Codex shortcuts.
 ---
 
-Use <kbd>Cmd</kbd> instead of <kbd>Ctrl</kbd> for standard modifier shortcuts on macOS. The terminal toggle is always <kbd>Ctrl</kbd> + <kbd>`</kbd>.
+Use <kbd>Cmd</kbd> instead of <kbd>Ctrl</kbd> for standard modifier shortcuts on macOS. The Codex sidebar toggle is always <kbd>Ctrl</kbd> + <kbd>`</kbd>.
 
 ## Tools
 
@@ -17,7 +17,7 @@ Use <kbd>Cmd</kbd> instead of <kbd>Ctrl</kbd> for standard modifier shortcuts on
 | Line | <kbd>L</kbd> |
 | Arrow | <kbd>Shift</kbd> + <kbd>L</kbd> |
 | Text | <kbd>T</kbd> |
-| Toggle embedded terminal | <kbd>Ctrl</kbd> + <kbd>`</kbd> |
+| Toggle Codex sidebar | <kbd>Ctrl</kbd> + <kbd>`</kbd> |
 
 ## Selection and editing
 
@@ -58,4 +58,4 @@ Use <kbd>Cmd</kbd> instead of <kbd>Ctrl</kbd> for standard modifier shortcuts on
 | Reset to 100% | <kbd>Shift</kbd> + <kbd>0</kbd> |
 | Toggle side panels | <kbd>Ctrl/Cmd</kbd> + <kbd>\</kbd> or <kbd>Ctrl/Cmd</kbd> + <kbd>.</kbd> |
 
-Trackpad or mouse-wheel input pans the canvas. Hold <kbd>Ctrl</kbd> / <kbd>Cmd</kbd> while scrolling to zoom around the pointer.
+Trackpad and mouse-wheel input pan the canvas. Hold <kbd>Ctrl</kbd> / <kbd>Cmd</kbd> while scrolling to zoom around the pointer.

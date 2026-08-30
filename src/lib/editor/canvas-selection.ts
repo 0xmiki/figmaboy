@@ -23,53 +23,44 @@ export function isCanvasNodeVisible(document: PageDocument, id: string): boolean
   return canvasNodeChain(document, id).length > 0;
 }
 
+export function isCanvasNodeSelectable(document: PageDocument, id: string): boolean {
+  const chain = canvasNodeChain(document, id);
+  return chain.length > 0 && chain.every((candidate) => !document.nodes[candidate]?.locked);
+}
+
 /**
  * Resolve a visual hit to Figma-style selection depth.
  *
- * The outermost unlocked boundary wins initially. Once that boundary is
- * selected, the next click skips structural frames and jumps to the nearest
- * group (groups remain atomic) or otherwise the actual leaf under the cursor.
- * Selecting one child also establishes its parent as the scope for sibling
- * clicks. Locked ancestors are skipped without blocking unlocked descendants.
+ * An ordinary click selects the outermost parent. Double-clicking moves down
+ * one level at a time. Once a level has been entered, sibling clicks stay at
+ * that level. Modifier-click deep-selects the rendered leaf directly.
  */
 export function canvasSelectionTarget(
   document: PageDocument,
   hitId: string,
   selectedIds: string[],
   deepSelect = false,
+  descendOneLevel = false,
 ): string | null {
-  const chain = canvasNodeChain(document, hitId).filter((id) => !document.nodes[id]?.locked);
-  if (!chain.length) return null;
+  const chain = canvasNodeChain(document, hitId);
+  if (!chain.length || chain.some((id) => document.nodes[id]?.locked)) return null;
   if (deepSelect) return chain.at(-1) ?? null;
 
-  const targetInside = (scopeIndex: number) => {
-    const descendants = chain.slice(scopeIndex + 1);
-    if (!descendants.length) return chain[scopeIndex];
-    return descendants.find((id) => document.nodes[id]?.type === "group") ?? descendants.at(-1) ?? chain[scopeIndex];
-  };
+  const selectedOnHitIndex = chain.findLastIndex((id) => selectedIds.includes(id));
+  if (selectedOnHitIndex >= 0) {
+    return descendOneLevel ? chain[selectedOnHitIndex + 1] ?? chain[selectedOnHitIndex] : chain[selectedOnHitIndex];
+  }
 
   if (selectedIds.length) {
-    // Selection inside a container establishes that container as an editing
-    // scope. Keep the deepest frame/group shared by the current selection and
-    // the new hit, so moving between sibling buttons does not bounce back to
-    // their outer frame.
     const selectedChains = selectedIds.map((id) => new Set(
-      canvasNodeChain(document, id).filter((candidate) => !document.nodes[candidate]?.locked),
+      canvasNodeChain(document, id),
     ));
     const sharedScopeIndex = chain.findLastIndex((id) => {
       const node = document.nodes[id];
       return (node?.type === "frame" || node?.type === "group")
         && selectedChains.every((selectedChain) => selectedChain.has(id));
     });
-    if (sharedScopeIndex >= 0) return targetInside(sharedScopeIndex);
-
-    // Once a nested layer is active, preserve the user's layer-selection
-    // intent even when the next hit is inside a different frame. Groups remain
-    // atomic; otherwise select the deepest rendered layer under the pointer.
-    const hasInnerSelection = selectedIds.some((id) => Boolean(document.nodes[id]?.parentId));
-    if (hasInnerSelection) {
-      return chain.find((id) => document.nodes[id]?.type === "group") ?? chain.at(-1) ?? null;
-    }
+    if (sharedScopeIndex >= 0) return chain[sharedScopeIndex + 1] ?? chain[sharedScopeIndex];
   }
 
   return chain[0];

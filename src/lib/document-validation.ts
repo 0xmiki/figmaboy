@@ -150,7 +150,10 @@ function sanitizeNode(id: string, value: Record<string, unknown>): DesignNode | 
     const crop = record(value.crop);
     node.crop = crop ? { x: finite(crop.x, 0), y: finite(crop.y, 0), width: clamped(crop.width, 1, 0, 1), height: clamped(crop.height, 1, 0, 1) } : { x: 0, y: 0, width: 1, height: 1 };
   }
-  if (node.type === "icon") node.iconName = string(value.iconName, "sparkles");
+  if (node.type === "icon") {
+    const iconName = string(value.iconName, "sparkle");
+    node.iconName = iconName === "sparkles" ? "sparkle" : iconName;
+  }
   return node;
 }
 

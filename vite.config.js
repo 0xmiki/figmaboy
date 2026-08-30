@@ -1,11 +1,13 @@
 import { defineConfig } from "vite";
 import { sveltekit } from "@sveltejs/kit/vite";
+import { sveltePhosphorOptimize } from "phosphor-svelte/vite";
+import { phosphorCatalog } from "./scripts/phosphor-catalog-plugin.js";
 
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
-  plugins: [sveltekit()],
+  plugins: [phosphorCatalog(), sveltePhosphorOptimize(), sveltekit()],
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //

@@ -4,53 +4,66 @@ description: Install Figmaboy, connect Codex, and turn instructions into native 
 template: splash
 hero:
   title: Design on canvas. Build with Codex.
-  tagline: Figmaboy is a local-first desktop design workspace with a familiar canvas and the Codex CLI built into the same window.
+  tagline: Draw native interface layers by hand or ask Codex to edit the open design beside the canvas.
   actions:
-    - text: Install and connect
-      link: ./getting-started/install/
+    - text: Let Codex connect it
+      link: ./getting-started/connect-codex/
       icon: right-arrow
       variant: primary
-    - text: Start the quickstart
-      link: ./getting-started/quickstart/
+    - text: Download Figmaboy
+      link: ../download/
       icon: external
 ---
 
 import { Card, CardGrid } from '@astrojs/starlight/components';
 
-## Two ways to work, one native document
+## Let Codex handle setup
 
-Use the canvas directly for frames, type, shapes, images, effects, and precise inspector edits. Open the embedded terminal with <kbd>Ctrl</kbd> + <kbd>`</kbd> when you want Codex to inspect or change the current design through the Figmaboy MCP server.
+The built-in chat needs no MCP registration. To use Figmaboy from other Codex clients, paste one prompt and let Codex find, verify, and register the right executable for your operating system.
+
+```text
+Open https://raw.githubusercontent.com/0xmiki/figmaboy/main/docs/INSTALL_FIGMABOY_MCP.md and follow it to install or repair the Figmaboy MCP for this computer. Verify the checksum before running a downloaded binary. Keep any working custom registration.
+```
+
+[Read what Codex will do](./getting-started/connect-codex/)
+
+No terminal work is required for the normal path. Manual commands remain available when you need them.
+
+## Work by hand or with Codex
+
+Use the canvas directly for frames, type, shapes, images, effects, and precise inspector edits. Open the Codex sidebar with <kbd>Ctrl</kbd> + <kbd>`</kbd> when you want Codex to inspect or change the current design through the bundled Figmaboy MCP server.
 
 <CardGrid>
   <Card title="Design by hand" icon="pencil">
-    Select, draw, nest, rename, resize, reorder, and style native layers with a Figma-style desktop workflow.
+    Select, draw, nest, rename, resize, reorder, and style native layers on the canvas.
   </Card>
   <Card title="Build with Codex" icon="rocket">
     Ask for a section or complete screen. Codex can create semantic layer trees, review screenshots, and save the result.
   </Card>
   <Card title="Reuse saved designs" icon="document">
-    Give Codex a copied design ID—or a unique file name—and it can load the visual preview and page layers while Figmaboy is closed.
+    Give Codex a copied design ID or unique file name. It can load the preview and page layers while Figmaboy is closed.
   </Card>
   <Card title="Stay local" icon="lock">
     Designs autosave to a local SQLite workspace. Offline MCP access is read-only, and live mutations pass through the editor.
   </Card>
 </CardGrid>
 
-## The shortest path to your first Codex-built screen
+## Build your first screen
 
-1. [Install Figmaboy and connect Codex](./getting-started/install/) for your operating system.
-2. Create or open a design in Figmaboy.
-3. Open the terminal with <kbd>Ctrl</kbd> + <kbd>`</kbd>, start Codex, and describe the screen you want.
-4. Ask Codex to visually review the finished frame, then refine it by hand or with another instruction.
+1. [Install Figmaboy](./getting-started/install/) for your operating system.
+2. [Let Codex connect the MCP](./getting-started/connect-codex/) if you want Figmaboy tools outside the built-in chat.
+3. Create or open a design in Figmaboy.
+4. Open the Codex sidebar with <kbd>Ctrl</kbd> + <kbd>`</kbd> and describe the screen you want.
+5. Ask Codex to review the finished frame, then refine it by hand or with another instruction.
 
 <div class="docs-home-note">
-  <strong>Current release: v0.2.0.</strong> Offline design context, copied design IDs, and standalone MCP binaries are included in the latest GitHub release.
+  <strong>Current release: v0.3.0.</strong> The release includes offline design context, copied design IDs, and standalone MCP binaries.
 </div>
 
 ## How the pieces fit
 
 ```text
-Codex CLI ── JSON-RPC over stdio ──► figmaboy-mcp
+Figmaboy sidebar ── app-server protocol ──► Codex app-server ── MCP ──► figmaboy-mcp
                                            │
                        ┌───────────────────┴───────────────────┐
                        │                                       │
@@ -60,4 +73,4 @@ Codex CLI ── JSON-RPC over stdio ──► figmaboy-mcp
                        └──────────── Figmaboy desktop ─────────┘
 ```
 
-Continue with the [quickstart](./getting-started/quickstart/) for a complete first workflow, or read [Codex and the MCP](./core-concepts/codex-mcp/) for the architecture and safety model.
+Continue with the [quickstart](./getting-started/quickstart/) for the first workflow. Read [Codex and the MCP](./core-concepts/codex-mcp/) for architecture and security details.

@@ -66,6 +66,6 @@ Run this checklist in both the browser build and the Tauri shell. Repeat the tra
 ## Known limitations to watch
 
 - Multi-selection resize uses the world-axis bounding box; unlike single-object resize, it does not preserve each rotated object's oriented handles.
-- Grouping intentionally requires selected roots to share a parent. Cross-parent grouping is ignored to avoid silently changing geometry.
+- Selected roots must share a parent before they can be grouped. Figmaboy ignores cross-parent grouping because it would change geometry.
 - Snapping covers object anchors during moves; resize snapping, spacing/distribution guides, and configurable grids are not yet implemented.
-- Touch uses pointer events and stable capture, but dedicated two-finger pan and mobile-sized transform handles still need device testing.
+- Touch uses pointer events and stable capture. Two-finger pan and mobile-sized transform handles still need device testing.

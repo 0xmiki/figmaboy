@@ -3,7 +3,7 @@ title: Use a saved design offline
 description: Let Codex inspect a saved Figmaboy design by copied ID or convenient file name while the app is closed.
 ---
 
-Offline context turns a saved Figmaboy page into implementation reference: a visual preview plus the complete native layer tree and document data.
+Offline context gives Codex a saved page preview, its native layer tree, and its document data. Figmaboy can stay closed.
 
 ## Copy a stable design ID
 
@@ -32,7 +32,7 @@ Name lookup is case-insensitive. If multiple active designs have the same name, 
 - Asset metadata used by the document.
 - A visual preview when the page has been rendered and autosaved.
 
-This is enough to reason about dimensions, spacing, colors, type, hierarchy, content, and component boundaries without the app running.
+Codex can read dimensions, spacing, colors, type, hierarchy, content, and component boundaries from this response.
 
 ## Read-only means read-only
 
@@ -40,7 +40,7 @@ Offline tools never write to the workspace. If you ask Codex to change a design 
 
 ## Implementation prompt
 
-For a strong handoff from design to code:
+Use this prompt when moving from design to code:
 
 > Load Figmaboy design `file_…`, page `Checkout`. First summarize its screen size, section hierarchy, reusable components, type scale, colors, spacing rhythm, and assets. Then inspect this repository's existing framework and conventions. Implement the page responsively, preserving the design's visual hierarchy and content. Use the Figmaboy preview for visual comparison and the native layers for exact structure.
 

@@ -3,7 +3,7 @@ title: MCP tools
 description: Reference for Figmaboy's offline-context, live inspection, mutation, history, and rendering tools.
 ---
 
-The server advertises its exact runtime schema to Codex. Use `types_get` when you need complete field-level contracts; this page is the human-readable map.
+The server sends its runtime schema to Codex. Use `types_get` for exact field contracts. This page gives the shorter human-readable list.
 
 ## Offline context
 
@@ -52,7 +52,7 @@ These tools require an open design.
 
 ## Authoring rules
 
-For maintainable output, Codex should:
+Codex should follow this order:
 
 1. Inspect capabilities, types when needed, and the current document.
 2. Create named parent containers before their children.

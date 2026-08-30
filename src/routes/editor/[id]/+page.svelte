@@ -1,10 +1,16 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onDestroy, onMount, tick } from "svelte";
   import { goto } from "$app/navigation";
   import { page as route } from "$app/state";
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
-  import { ChevronDown, ChevronLeft, Copy, Eye, EyeOff, Group, Lock, MoveDown, MoveUp, PanelLeftClose, PanelRightClose, RefreshCw, Save, Trash2, Ungroup, Unlock, X } from "lucide-svelte";
+  import {
+    CaretDown as ChevronDown, CaretLeft as ChevronLeft, Copy, Eye, EyeSlash as EyeOff,
+    Intersect as Group, Lock, ArrowDown as MoveDown, ArrowUp as MoveUp,
+    SidebarSimple as PanelLeftClose, SidebarSimple as PanelRightClose,
+    ArrowClockwise as RefreshCw, FloppyDisk as Save, Trash as Trash2,
+    ExcludeSquare as Ungroup, LockOpen as Unlock, X,
+  } from "phosphor-svelte";
   import type { DesignNode, PageMeta } from "$lib/domain";
   import { cloneDocument, defaultNode } from "$lib/domain";
   import { screenToWorld, selectionBounds, unionRects, worldBounds } from "$lib/geometry";
@@ -15,7 +21,6 @@
   import LeftPanel from "$lib/editor/LeftPanel.svelte";
   import PrototypePreview from "$lib/editor/PrototypePreview.svelte";
   import Toolbar from "$lib/editor/Toolbar.svelte";
-  import TerminalPanel from "$lib/editor/TerminalPanel.svelte";
   import { applyExternalOperations, centerNodes, nodeGeometry, placeImageNode, setBorderRadius } from "$lib/editor/editor-rpc";
 
   const repo = repository();
@@ -27,16 +32,80 @@
   let pageMenu = $state<{ id: string; x: number; y: number } | null>(null);
   let preview = $state(false);
   let panels = $state({ left: true, right: true });
-  let terminalOpen = $state(false);
-  let terminalHeight = $state(280);
+  let panelWidths = $state({ left: 297, right: 241, codex: 390 });
+  let codexOpen = $state(false);
+  let codexMounted = $state(false);
+  let CodexSidebarComponent = $state<any>(null);
+  let codexComponentPromise: Promise<void> | null = null;
+  let layoutReady = $state(false);
+  let codexAttention = $state<"idle" | "working" | "approval" | "input" | "complete" | "error">("idle");
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
+  let thumbnailTimer: ReturnType<typeof setTimeout> | null = null;
   let noticeTimer: ReturnType<typeof setTimeout> | null = null;
   let nudgeTimer: ReturnType<typeof setTimeout> | null = null;
+
+  type StoredEditorLayout = {
+    leftOpen?: boolean;
+    rightOpen?: boolean;
+    leftWidth?: number;
+    rightWidth?: number;
+    codexWidth?: number;
+    codexOpenByPage?: Record<string, boolean>;
+  };
+
+  const layoutStorageKey = `figmaboy:editor-layout:${route.params.id ?? "unknown"}`;
+
+  function clampWidth(value: unknown, fallback: number, min: number, max: number): number {
+    return typeof value === "number" && Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : fallback;
+  }
+
+  function readEditorLayout(): StoredEditorLayout {
+    try {
+      const value = JSON.parse(localStorage.getItem(layoutStorageKey) ?? "{}");
+      return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+    } catch {
+      return {};
+    }
+  }
+
+  function persistEditorLayout(pageId = session?.page.id) {
+    if (!layoutReady || !pageId) return;
+    const previous = readEditorLayout();
+    localStorage.setItem(layoutStorageKey, JSON.stringify({
+      leftOpen: panels.left,
+      rightOpen: panels.right,
+      leftWidth: panelWidths.left,
+      rightWidth: panelWidths.right,
+      codexWidth: panelWidths.codex,
+      codexOpenByPage: { ...(previous.codexOpenByPage ?? {}), [pageId]: codexOpen },
+    } satisfies StoredEditorLayout));
+  }
+
+  function restorePageCodexState(pageId: string) {
+    const stored = readEditorLayout();
+    codexOpen = stored.codexOpenByPage?.[pageId] === true;
+    codexMounted = codexOpen;
+    if (codexOpen) void ensureCodexComponent();
+    if (codexOpen) panels.right = true;
+  }
+
+  function restoreEditorLayout(pageId: string) {
+    const stored = readEditorLayout();
+    panels = { left: stored.leftOpen !== false, right: stored.rightOpen !== false };
+    panelWidths = {
+      left: clampWidth(stored.leftWidth, 297, 220, 520),
+      right: clampWidth(stored.rightWidth, 241, 220, 520),
+      codex: clampWidth(stored.codexWidth, 390, 320, 640),
+    };
+    restorePageCodexState(pageId);
+    layoutReady = true;
+  }
 
   onMount(async () => {
     try {
       const opened = await repo.openFile(route.params.id!);
       session = new EditorSession(opened);
+      restoreEditorLayout(session.page.id);
       await loadAssets();
     } catch (cause) { error = cause instanceof Error ? cause.message : "Could not open this design"; }
     finally { loading = false; }
@@ -75,6 +144,11 @@
     return () => { if (saveTimer) clearTimeout(saveTimer); };
   });
 
+  $effect(() => {
+    panels.left; panels.right; codexOpen; session?.page.id;
+    if (layoutReady) persistEditorLayout();
+  });
+
   async function loadAssets() {
     if (!session) return;
     const ids = [...new Set(Object.values(session.document.nodes).filter((node) => node.type === "image").map((node) => (node as Extract<DesignNode, { type: "image" }>).assetId))];
@@ -83,14 +157,48 @@
     }));
   }
 
-  function thumbnailSvg(): string | null {
+  async function cloneFullCanvasWorld(): Promise<SVGGElement | undefined> {
+    if (!session) return undefined;
+    const previous = session.renderAllNodes;
+    session.renderAllNodes = true;
+    await tick();
+    const world = document.querySelector<SVGGElement>("#design-canvas .world")?.cloneNode(true) as SVGGElement | undefined;
+    session.renderAllNodes = previous;
+    return world;
+  }
+
+  async function thumbnailSvg(): Promise<string | null> {
     if (!session || !session.document.rootIds.length) return null;
     const bounds = unionRects(session.document.rootIds.map((id) => session!.document.nodes[id]).filter(Boolean).map((node) => worldBounds(session!.document, node)));
-    const world = document.querySelector<SVGGElement>("#design-canvas .world")?.cloneNode(true) as SVGGElement | undefined;
+    const world = await cloneFullCanvasWorld();
     if (!bounds || !world) return null;
     world.querySelectorAll(".selection-ui,.guide").forEach((item) => item.remove());
     const markup = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${bounds.x} ${bounds.y} ${Math.max(1, bounds.width)} ${Math.max(1, bounds.height)}" width="480" height="300"><rect x="${bounds.x}" y="${bounds.y}" width="${Math.max(1, bounds.width)}" height="${Math.max(1, bounds.height)}" fill="#626262"/>${world.innerHTML}</svg>`;
     return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(markup)))}`;
+  }
+
+  function scheduleThumbnailRefresh(pageId: string, changeToken: number) {
+    if (thumbnailTimer) clearTimeout(thumbnailTimer);
+    thumbnailTimer = setTimeout(() => {
+      thumbnailTimer = null;
+      void refreshThumbnail(pageId, changeToken);
+    }, 1_200);
+  }
+
+  async function refreshThumbnail(pageId: string, changeToken: number) {
+    if (!session || session.page.id !== pageId) return;
+    if (session.persistencePaused) {
+      scheduleThumbnailRefresh(pageId, changeToken);
+      return;
+    }
+    try {
+      const thumbnail = await thumbnailSvg();
+      if (!thumbnail || !session || session.page.id !== pageId) return;
+      await repo.savePagePreview(pageId, thumbnail);
+      if (session.thumbnailChangeToken === changeToken) session.thumbnailDirty = false;
+    } catch {
+      // The document is already saved. Keep the preview dirty and try again after the next edit.
+    }
   }
 
   async function saveNow() {
@@ -108,11 +216,11 @@
     const savingThumbnailToken = session.thumbnailChangeToken;
     const refreshThumbnail = session.thumbnailDirty;
     try {
-      const revision = await repo.savePage(pageId, expectedRevision, snapshot, refreshThumbnail ? thumbnailSvg() : undefined);
+      const revision = await repo.savePage(pageId, expectedRevision, snapshot);
       if (session.page.id === pageId) session.page.revision = revision;
       const meta = session.pages.find((page) => page.id === pageId);
       if (meta) meta.revision = revision;
-      if (refreshThumbnail && session.thumbnailChangeToken === savingThumbnailToken) session.thumbnailDirty = false;
+      if (refreshThumbnail) scheduleThumbnailRefresh(pageId, savingThumbnailToken);
       session.saveStatus = session.changeToken === savingToken ? "saved" : "dirty";
       if (session.saveStatus === "dirty") {
         if (saveTimer) clearTimeout(saveTimer);
@@ -124,12 +232,20 @@
     }
   }
 
+  onDestroy(() => {
+    if (saveTimer) clearTimeout(saveTimer);
+    if (thumbnailTimer) clearTimeout(thumbnailTimer);
+    if (noticeTimer) clearTimeout(noticeTimer);
+    if (nudgeTimer) clearTimeout(nudgeTimer);
+  });
+
   async function backToFiles() { await saveNow(); await goto("/"); }
 
   async function openPage(id: string) {
     if (!session || id === session.page.id) return;
+    persistEditorLayout(session.page.id);
     await saveNow();
-    try { const loaded = await repo.loadPage(id); session.setPage(loaded.page, loaded.document); await loadAssets(); }
+    try { const loaded = await repo.loadPage(id); session.setPage(loaded.page, loaded.document); restorePageCodexState(id); await loadAssets(); }
     catch (cause) { session.errorMessage = cause instanceof Error ? cause.message : "Could not open the page"; }
   }
 
@@ -140,6 +256,7 @@
       const created = await repo.createPage(session.file.id, `Page ${session.pages.length + 1}`);
       session.pages = [...session.pages, created.page];
       session.setPage(created.page, created.document);
+      restorePageCodexState(created.page.id);
     } catch (cause) { session.errorMessage = cause instanceof Error ? cause.message : "Could not create a page"; }
   }
 
@@ -239,7 +356,8 @@
       : unionRects(session.document.rootIds.map((id) => session!.document.nodes[id]).filter(Boolean).map((node) => worldBounds(session!.document, node)));
     if (!bounds) return;
     const canvas = document.querySelector<HTMLElement>("#design-canvas");
-    const width = canvas?.clientWidth ?? innerWidth - (panels.left ? 297 : 0) - (panels.right ? 241 : 0);
+    const rightWidth = codexOpen ? panelWidths.codex : panelWidths.right;
+    const width = canvas?.clientWidth ?? innerWidth - (panels.left ? panelWidths.left : 0) - (panels.right ? rightWidth : 0);
     const height = canvas?.clientHeight ?? innerHeight;
     const zoom = Math.min(4, Math.max(.05, Math.min((width - 160) / Math.max(1, bounds.width), (height - 160) / Math.max(1, bounds.height))));
     session.document.viewport.zoom = zoom;
@@ -277,7 +395,7 @@
     if (!session) return;
     const ids = session.selectedIds.length ? session.selectedIds : session.document.rootIds;
     const bounds = unionRects(ids.map((id) => session!.document.nodes[id]).filter(Boolean).map((node) => worldBounds(session!.document, node)));
-    const world = document.querySelector<SVGGElement>("#design-canvas .world")?.cloneNode(true) as SVGGElement | undefined;
+    const world = await cloneFullCanvasWorld();
     if (!bounds || !world) { session.errorMessage = "Select a layer or create something before exporting."; return; }
     world.querySelectorAll(".selection-ui,.guide").forEach((item) => item.remove());
     if (session.selectedIds.length) world.querySelectorAll("[data-node-id]").forEach((item) => { if (!ids.includes(item.getAttribute("data-node-id") ?? "") && !item.closest(ids.map((id) => `[data-node-id='${id}']`).join(","))) item.remove(); });
@@ -316,7 +434,7 @@
     if (!session || !ids.length) throw new Error("Nothing to render");
     const nodes = ids.map((id) => session!.document.nodes[id]).filter(Boolean);
     const bounds = unionRects(nodes.map((node) => worldBounds(session!.document, node)));
-    const world = document.querySelector<SVGGElement>("#design-canvas .world")?.cloneNode(true) as SVGGElement | undefined;
+    const world = await cloneFullCanvasWorld();
     if (!bounds || !world) throw new Error("Could not render the design canvas");
     world.removeAttribute("transform");
     world.style.removeProperty("transform");
@@ -439,8 +557,9 @@
     const key = event.key.toLowerCase();
     const target = event.target instanceof Element ? event.target : null;
     const typing = target?.matches("input, textarea, select, [contenteditable]:not([contenteditable='false']), [role='textbox']") || target?.closest("[contenteditable]:not([contenteditable='false']), [role='textbox']");
-    if (!session || typing) return;
-    if (event.ctrlKey && key === "`") { event.preventDefault(); terminalOpen = !terminalOpen; return; }
+    if (!session) return;
+    if (event.ctrlKey && key === "`") { event.preventDefault(); toggleCodex(); return; }
+    if (typing) return;
     if (!event.key.startsWith("Arrow")) commitNudge();
     if (mod && key === "a") { event.preventDefault(); session.selectAll(); return; }
     if (mod && key === "z") { event.preventDefault(); event.shiftKey ? session.redo() : session.undo(); return; }
@@ -463,7 +582,7 @@
     if (mod && (key === "\\" || key === ".")) {
       event.preventDefault();
       const show = !panels.left || !panels.right;
-      panels = { left: show, right: show };
+      setPanelsVisible(show);
       return;
     }
     if (event.key === "Delete" || event.key === "Backspace") { event.preventDefault(); session.deleteSelection(); return; }
@@ -535,19 +654,77 @@
     if (session) session.errorMessage = "";
   }
 
-  function startTerminalResize(event: PointerEvent) {
+  function setCodexOpen(open: boolean) {
+    codexMounted ||= open;
+    codexOpen = open;
+    if (open) void ensureCodexComponent();
+    if (open) panels.right = true;
+  }
+
+  function ensureCodexComponent(): Promise<void> {
+    if (CodexSidebarComponent) return Promise.resolve();
+    codexComponentPromise ??= import("$lib/editor/CodexSidebar.svelte").then((module) => {
+      CodexSidebarComponent = module.default;
+    });
+    return codexComponentPromise;
+  }
+
+  function toggleCodex() {
+    setCodexOpen(!codexOpen);
+  }
+
+  function togglePanel(side: "left" | "right") {
+    if (side === "left") panels.left = !panels.left;
+    else {
+      panels.right = !panels.right;
+      if (!panels.right) codexOpen = false;
+    }
+  }
+
+  function setPanelsVisible(visible: boolean) {
+    panels = { left: visible, right: visible };
+    if (!visible) codexOpen = false;
+  }
+
+  function startPanelResize(event: PointerEvent, side: "left" | "right") {
     event.preventDefault();
-    const startY = event.clientY;
-    const startHeight = terminalHeight;
-    const move = (next: PointerEvent) => {
-      terminalHeight = Math.max(150, Math.min(innerHeight - 150, startHeight + startY - next.clientY));
+    const startX = event.clientX;
+    const rightKey = codexOpen ? "codex" : "right";
+    const startWidth = side === "left" ? panelWidths.left : panelWidths[rightKey];
+    const shell = (event.currentTarget as HTMLElement).closest<HTMLElement>(".editor-shell");
+    const property = side === "left" ? "--left-panel-width" : rightKey === "codex" ? "--codex-panel-width" : "--right-panel-width";
+    let nextWidth = startWidth;
+    let pendingX = startX;
+    let resizeFrame = 0;
+    document.body.classList.add("resizing-panels");
+
+    const applyWidth = () => {
+      resizeFrame = 0;
+      const delta = side === "left" ? pendingX - startX : startX - pendingX;
+      const min = side === "left" ? 220 : rightKey === "codex" ? 320 : 220;
+      const max = side === "left" ? Math.min(520, innerWidth - 360) : rightKey === "codex" ? Math.min(640, innerWidth - 280) : Math.min(520, innerWidth - 280);
+      nextWidth = Math.max(min, Math.min(max, startWidth + delta));
+      shell?.style.setProperty(property, `${nextWidth}px`);
     };
-    const end = () => {
+    const move = (pointer: PointerEvent) => {
+      pendingX = pointer.clientX;
+      if (!resizeFrame) resizeFrame = requestAnimationFrame(applyWidth);
+    };
+    const stop = (pointer: PointerEvent) => {
+      pendingX = pointer.clientX;
+      if (resizeFrame) cancelAnimationFrame(resizeFrame);
+      applyWidth();
       window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+      document.body.classList.remove("resizing-panels");
+      panelWidths = { ...panelWidths, [side === "left" ? "left" : rightKey]: nextWidth };
+      persistEditorLayout();
+      window.dispatchEvent(new CustomEvent("figmaboy-panel-resize-end"));
     };
     window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", end, { once: true });
+    window.addEventListener("pointerup", stop, { once: true });
+    window.addEventListener("pointercancel", stop, { once: true });
   }
 </script>
 
@@ -559,8 +736,8 @@
 {:else if error || !session}
   <div class="error-screen"><img class="screen-brand" src="/figmaboy.svg" alt="" /><div class="error-icon"><X size={24} /></div><h1>Couldn’t open this file</h1><p>{error}</p><button onclick={() => goto("/")}><ChevronLeft size={15} /> Back to projects</button></div>
 {:else}
-  <div class="editor-shell" class:left-hidden={!panels.left} class:right-hidden={!panels.right}>
-    <div class="canvas-region" style:bottom={terminalOpen ? `${terminalHeight}px` : "0"}>
+  <div class="editor-shell" class:left-hidden={!panels.left} class:right-hidden={!panels.right} class:codex-open={codexOpen && panels.right} style={`--left-panel-width:${panelWidths.left}px;--right-panel-width:${panelWidths.right}px;--codex-panel-width:${panelWidths.codex}px`}>
+    <div class="canvas-region">
       <EditorCanvas {session} onContextMenu={showContext} />
       <div class="editor-top-left">
         <button class="home-mark" title="Back to projects" aria-label="Back to projects" onclick={backToFiles}><img src="/figmaboy.svg" alt="" /></button>
@@ -568,18 +745,15 @@
         <button class="copy-file-id" title="Copy design ID" aria-label="Copy design ID" onclick={copyDesignId}><Copy size={12} /></button>
         <span class:bad={session.saveStatus === "error" || session.saveStatus === "conflict"}>{session.saveStatus === "saving" ? "Saving…" : session.saveStatus === "dirty" ? "Unsaved" : session.saveStatus === "conflict" ? "Save conflict" : session.saveStatus === "error" ? "Save failed" : "Saved locally"}</span>
       </div>
-      <button class="panel-toggle left" title="Toggle left panel" onclick={() => (panels.left = !panels.left)}><PanelLeftClose size={15} /></button>
-      <button class="panel-toggle right" title="Toggle right panel" onclick={() => (panels.right = !panels.right)}><PanelRightClose size={15} /></button>
-      <Toolbar {session} onFit={() => fitCanvas("auto")} {terminalOpen} onToggleTerminal={() => (terminalOpen = !terminalOpen)} />
+      <button class="panel-toggle left" title="Toggle left panel" onclick={() => togglePanel("left")}><PanelLeftClose size={15} /></button>
+      <button class="panel-toggle right" title="Toggle right panel" onclick={() => togglePanel("right")}><PanelRightClose size={15} mirrored /></button>
+      <Toolbar {session} onFit={() => fitCanvas("auto")} {codexOpen} {codexAttention} onToggleCodex={toggleCodex} />
     </div>
-    {#if terminalOpen}
-      <div class="terminal-dock" style:height={`${terminalHeight}px`}>
-        <button class="terminal-resize" aria-label="Resize terminal" onpointerdown={startTerminalResize}></button>
-        <TerminalPanel onClose={() => (terminalOpen = false)} />
-      </div>
-    {/if}
     {#if panels.left}<LeftPanel {session} onCreatePage={createPage} onOpenPage={openPage} onPageMenu={showPageMenu} onLayerContext={layerContext} onPlaceIcon={placeIcon} />{/if}
-    {#if panels.right}<Inspector {session} onCreatePreset={createPreset} onPresent={() => (preview = true)} onExport={exportSelection} />{/if}
+    {#if panels.right && !codexOpen}<Inspector {session} onCreatePreset={createPreset} onPresent={() => (preview = true)} onExport={exportSelection} />{/if}
+    {#if codexMounted && CodexSidebarComponent}{#key session.page.id}<CodexSidebarComponent workspaceId={session.file.id} pageId={session.page.id} fileName={session.file.name} visible={codexOpen && panels.right} onAttentionChange={(attention: typeof codexAttention) => (codexAttention = attention)} onClose={() => setCodexOpen(false)} />{/key}{/if}
+    {#if panels.left}<div class="panel-resizer left" role="separator" aria-label="Resize left sidebar" aria-orientation="vertical" onpointerdown={(event) => startPanelResize(event, "left")}></div>{/if}
+    {#if panels.right}<div class:codex={codexOpen} class="panel-resizer right" role="separator" aria-label={codexOpen ? "Resize chat sidebar" : "Resize inspector"} aria-orientation="vertical" onpointerdown={(event) => startPanelResize(event, "right")}></div>{/if}
 
     {#if session.errorMessage || session.saveStatus === "conflict"}
       <div class="save-error"><div><strong>{session.saveStatus === "conflict" ? "This page changed elsewhere" : "Could not save"}</strong><span>{session.saveStatus === "conflict" ? "Choose which version should win. Neither action happens automatically." : session.errorMessage}</span></div>{#if session.saveStatus === "conflict"}<button onclick={() => resolveConflict("reload")}><RefreshCw size={14} /> Reload</button><button onclick={() => resolveConflict("keep-local")}><Save size={14} /> Keep local</button>{:else}<button onclick={retrySave}><RefreshCw size={14} /> Retry</button><button class="dismiss" onclick={dismissSaveError}><X size={14} /></button>{/if}</div>
@@ -606,15 +780,15 @@
 {/if}
 
 <style>
-  .editor-shell { position: fixed; inset: 0; background: #626262; overflow: hidden; }.canvas-region { position: absolute; inset: 0 241px 0 297px; transition: bottom 180ms ease; }.left-hidden .canvas-region,.left-hidden .terminal-dock { left: 0; }.right-hidden .canvas-region,.right-hidden .terminal-dock { right: 0; }
-  .terminal-dock { position: absolute; z-index: 45; left: 297px; right: 241px; bottom: 0; min-height: 150px; }.terminal-resize { position: absolute; z-index: 2; top: -3px; left: 0; width: 100%; height: 7px; border: 0; padding: 0; background: transparent; cursor: ns-resize; }.terminal-resize:hover { background: #0d99ff; }
-  .editor-top-left { position: absolute; z-index: 35; top: 0; left: 0; height: 42px; background: #292929e8; border: 1px solid #444; border-top: 0; border-left: 0; border-radius: 0 0 7px 0; display: flex; align-items: center; padding: 0 7px; gap: 3px; box-shadow: 0 4px 14px #0003; }.editor-top-left button { border: 0; background: transparent; color: #ddd; height: 29px; border-radius: 5px; display: flex; align-items: center; cursor: pointer; }.editor-top-left button:hover { background: #3a3a3a; }.editor-top-left .home-mark { width: 29px; justify-content: center; }.home-mark img { width: 16px; height: 23px; object-fit: contain; filter: drop-shadow(0 2px 4px #0008); }.editor-top-left .file-title { max-width: 180px; gap: 5px; font-size: 10px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.editor-top-left .copy-file-id { width: 27px; justify-content: center; color: #929299; }.editor-top-left > span { color: #6f6f76; font-size: 8px; margin-left: 4px; }.editor-top-left > span.bad { color: #fca5a5; }
+  .editor-shell { position: fixed; inset: 0; background: #626262; overflow: hidden; }.canvas-region { position: absolute; inset: 0 var(--right-panel-width,241px) 0 var(--left-panel-width,297px); transition: left 180ms ease, right 180ms ease; }.left-hidden .canvas-region { left: 0; }.right-hidden .canvas-region { right: 0; }.codex-open .canvas-region { right: var(--codex-panel-width,390px); }
+  .editor-top-left { position: absolute; z-index: 35; top: 0; left: 0; height: 42px; background: #292929e8; border: 1px solid #444; border-top: 0; border-left: 0; border-radius: 0 0 7px 0; display: flex; align-items: center; padding: 0 7px; gap: 3px; box-shadow: 0 4px 14px #0003; }.editor-top-left button { border: 0; background: transparent; color: #ddd; height: 29px; border-radius: 5px; display: flex; align-items: center; cursor: pointer; }.editor-top-left button:hover { background: #3a3a3a; }.editor-top-left .home-mark { width: 29px; justify-content: center; }.home-mark img { width: 16px; height: 23px; object-fit: contain; filter: drop-shadow(0 2px 4px #0008); }.editor-top-left .file-title { max-width: 180px; gap: 5px; font-size: var(--text-control); font-weight: var(--weight-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.editor-top-left .copy-file-id { width: 27px; justify-content: center; color: #929299; }.editor-top-left > span { color: #6f6f76; font-size: var(--text-caption); margin-left: 4px; }.editor-top-left > span.bad { color: #fca5a5; }
   .panel-toggle { position: absolute; z-index: 35; top: 8px; width: 29px; height: 28px; border: 1px solid #4a4a4a; background: #292929; color: #aaa; border-radius: 5px; display: grid; place-items: center; cursor: pointer; }.panel-toggle.left { left: 7px; opacity: 0; pointer-events: none; }.left-hidden .panel-toggle.left { opacity: 1; pointer-events: auto; }.panel-toggle.right { right: 7px; opacity: 0; pointer-events: none; }.right-hidden .panel-toggle.right { opacity: 1; pointer-events: auto; }
-  .loading, .error-screen { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #1d1d1d; }.loader-logo { width: 92px; height: 129px; object-fit: contain; filter: drop-shadow(0 16px 30px #000a); animation: logo-breathe 1.8s ease-in-out infinite; }.loading strong { margin-top: 20px; font-size: 15px; letter-spacing: -.02em; }.loading p { color: #777; font-size: 10px; margin: 6px 0 0; } @keyframes logo-breathe { 50% { transform: translateY(-3px) scale(.985); opacity: .78; } }
-  .screen-brand { width: 38px; height: 54px; object-fit: contain; margin-bottom: 19px; opacity: .9; filter: drop-shadow(0 7px 14px #0009); }.error-icon { width: 58px; height: 58px; display: grid; place-items: center; border: 1px solid #512727; background: #321d1d; color: #f87171; border-radius: 15px; }.error-screen h1 { font-size: 17px; margin: 17px 0 4px; }.error-screen p { color: #888; font-size: 10px; }.error-screen button { margin-top: 13px; height: 32px; border: 1px solid #414141; border-radius: 6px; background: #2c2c2c; color: white; display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 0 11px; font-size: 10px; }
-  .editor-context { position: fixed; z-index: 100; width: 225px; padding: 6px; border: 1px solid #444; border-radius: 7px; background: #202020; box-shadow: 0 15px 45px #0009; }.editor-context.small { width: 165px; }.editor-context button { width: 100%; min-height: 31px; border: 0; border-radius: 4px; background: transparent; color: #eee; padding: 0 8px; display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 10px; }.editor-context button:hover { background: #373737; }.editor-context kbd,.editor-context button > span { margin-left: auto; color: #888; font: inherit; }.editor-context hr { height: 1px; border: 0; background: #3d3d3d; margin: 5px -6px; }.editor-context .danger { color: #fca5a5; }
-  .save-error { position: fixed; z-index: 80; left: 50%; top: 13px; transform: translateX(-50%); min-width: 380px; min-height: 48px; background: #3a2020; border: 1px solid #7f3737; border-radius: 8px; box-shadow: 0 8px 30px #0007; display: flex; align-items: center; gap: 10px; padding: 8px 9px 8px 13px; }.save-error > div { flex: 1; display: flex; flex-direction: column; }.save-error strong { font-size: 10px; }.save-error span { color: #d4a1a1; font-size: 8px; margin-top: 3px; }.save-error button { height: 28px; border: 0; border-radius: 5px; background: #693333; color: #fff; display: flex; align-items: center; gap: 5px; padding: 0 9px; cursor: pointer; font-size: 9px; }.save-error .dismiss { width: 28px; padding: 0; justify-content: center; background: transparent; }
-  .copy-notice { position: fixed; z-index: 90; left: 50%; bottom: 24px; transform: translateX(-50%); min-height: 34px; display: flex; align-items: center; gap: 7px; padding: 0 13px; border: 1px solid #4a4a4a; border-radius: 7px; background: #252525; color: #f4f4f5; box-shadow: 0 8px 28px #0008; font-size: 9px; }
+  .panel-resizer { position: absolute; z-index: 61; top: 0; bottom: 0; width: 7px; cursor: col-resize; touch-action: none; }.panel-resizer::after { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 1px; background: transparent; transition: background 120ms ease; }.panel-resizer:hover::after { background: #6f6f77; }.panel-resizer.left { left: calc(var(--left-panel-width,297px) - 7px); }.panel-resizer.right { right: calc(var(--right-panel-width,241px) - 7px); }.panel-resizer.right.codex { right: calc(var(--codex-panel-width,390px) - 7px); }
+  .loading, .error-screen { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #1d1d1d; }.loader-logo { width: 92px; height: 129px; object-fit: contain; filter: drop-shadow(0 16px 30px #000a); animation: logo-breathe 1.8s ease-in-out infinite; }.loading strong { margin-top: 20px; font-size: var(--text-title); letter-spacing: -.02em; }.loading p { color: #777; font-size: var(--text-control); margin: 6px 0 0; } @keyframes logo-breathe { 50% { transform: translateY(-3px) scale(.985); opacity: .78; } }
+  .screen-brand { width: 38px; height: 54px; object-fit: contain; margin-bottom: 19px; opacity: .9; filter: drop-shadow(0 7px 14px #0009); }.error-icon { width: 58px; height: 58px; display: grid; place-items: center; border: 1px solid #512727; background: #321d1d; color: #f87171; border-radius: 15px; }.error-screen h1 { font-size: var(--text-large); margin: 17px 0 4px; }.error-screen p { color: #888; font-size: var(--text-control); }.error-screen button { margin-top: 13px; height: 32px; border: 1px solid #414141; border-radius: 6px; background: #2c2c2c; color: white; display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 0 11px; font-size: var(--text-control); }
+  .editor-context { position: fixed; z-index: 100; width: 225px; padding: 6px; border: 1px solid #444; border-radius: 7px; background: #202020; box-shadow: 0 15px 45px #0009; }.editor-context.small { width: 165px; }.editor-context button { width: 100%; min-height: 31px; border: 0; border-radius: 4px; background: transparent; color: #eee; padding: 0 8px; display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: var(--text-control); }.editor-context button:hover { background: #373737; }.editor-context kbd,.editor-context button > span { margin-left: auto; color: #888; font: inherit; }.editor-context hr { height: 1px; border: 0; background: #3d3d3d; margin: 5px -6px; }.editor-context .danger { color: #fca5a5; }
+  .save-error { position: fixed; z-index: 80; left: 50%; top: 13px; transform: translateX(-50%); min-width: 380px; min-height: 48px; background: #3a2020; border: 1px solid #7f3737; border-radius: 8px; box-shadow: 0 8px 30px #0007; display: flex; align-items: center; gap: 10px; padding: 8px 9px 8px 13px; }.save-error > div { flex: 1; display: flex; flex-direction: column; }.save-error strong { font-size: var(--text-control); }.save-error span { color: #d4a1a1; font-size: var(--text-caption); margin-top: 3px; }.save-error button { height: 28px; border: 0; border-radius: 5px; background: #693333; color: #fff; display: flex; align-items: center; gap: 5px; padding: 0 9px; cursor: pointer; font-size: var(--text-small); }.save-error .dismiss { width: 28px; padding: 0; justify-content: center; background: transparent; }
+  .copy-notice { position: fixed; z-index: 90; left: 50%; bottom: 24px; transform: translateX(-50%); min-height: 34px; display: flex; align-items: center; gap: 7px; padding: 0 13px; border: 1px solid #4a4a4a; border-radius: 7px; background: #252525; color: #f4f4f5; box-shadow: 0 8px 28px #0008; font-size: var(--text-small); }
   @media (prefers-reduced-motion: reduce) { .loader-logo { animation: none; } }
-  @media (max-width: 1050px) { .canvas-region,.terminal-dock { left: 56px; }.editor-shell :global(.left-shell) { width: 56px; grid-template-columns: 56px 0; }.editor-shell :global(.left-shell .panel) { display: none; } }
+  @media (max-width: 1050px) { .canvas-region { left: 56px; }.editor-shell :global(.left-shell) { width: 56px; grid-template-columns: 56px 0; }.editor-shell :global(.left-shell .panel) { display: none; }.panel-resizer.left { display: none; } }
 </style>

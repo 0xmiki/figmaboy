@@ -7,10 +7,11 @@
   import type { Point } from "$lib/geometry";
   import type { EditorSession } from "$lib/editor/editor.svelte";
   import CanvasNode from "$lib/editor/CanvasNode.svelte";
-  import { canvasSelectionTarget, isCanvasNodeVisible } from "$lib/editor/canvas-selection";
+  import { canvasSelectionTarget, isCanvasNodeSelectable } from "$lib/editor/canvas-selection";
 
   let { session, onContextMenu }: { session: EditorSession; onContextMenu: (event: MouseEvent, world: Point, hitId?: string) => void } = $props();
   let host = $state<HTMLDivElement>();
+  let hostSize = $state({ width: 0, height: 0 });
   let viewportElement = $state<SVGSVGElement>();
   let gridPattern = $state<SVGPatternElement>();
   let gridDot = $state<SVGCircleElement>();
@@ -35,6 +36,8 @@
   let dragSourceNodes = new Map<string, DesignNode>();
   let dragDuplicated = false;
   let moveStarted = false;
+  let snapXCandidates: number[] = [];
+  let snapYCandidates: number[] = [];
   let startViewport = { x: 0, y: 0 };
   let moveFrame = 0;
   let wheelFrame = 0;
@@ -63,6 +66,46 @@
   // properties instead of scheduling a Svelte update for the whole canvas.
   const liveViewport = { x: 0, y: 0, zoom: 1 };
   let observedViewportKey = `${viewport.x}:${viewport.y}:${viewport.zoom}`;
+  const renderedNodeIds = $derived.by(() => {
+    const rootIds = session.document.rootIds;
+    const nodes = session.document.nodes;
+    if (session.renderAllNodes || Object.keys(nodes).length < 160 || hostSize.width === 0 || hostSize.height === 0) return null;
+    const overscan = 320 / viewport.zoom;
+    const visibleBounds = {
+      x: -viewport.x / viewport.zoom - overscan,
+      y: -viewport.y / viewport.zoom - overscan,
+      width: hostSize.width / viewport.zoom + overscan * 2,
+      height: hostSize.height / viewport.zoom + overscan * 2,
+    };
+    const requiredIds = new Set<string>();
+    for (const selectedId of session.selectedIds) {
+      let id: string | null = selectedId;
+      while (id) {
+        requiredIds.add(id);
+        id = nodes[id]?.parentId ?? null;
+      }
+    }
+    const rendered = new Set<string>();
+    const visit = (id: string): boolean => {
+      const node = nodes[id];
+      if (!node || !node.visible) return false;
+      const intersectsViewport = intersects(visibleBounds, worldBounds(session.document, node));
+      let keep = intersectsViewport || requiredIds.has(id);
+      if (node.type === "frame" || node.type === "group") {
+        const canShowChildren = node.type === "group" || !node.clipContent || keep;
+        if (canShowChildren) {
+          for (const childId of node.childIds) {
+            if (visit(childId)) keep = true;
+          }
+        }
+      }
+      if (keep) rendered.add(id);
+      return keep;
+    };
+    rootIds.forEach(visit);
+    return rendered;
+  });
+  const renderedRootIds = $derived(session.document.rootIds.filter((id) => !renderedNodeIds || renderedNodeIds.has(id)));
   const selectedBounds = $derived(selectionBounds(session.document, session.selectedIds));
   const unclippedFrameIds = $derived.by(() => {
     const ids = new Set<string>();
@@ -190,6 +233,15 @@
     applyViewportPreview();
     const target = host;
     if (!target) return;
+    const updateHostSize = () => {
+      hostSize = { width: target.clientWidth, height: target.clientHeight };
+    };
+    const resizeObserver = new ResizeObserver(() => {
+      if (!document.body.classList.contains("resizing-panels")) updateHostSize();
+    });
+    resizeObserver.observe(target);
+    updateHostSize();
+    window.addEventListener("figmaboy-panel-resize-end", updateHostSize);
     const startGesture = (event: Event) => {
       event.preventDefault();
       if (mode !== "idle") cancelInteraction();
@@ -242,6 +294,8 @@
         persistViewport();
       }
       unlistenNative?.();
+      resizeObserver.disconnect();
+      window.removeEventListener("figmaboy-panel-resize-end", updateHostSize);
       target.removeEventListener("gesturestart", startGesture);
       target.removeEventListener("gesturechange", changeGesture);
     };
@@ -281,6 +335,8 @@
     pendingClickSelection = null;
     dragDuplicated = false;
     moveStarted = false;
+    snapXCandidates = [];
+    snapYCandidates = [];
     session.guides = { x: null, y: null };
     mode = "idle";
     releasePointer();
@@ -385,6 +441,25 @@
     return false;
   }
 
+  function prepareSnapCandidates() {
+    const excludedIds = new Set(session.selectedIds);
+    const excludeDescendants = (id: string) => {
+      const node = session.document.nodes[id];
+      if (node?.type !== "frame" && node?.type !== "group") return;
+      for (const childId of node.childIds) {
+        if (excludedIds.has(childId)) continue;
+        excludedIds.add(childId);
+        excludeDescendants(childId);
+      }
+    };
+    session.selectedIds.forEach(excludeDescendants);
+    const bounds = Object.values(session.document.nodes)
+      .filter((node) => !excludedIds.has(node.id) && node.visible)
+      .map((node) => worldBounds(session.document, node));
+    snapXCandidates = bounds.flatMap((rect) => [rect.x, rect.x + rect.width / 2, rect.x + rect.width]);
+    snapYCandidates = bounds.flatMap((rect) => [rect.y, rect.y + rect.height / 2, rect.y + rect.height]);
+  }
+
   function nodePointerDown(event: PointerEvent, id: string) {
     if (event.button === 1 || session.activeTool === "hand" || spacePressed) {
       begin(event, id);
@@ -400,6 +475,8 @@
       return;
     }
     const deepSelect = event.metaKey || event.ctrlKey;
+    const repeatedPress = event.detail >= 2 || (lastNodePress.id === id && event.timeStamp - lastNodePress.at < 500);
+    lastNodePress = repeatedPress ? { id: "", at: -Infinity } : { id, at: event.timeStamp };
     const stack = hitStackAt(event);
     let targetId: string | null;
     if (deepSelect) {
@@ -407,23 +484,19 @@
       const current = deepStack.findIndex((candidate) => session.selectedIds.includes(candidate));
       targetId = deepStack.length ? deepStack[(current + 1 + deepStack.length) % deepStack.length] : canvasSelectionTarget(session.document, id, [], true);
     } else {
-      // Shift-click operates on the outer selection boundary; an ordinary
-      // repeated click uses the current selection as its drill-in scope. The
-      // resolver skips structural frames while preserving groups as atomic
-      // targets. Once a child establishes a scope, Shift can add its siblings.
+      // A double-click descends exactly one level. Once inside a parent,
+      // sibling clicks stay at that same depth.
       const selectedAncestorOfHit = session.selectedIds.length === 1 && isAncestorOf(session.selectedIds[0], id);
       const selectionContext = event.shiftKey && selectedAncestorOfHit ? [] : session.selectedIds;
-      targetId = canvasSelectionTarget(session.document, id, selectionContext);
+      targetId = canvasSelectionTarget(session.document, id, selectionContext, false, repeatedPress);
       if (!targetId) {
         for (const candidate of stack) {
-          targetId = canvasSelectionTarget(session.document, candidate, selectionContext);
+          targetId = canvasSelectionTarget(session.document, candidate, selectionContext, false, repeatedPress);
           if (targetId) break;
         }
       }
     }
-    // A locked surface with nothing selectable beneath it behaves like empty
-    // canvas. This is what makes marquee selection possible inside a locked
-    // frame while its unlocked children remain interactive.
+    // A locked parent makes its entire subtree behave like empty canvas.
     if (!targetId) {
       begin(event);
       return;
@@ -436,9 +509,7 @@
     startScreen = pointFromEvent(event);
     startWorld = worldFromEvent(event);
     lastWorld = startWorld;
-    const doublePress = lastNodePress.id === targetId && event.timeStamp - lastNodePress.at < 500;
-    lastNodePress = doublePress ? { id: "", at: -Infinity } : { id: targetId, at: event.timeStamp };
-    if (targetNode.type === "text" && (event.detail >= 2 || doublePress)) {
+    if (targetNode.type === "text" && repeatedPress) {
       pendingTextEditId = targetId;
       mode = "edit-text";
       capturePointer(event);
@@ -450,8 +521,8 @@
       && !session.document.nodes[session.selectedIds[0]]?.locked
       && isAncestorOf(session.selectedIds[0], targetId) ? session.selectedIds[0] : null;
     if (selectedAncestorId) {
-      // A click drills into the child, but a drag that starts on that same
-      // child continues to move the already-selected frame/group.
+      // The final press of a double-click may select the child, but turning
+      // that press into a drag still moves the selected parent.
       pendingClickSelection = targetId;
       interactionId = selectedAncestorId;
     } else if (event.shiftKey) session.select(targetId, true);
@@ -464,6 +535,7 @@
     startNodeBounds = new Map([...startNodes].map(([id, node]) => [id, worldBounds(session.document, node)]));
     dragSourceNodes = new Map(startNodes);
     startBounds = selectionBounds(session.document, session.selectedIds);
+    prepareSnapCandidates();
     interactionSelectionKey = session.selectedIds.join("\u0000");
     dragDuplicated = false;
     moveStarted = false;
@@ -473,7 +545,7 @@
 
   function nodeDoubleClick(_event: MouseEvent, id: string) {
     const node = session.document.nodes[id];
-    if (node?.type === "text" && !node.locked && isCanvasNodeVisible(session.document, id)) {
+    if (node?.type === "text" && isCanvasNodeSelectable(session.document, id)) {
       session.select(id);
       session.editingTextId = id;
       createdTextId = null;
@@ -596,6 +668,7 @@
     startNodes = new Map(session.selectedIds.map((id) => [id, JSON.parse(JSON.stringify(session.document.nodes[id])) as DesignNode]));
     startNodeBounds = new Map([...startNodes].map(([id, node]) => [id, worldBounds(session.document, node)]));
     startBounds = selectionBounds(session.document, session.selectedIds);
+    prepareSnapCandidates();
     interactionSelectionKey = session.selectedIds.join("\u0000");
     dragDuplicated = true;
   }
@@ -607,21 +680,7 @@
     if (constrain) Math.abs(dx) > Math.abs(dy) ? (dy = 0) : (dx = 0);
     session.guides = { x: null, y: null };
     if (startBounds) {
-      const excludedIds = new Set(session.selectedIds);
-      const excludeDescendants = (id: string) => {
-        const node = session.document.nodes[id];
-        if (node?.type !== "frame" && node?.type !== "group") return;
-        for (const childId of node.childIds) {
-          if (excludedIds.has(childId)) continue;
-          excludedIds.add(childId);
-          excludeDescendants(childId);
-        }
-      };
-      session.selectedIds.forEach(excludeDescendants);
-      const otherBounds = Object.values(session.document.nodes).filter((node) => !excludedIds.has(node.id) && node.visible).map((node) => worldBounds(session.document, node));
       const threshold = 5 / liveViewport.zoom;
-      const xCandidates = otherBounds.flatMap((rect) => [rect.x, rect.x + rect.width / 2, rect.x + rect.width]);
-      const yCandidates = otherBounds.flatMap((rect) => [rect.y, rect.y + rect.height / 2, rect.y + rect.height]);
       const nearest = (anchors: number[], candidates: number[], offset: number) => {
         let result = { distance: Infinity, delta: 0, guide: null as number | null };
         for (const anchor of anchors) for (const candidate of candidates) {
@@ -630,8 +689,8 @@
         }
         return result;
       };
-      const nearestX = nearest([startBounds.x, startBounds.x + startBounds.width / 2, startBounds.x + startBounds.width], xCandidates, dx);
-      const nearestY = nearest([startBounds.y, startBounds.y + startBounds.height / 2, startBounds.y + startBounds.height], yCandidates, dy);
+      const nearestX = nearest([startBounds.x, startBounds.x + startBounds.width / 2, startBounds.x + startBounds.width], snapXCandidates, dx);
+      const nearestY = nearest([startBounds.y, startBounds.y + startBounds.height / 2, startBounds.y + startBounds.height], snapYCandidates, dy);
       if (nearestX.guide !== null && nearestX.distance <= threshold) { dx += nearestX.delta; session.guides.x = nearestX.guide; }
       if (nearestY.guide !== null && nearestY.distance <= threshold) { dy += nearestY.delta; session.guides.y = nearestY.guide; }
     }
@@ -871,6 +930,7 @@
     const endScreen = pointFromEvent(event);
     const endWorld = worldFromEvent(event);
     const dragged = (mode === "move" && moveStarted) || Math.hypot(endScreen.x - startScreen.x, endScreen.y - startScreen.y) >= dragThreshold;
+    if (dragged) lastNodePress = { id: "", at: -Infinity };
     // Flush the final pointer coordinate; a queued animation frame may not
     // have run before pointerup on quick drags.
     if ((mode !== "draw" && mode !== "move") || dragged) applyPointerMove(endScreen, endWorld, event.shiftKey, event.altKey);
@@ -879,7 +939,7 @@
         const fullyContained = endScreen.x >= startScreen.x;
         const tolerance = 2 / liveViewport.zoom;
         const ids = Object.values(session.document.nodes).filter((node) => {
-          if (!isCanvasNodeVisible(session.document, node.id) || node.locked) return false;
+          if (!isCanvasNodeSelectable(session.document, node.id)) return false;
           const bounds = worldBounds(session.document, node);
           if ((node.type === "frame" || node.type === "group") && rectContainsPoint(bounds, startWorld)) return false;
           return fullyContained ? containsRect(marquee!, bounds, tolerance) : intersects(marquee!, bounds);
@@ -1155,9 +1215,9 @@
 
   <svg bind:this={viewportElement} class="viewport-layer" width="100%" height="100%" aria-label="Design canvas" style:transform={viewportTransform(viewport)}>
     <g class="world">
-      {#each session.document.rootIds as id}
+      {#each renderedRootIds as id}
         {#if session.document.nodes[id]}
-          <CanvasNode node={session.document.nodes[id]} document={session.document} selectedIds={session.selectedIds} imageSources={session.imageSources} {unclippedFrameIds} onNodePointerDown={nodePointerDown} onNodeDoubleClick={nodeDoubleClick} onNodeContextMenu={nodeContextMenu} />
+          <CanvasNode node={session.document.nodes[id]} document={session.document} selectedIds={session.selectedIds} imageSources={session.imageSources} {renderedNodeIds} {unclippedFrameIds} onNodePointerDown={nodePointerDown} onNodeDoubleClick={nodeDoubleClick} onNodeContextMenu={nodeContextMenu} />
         {/if}
       {/each}
     </g>
@@ -1226,9 +1286,9 @@
       style:line-height={editingNode.lineHeight}
       style:letter-spacing={`${editingNode.letterSpacing * viewport.zoom}px`}
       style:text-align={editingNode.textAlign}
+      style:text-transform={editingNode.textCase === "upper" ? "uppercase" : editingNode.textCase === "lower" ? "lowercase" : editingNode.textCase === "title" ? "capitalize" : "none"}
       style:white-space={editingNode.autoWidth ? "pre" : "pre-wrap"}
       style:overflow-wrap={editingNode.autoWidth ? "normal" : "break-word"}
-      style:color={editingNode.fill?.type === "solid" ? editingNode.fill.color : "#18181b"}
     ></textarea>
   {/if}
 </div>
@@ -1236,5 +1296,5 @@
 <style>
   .canvas-host { position: absolute; inset: 0; overflow: hidden; cursor: default; touch-action: none; user-select: none; -webkit-user-select: none; }.canvas-host :global(svg),.canvas-host :global(text),.canvas-host :global(image) { user-select: none; -webkit-user-select: none; -webkit-user-drag: none; }.canvas-host.grab,.canvas-host.grab :global([data-node-id]) { cursor: grab !important; }.canvas-host.grabbing,.canvas-host.grabbing :global([data-node-id]) { cursor: grabbing !important; }.canvas-host.crosshair,.canvas-host.crosshair :global([data-node-id]) { cursor: crosshair !important; }
   svg { display: block; }.canvas-background,.viewport-layer { position: absolute; inset: 0; }.viewport-layer { overflow: visible; transform-origin: 0 0; will-change: transform; }.guide,.marquee { pointer-events: none; }.guide { stroke: #ff4ecd; vector-effect: non-scaling-stroke; }.selection-ui { pointer-events: none; user-select: none; -webkit-user-select: none; }.selection-ui .handle, .selection-ui .rotate-handle, .selection-ui .line-handle { pointer-events: all; }.handle-nw,.handle-se { cursor: nwse-resize; }.handle-ne,.handle-sw { cursor: nesw-resize; }.handle-n,.handle-s { cursor: ns-resize; }.handle-e,.handle-w { cursor: ew-resize; }.rotate-handle { cursor: grab; }.line-handle { cursor: crosshair; }
-  .text-editor { position: absolute; z-index: 12; padding: 0; margin: 0; resize: none; overflow: hidden; border: 1px solid #0d99ff; outline: 0; background: transparent; caret-color: #0d99ff; white-space: pre; user-select: text; transform-origin: top left; }
+  .text-editor { position: absolute; z-index: 12; padding: 0; margin: 0; resize: none; overflow: hidden; border: 1px solid #0d99ff; outline: 0; background: transparent; color: transparent; -webkit-text-fill-color: transparent; caret-color: #0d99ff; white-space: pre; user-select: text; transform-origin: top left; }.text-editor::selection { background: #0d99ff55; }
 </style>

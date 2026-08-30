@@ -18,6 +18,7 @@ export interface Repository {
   restoreItem(kind: "project" | "file", id: string): Promise<void>;
   deleteItem(kind: "project" | "file", id: string): Promise<void>;
   savePage(pageId: string, expectedRevision: number, document: PageDocument, thumbnail?: string | null): Promise<number>;
+  savePagePreview(pageId: string, thumbnail: string): Promise<void>;
   loadPage(pageId: string): Promise<{ page: PageMeta; document: PageDocument }>;
   createPage(fileId: string, name: string): Promise<{ page: PageMeta; document: PageDocument }>;
   renamePage(pageId: string, name: string): Promise<void>;
@@ -266,6 +267,15 @@ class BrowserRepository implements Repository {
     return page.revision;
   }
 
+  async savePagePreview(pageId: string, thumbnail: string): Promise<void> {
+    const state = this.state();
+    const page = state.pages.find((item) => item.id === pageId);
+    if (!page) return;
+    const file = state.files.find((item) => item.id === page.fileId);
+    if (file) file.thumbnail = thumbnail;
+    persistBrowserState(state);
+  }
+
   async loadPage(pageId: string): Promise<{ page: PageMeta; document: PageDocument }> {
     const state = this.state();
     const page = state.pages.find((item) => item.id === pageId);
@@ -468,6 +478,7 @@ class TauriRepository implements Repository {
   restoreItem = (kind: "project" | "file", id: string) => invoke<void>("restore_item", { kind, id });
   deleteItem = (kind: "project" | "file", id: string) => invoke<void>("delete_item", { kind, id });
   savePage = (pageId: string, expectedRevision: number, document: PageDocument, thumbnail?: string | null) => invoke<number>("save_page", { pageId, expectedRevision, document, thumbnail });
+  savePagePreview = (pageId: string, thumbnail: string) => invoke<void>("save_page_preview", { pageId, thumbnail });
   loadPage = (pageId: string) => invoke<{ page: PageMeta; document: PageDocument }>("load_page", { pageId });
   createPage = (fileId: string, name: string) => invoke<{ page: PageMeta; document: PageDocument }>("create_page", { fileId, name });
   renamePage = (pageId: string, name: string) => invoke<void>("rename_page", { pageId, name });

@@ -19,8 +19,8 @@ use tauri_plugin_dialog::{DialogExt, FileDialogBuilder, FilePath};
 use uuid::Uuid;
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipArchive, ZipWriter};
 
+mod codex;
 mod editor_bridge;
-mod terminal;
 
 type CommandResult<T> = Result<T, String>;
 
@@ -748,6 +748,32 @@ fn save_page(
 }
 
 #[tauri::command(rename_all = "camelCase")]
+fn save_page_preview(
+    page_id: String,
+    thumbnail: String,
+    state: State<'_, AppState>,
+) -> CommandResult<()> {
+    let mut connection = database(&state)?;
+    let transaction = connection
+        .transaction()
+        .map_err(|error| error.to_string())?;
+    transaction
+        .execute(
+            "UPDATE pages SET preview = ?1 WHERE id = ?2",
+            params![thumbnail.as_str(), page_id.as_str()],
+        )
+        .map_err(|error| error.to_string())?;
+    transaction
+        .execute(
+            "UPDATE design_files SET thumbnail = ?1 WHERE id = (SELECT file_id FROM pages WHERE id = ?2)",
+            params![thumbnail.as_str(), page_id.as_str()],
+        )
+        .map_err(|error| error.to_string())?;
+    transaction.commit().map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+#[tauri::command(rename_all = "camelCase")]
 fn load_page(page_id: String, state: State<'_, AppState>) -> CommandResult<PagePayload> {
     let connection = database(&state)?;
     let page = connection
@@ -1448,7 +1474,7 @@ pub fn run() {
             app.manage(AppState {
                 database: Mutex::new(connection),
             });
-            app.manage(terminal::TerminalState::default());
+            app.manage(codex::CodexState::default());
             app.manage(editor_bridge::EditorBridgeState::default());
             let bridge_app = app.handle().clone();
             let bridge_data_dir = data_dir.clone();
@@ -1476,6 +1502,7 @@ pub fn run() {
             restore_item,
             delete_item,
             save_page,
+            save_page_preview,
             load_page,
             create_page,
             rename_page,
@@ -1489,10 +1516,15 @@ pub fn run() {
             export_package,
             import_package,
             export_render,
-            terminal::terminal_start,
-            terminal::terminal_write,
-            terminal::terminal_resize,
-            terminal::terminal_close,
+            codex::codex_connect,
+            codex::codex_mcp_status,
+            codex::codex_mcp_install,
+            codex::codex_request,
+            codex::codex_respond,
+            codex::codex_disconnect,
+            codex::codex_ui_state_read,
+            codex::codex_ui_state_write,
+            codex::codex_attachment_save,
             editor_bridge::editor_bridge_complete,
         ])
         .run(tauri::generate_context!())

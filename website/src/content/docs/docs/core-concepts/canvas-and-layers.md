@@ -9,9 +9,9 @@ Figmaboy stores designs as native document nodes. The canvas renders those nodes
 
 The current document model supports:
 
-- **Containers:** frames and groups.
-- **Shapes:** rectangles, ellipses, lines, arrows, polygons, and stars.
-- **Content:** text, images, and icons.
+- Containers include frames and groups.
+- Shapes include rectangles, ellipses, lines, arrows, polygons, and stars.
+- Content nodes include text, images, and icons.
 
 Frames can provide a visible fill and clipping boundary. Groups organize a structural cluster without adding their own visual surface.
 
@@ -34,7 +34,7 @@ Radio app · Frame
 └── Bottom navigation · Frame
 ```
 
-Use one top-level frame per screen, named section containers beneath it, and named component groups or frames within each section. This makes later instructions such as “tighten the preset cards” unambiguous.
+Use one top-level frame per screen. Add named section containers beneath it, then named components inside each section. Codex can act on a request such as "tighten the preset cards" without guessing which layers you mean.
 
 ## Coordinates
 
@@ -52,7 +52,7 @@ Native layers support:
 - Blend modes, layered drop shadows, and blur.
 - Typography including family, weight, italic, case, decoration, alignment, resizing, paragraph spacing, indentation, and truncation.
 
-For generated artwork, Codex can place a PNG, JPEG, or WebP as an image layer. The image remains a native addressable layer, although the pixels inside it are not individually editable.
+Codex can place generated PNG, JPEG, or WebP artwork as an image layer. You can move, resize, reorder, and replace that layer. The pixels inside it are not individually editable.
 
 ## Selection and nesting
 

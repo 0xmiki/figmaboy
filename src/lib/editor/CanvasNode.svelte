@@ -1,12 +1,12 @@
 <script lang="ts">
   import type { DesignNode, PageDocument, TextNode } from "$lib/domain";
-  import { iconData } from "$lib/icon-catalog";
+  import { ensureIconCatalog, iconCatalog, iconData } from "$lib/icon-catalog";
   import { polygonPoints } from "$lib/geometry";
   import { layoutText } from "$lib/text-layout";
   import CanvasNode from "$lib/editor/CanvasNode.svelte";
 
   let {
-    node, document, selectedIds, imageSources, interactive = true, preview = false, unclippedFrameIds = new Set<string>(),
+    node, document, selectedIds, imageSources, interactive = true, preview = false, renderedNodeIds = null, unclippedFrameIds = new Set<string>(),
     onNodePointerDown, onNodeDoubleClick, onNodeContextMenu, onPrototypeClick,
   }: {
     node: DesignNode;
@@ -15,6 +15,7 @@
     imageSources: Record<string, string>;
     interactive?: boolean;
     preview?: boolean;
+    renderedNodeIds?: ReadonlySet<string> | null;
     unclippedFrameIds?: ReadonlySet<string>;
     onNodePointerDown?: (event: PointerEvent, id: string) => void;
     onNodeDoubleClick?: (event: MouseEvent, id: string) => void;
@@ -25,7 +26,8 @@
   const fillValue = $derived(node.fill ? node.fill.type === "solid" ? node.fill.color : `url(#fill-${node.id})` : "none");
   const fillOpacity = $derived(node.fill?.type === "solid" ? node.fill.opacity : 1);
   const strokeValue = $derived(node.stroke?.color ?? "none");
-  const icon = $derived(node.type === "icon" ? iconData(node.iconName) : null);
+  const icon = $derived(node.type === "icon" ? iconData(node.iconName, $iconCatalog) : null);
+  $effect(() => { if (node.type === "icon" && !$iconCatalog) void ensureIconCatalog(); });
   const textLayout = $derived(node.type === "text" ? layoutText(node) : null);
   const cornerPath = $derived(roundedRectPath(node.width, node.height, node.cornerRadii, node.radius));
   const effectFilter = $derived.by(() => {
@@ -122,7 +124,8 @@
     style:cursor={preview && node.interaction ? "pointer" : node.locked ? "default" : selectedIds.includes(node.id) ? "move" : "default"}
     style:mix-blend-mode={node.blendMode ?? "normal"}
   >
-    <defs>
+    {#if node.fill?.type === "linear-gradient" || node.fill?.type === "radial-gradient" || (node.type === "frame" && node.clipContent) || node.type === "image" || node.type === "arrow"}
+      <defs>
       {#if node.fill?.type === "linear-gradient"}
         {@const radians = (node.fill.angle * Math.PI) / 180}
         {@const x1 = 50 - Math.cos(radians) * 50}
@@ -143,7 +146,8 @@
       {#if node.type === "arrow"}
         <marker id={`arrow-${node.id}`} markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L8,4 L0,8 z" fill={strokeValue} /></marker>
       {/if}
-    </defs>
+      </defs>
+    {/if}
 
     <g style:filter={effectFilter}>
       {#if node.type === "rectangle" || node.type === "frame"}
@@ -178,8 +182,8 @@
     {#if node.type === "frame" || node.type === "group"}
       <g clip-path={node.type === "frame" && node.clipContent && !unclippedFrameIds.has(node.id) ? `url(#clip-${node.id})` : undefined}>
         {#each node.childIds as childId}
-          {#if document.nodes[childId]}
-            <CanvasNode node={document.nodes[childId]} {document} {selectedIds} {imageSources} {interactive} {preview} {unclippedFrameIds} {onNodePointerDown} {onNodeDoubleClick} {onNodeContextMenu} {onPrototypeClick} />
+          {#if document.nodes[childId] && (!renderedNodeIds || renderedNodeIds.has(childId))}
+            <CanvasNode node={document.nodes[childId]} {document} {selectedIds} {imageSources} {interactive} {preview} {renderedNodeIds} {unclippedFrameIds} {onNodePointerDown} {onNodeDoubleClick} {onNodeContextMenu} {onPrototypeClick} />
           {/if}
         {/each}
       </g>

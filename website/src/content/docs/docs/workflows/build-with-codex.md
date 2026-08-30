@@ -1,24 +1,24 @@
 ---
 title: Build with Codex
-description: A repeatable workflow for turning a product brief into a polished native Figmaboy design.
+description: Turn a product brief into a native Figmaboy design, then inspect and refine the result.
 ---
 
-Good Codex design work is iterative: establish structure, build a coherent pass, inspect visual evidence, then refine the specific problems you can see.
+Build the structure first. Then inspect a screenshot and fix the problems you can see. Codex produces better edits when each pass has a clear scope.
 
 ## Make the target explicit
 
-Codex loads registered MCP tools when the session starts, but chooses whether to use them from the instruction you give it. Mention **Figmaboy** in the first prompt and identify the target:
+The Figmaboy sidebar connects the open design automatically. Identify the target page, frame, or selection in your instruction:
 
-- For live work: “Use Figmaboy to edit the currently open page.”
-- For offline context: “Use the saved Figmaboy design named **[name]** as context.”
-- For an exact lookup: “Use the Figmaboy design with ID **[design ID]** as context.”
+- For live work: "Use Figmaboy to edit the currently open page."
+- For offline context: "Use the saved Figmaboy design named **[name]** as context."
+- For an exact lookup: "Use the Figmaboy design with ID **[design ID]** as context."
 
 This distinguishes a Figmaboy design task from a request to create or edit code directly in the current directory.
 
 ## Before the first prompt
 
 1. Open the target design and page.
-2. Change the embedded terminal into the implementation repository if the task may create assets or code.
+2. Open the Codex sidebar from the bottom toolbar.
 3. Decide the screen size, content, visual direction, and important states.
 4. Preserve any existing layers that should remain untouched by saying so explicitly.
 
@@ -26,7 +26,7 @@ This distinguishes a Figmaboy design task from a request to create or edit code 
 
 Use this prompt template:
 
-> In the current Figmaboy page, build a **[width × height] [screen type]** for **[product and user]**. Include **[required sections]**. Use **[visual direction, palette, and typography]**. Build one top-level screen frame with named section and component containers. Keep all interface elements native and editable. Inspect Figmaboy's capabilities and current document before editing, visually review the completed frame, fix obvious issues, and save.
+> In the current Figmaboy page, build a **[width × height] [screen type]** for **[product and user]**. Include **[required sections]**. Use **[visual direction, palette, and typography]**. Build one top-level screen frame with named section and component containers. Keep all interface elements native and editable. Inspect Figmaboy's capabilities and current document before editing. Review the completed frame, fix spacing, clipping, contrast, or alignment problems, and save.
 
 For an existing design, add:
 
@@ -34,28 +34,28 @@ For an existing design, add:
 
 ## Ask for evidence
 
-The key review tool is `frame_screenshot`. Ask Codex to inspect the full frame after each meaningful pass. A useful completion condition is:
+Use `frame_screenshot` after each structure or styling pass. Give Codex this completion condition:
 
 > Do not stop after creating the layers. Capture the complete frame, inspect spacing, clipping, contrast, hierarchy, and alignment, then make a refinement pass before saving.
 
 ## Refine by symptom
 
-Concrete feedback produces safer edits:
+Describe the visible problem and the scope:
 
-- “The header feels crowded; preserve its content but increase its internal spacing.”
-- “The cards are too visually equal; strengthen the active state without changing their sizes.”
-- “The image is clipping the title at the mobile breakpoint; keep the crop but protect the text area.”
-- “Rename generic groups and organize the page into semantic sections.”
+- "The header feels crowded. Preserve its content but increase its internal spacing."
+- "The cards are too visually equal. Strengthen the active state without changing their sizes."
+- "The image clips the title at the mobile breakpoint. Keep the crop but protect the text area."
+- "Rename generic groups and organize the page into semantic sections."
 
 Avoid asking for a complete rebuild when only one section needs correction.
 
 ## Bring in generated artwork
 
-If original raster artwork would improve the interface, ask Codex to generate or edit the asset, save the final PNG/JPEG/WebP in the active project, and call `image_place`.
+For original raster artwork, ask Codex to generate or edit the asset, save the final PNG, JPEG, or WebP in the active project, and call `image_place`.
 
 For a background image, it should use the containing frame as `parentId`, `placement: "fill-parent"`, `fit: "cover"`, and `index: 0`. For a logo or cutout, use a transparent PNG with natural placement and explicit dimensions.
 
-## Finish deliberately
+## Finish the pass
 
 Before accepting the result, confirm that Codex:
 
