@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const { clipboardWriteMock, eventHandlers, evolveFixture, invokeMock, listenMock, skillFixture, threadFixture, threadItemsFixture, uiStateFixture } = vi.hoisted(() => ({
   clipboardWriteMock: vi.fn(),
   eventHandlers: new Map<string, (event: { payload: unknown }) => void>(),
-  evolveFixture: { thread: 0, preview: 0, render: 0, changeToken: 7 },
+  evolveFixture: { thread: 0, preview: 0, render: 0, changeToken: 7, previewErrors: [] as string[] },
   invokeMock: vi.fn(),
   listenMock: vi.fn(),
   skillFixture: [] as Array<{ name: string; path: string; description?: string }>,
@@ -28,6 +28,7 @@ describe("Codex sidebar diagnostics", () => {
     evolveFixture.preview = 0;
     evolveFixture.render = 0;
     evolveFixture.changeToken = 7;
+    evolveFixture.previewErrors.splice(0);
     skillFixture.splice(0);
     threadFixture.splice(0);
     threadItemsFixture.splice(0);
@@ -111,7 +112,12 @@ describe("Codex sidebar diagnostics", () => {
         } } } };
         if (params.tool === "geometry_get") return { content: [], structuredContent: { nodes: [{ id: "screen", local: { x: 0, y: 0, width: 1440, height: 810 } }] } };
         if (params.tool === "frame_screenshot") return { content: [{ type: "image", data: evolveFixture.preview ? `candidate-${evolveFixture.render}` : "baseline", mimeType: "image/png" }], structuredContent: { width: 1080, height: 608 } };
-        if (params.tool === "operations_preview") { evolveFixture.preview = 1; evolveFixture.render += 1; return { content: [], structuredContent: { ok: true, previewActive: true } }; }
+        if (params.tool === "operations_preview") {
+          const previewError = evolveFixture.previewErrors.shift();
+          if (previewError) throw new Error(previewError);
+          evolveFixture.preview = 1; evolveFixture.render += 1;
+          return { content: [], structuredContent: { ok: true, previewActive: true } };
+        }
         if (params.tool === "operations_preview_commit") { evolveFixture.preview = 0; evolveFixture.changeToken += 1; return { content: [], structuredContent: { ok: true, previewActive: false, changeToken: evolveFixture.changeToken } }; }
         if (params.tool === "operations_preview_discard") { evolveFixture.preview = 0; return { content: [], structuredContent: { ok: true, previewActive: false } }; }
         return { content: [], structuredContent: { ok: true } };
@@ -227,7 +233,7 @@ describe("Codex sidebar diagnostics", () => {
     const directorStart = invokeMock.mock.calls.find(([, args]) => args?.method === "turn/start" && args?.params?.threadId === "evolve-director-1");
     expect(directorStart?.[1]?.params?.input).toEqual(expect.arrayContaining([expect.objectContaining({ type: "image", detail: "original", url: expect.stringMatching(/^data:image\/png;base64,/) })]));
     expect(directorStart?.[1]?.params?.serviceTier).toBe("priority");
-    expect(directorStart?.[1]?.params?.outputSchema).toMatchObject({ properties: { regions: { minItems: 0, maxItems: 3 } } });
+    expect(directorStart?.[1]?.params?.outputSchema).toMatchObject({ properties: { criteria: { minItems: 2, maxItems: 6 }, regions: { minItems: 0, maxItems: 3 } } });
     finishTurn("evolve-director-1", {
       verdict: "revise", preference: "not_applicable", confidence: .9, criteria,
       regions: [{ criterionId: "goal-1", x: 60, y: 50, width: 700, height: 180, priority: 1, note: "The headline and metadata have equal visual weight.", desiredOutcome: "Make the headline the unmistakable first reading point." }],
@@ -239,6 +245,8 @@ describe("Codex sidebar diagnostics", () => {
     const designerStart = invokeMock.mock.calls.find(([, args]) => args?.method === "turn/start" && args?.params?.threadId === "evolve-designer-2");
     expect(designerStart?.[1]?.params?.input?.[0]?.text).toContain("User direction: Make it more editorial");
     expect(designerStart?.[1]?.params?.input?.[0]?.text).toContain("equal visual weight");
+    expect(designerStart?.[1]?.params?.input?.[0]?.text).toContain('LayerBlurEffect { type: "layer-blur"; radius: number');
+    expect(designerStart?.[1]?.params?.input?.[0]?.text).toContain("Every numeric field must be a finite JSON number");
     expect(designerStart?.[1]?.params).toMatchObject({ effort: "medium", serviceTier: "priority" });
     finishTurn("evolve-designer-2", { updates: [{ id: "headline", patchJson: JSON.stringify({ x: 96, fontSize: 72 }) }], creates: [], reorders: [], removeCreatedIds: [], summary: "Improved the headline hierarchy." });
 
@@ -326,6 +334,94 @@ describe("Codex sidebar diagnostics", () => {
     expect(screen.getAllByText("Reviewing the current design")).toHaveLength(1);
     await fireEvent.click(screen.getByRole("button", { name: "Stop Codex" }));
     expect(await screen.findByPlaceholderText("Ask anything about this design")).toBeEnabled();
+  });
+
+  it("returns malformed nested JSON to the same designer for correction", async () => {
+    render(CodexSidebar, {
+      workspaceId: "file",
+      pageId: "page-1",
+      fileName: "Untitled",
+      visible: true,
+      onAttentionChange: () => {},
+      onClose: () => {},
+    });
+    const finishTurn = (threadId: string, value: Record<string, unknown>) => {
+      eventHandlers.get("codex-event")?.({ payload: { method: "item/completed", params: { threadId, turnId: `${threadId}-turn`, item: { id: `${threadId}-answer`, type: "agentMessage", text: JSON.stringify(value) } } } });
+      eventHandlers.get("codex-event")?.({ payload: { method: "turn/completed", params: { threadId, turn: { id: `${threadId}-turn`, status: "completed", items: [] } } } });
+    };
+    const criteria = [
+      { id: "goal-1", requirement: "Strengthen the primary reading order", status: "unmet", evidence: "The headline needs more visual authority." },
+      { id: "goal-2", requirement: "Keep supporting content readable", status: "met", evidence: "The supporting content remains legible." },
+    ];
+    const textbox = await screen.findByRole("textbox", { name: "Message Codex" });
+    await screen.findByRole("button", { name: /GPT Test/ });
+    await fireEvent.input(textbox, { target: { value: "/evolve Strengthen the hierarchy" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("codex_request", expect.objectContaining({ method: "turn/start", params: expect.objectContaining({ threadId: "evolve-director-1" }) })));
+    finishTurn("evolve-director-1", {
+      verdict: "revise", preference: "not_applicable", confidence: .9, criteria,
+      regions: [{ criterionId: "goal-1", x: 40, y: 40, width: 700, height: 180, priority: 1, note: "The headline lacks enough visual authority.", desiredOutcome: "Make the headline the clear first reading point." }],
+      successes: [{ criterionId: "goal-2", note: "Supporting content is already readable." }], regressions: [], summary: "The hierarchy needs one focused change.",
+    });
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("codex_request", expect.objectContaining({ method: "turn/start", params: expect.objectContaining({ threadId: "evolve-designer-2" }) })));
+    finishTurn("evolve-designer-2", { updates: [{ id: "headline", patchJson: "{" }], creates: [], reorders: [], removeCreatedIds: [], summary: "Raised the headline emphasis." });
+
+    await waitFor(() => {
+      const turns = invokeMock.mock.calls.filter(([, args]) => args?.method === "turn/start" && args?.params?.threadId === "evolve-designer-2");
+      expect(turns).toHaveLength(2);
+      expect(turns[1]?.[1]?.params?.input?.[0]?.text).toContain("EXACT FIGMABOY VALIDATION ERROR");
+      expect(turns[1]?.[1]?.params?.input?.[0]?.text).toContain("patchJson and nodeJson must each contain exactly one valid JSON object");
+    });
+    finishTurn("evolve-designer-2", { updates: [{ id: "headline", patchJson: JSON.stringify({ x: 96, fontSize: 72 }) }], creates: [], reorders: [], removeCreatedIds: [], summary: "Corrected the headline hierarchy." });
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("codex_request", expect.objectContaining({ method: "mcpServer/tool/call", params: expect.objectContaining({ tool: "operations_preview", arguments: expect.objectContaining({ operations: [{ kind: "update", id: "headline", patch: { x: 96, fontSize: 72 } }] }) }) })));
+    expect(screen.queryByText("Discarded pass 1")).not.toBeInTheDocument();
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("codex_request", expect.objectContaining({ method: "turn/start", params: expect.objectContaining({ threadId: "evolve-director-3" }) })));
+    await fireEvent.click(screen.getByRole("button", { name: "Stop Codex" }));
+  });
+
+  it("returns canvas validation errors to the same designer without discarding the pass", async () => {
+    evolveFixture.previewErrors.push("Node evolve_hero_aura layer blur must be a finite number");
+    render(CodexSidebar, {
+      workspaceId: "file",
+      pageId: "page-1",
+      fileName: "Untitled",
+      visible: true,
+      onAttentionChange: () => {},
+      onClose: () => {},
+    });
+    const finishTurn = (threadId: string, value: Record<string, unknown>) => {
+      eventHandlers.get("codex-event")?.({ payload: { method: "item/completed", params: { threadId, turnId: `${threadId}-turn`, item: { id: `${threadId}-answer`, type: "agentMessage", text: JSON.stringify(value) } } } });
+      eventHandlers.get("codex-event")?.({ payload: { method: "turn/completed", params: { threadId, turn: { id: `${threadId}-turn`, status: "completed", items: [] } } } });
+    };
+    const criteria = [
+      { id: "goal-1", requirement: "Create a softer material hierarchy", status: "unmet", evidence: "The hero treatment remains visually flat." },
+      { id: "goal-2", requirement: "Preserve the existing readable content", status: "met", evidence: "All current text remains readable." },
+    ];
+    const textbox = await screen.findByRole("textbox", { name: "Message Codex" });
+    await screen.findByRole("button", { name: /GPT Test/ });
+    await fireEvent.input(textbox, { target: { value: "/evolve Add a softer material hierarchy" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("codex_request", expect.objectContaining({ method: "turn/start", params: expect.objectContaining({ threadId: "evolve-director-1" }) })));
+    finishTurn("evolve-director-1", {
+      verdict: "revise", preference: "not_applicable", confidence: .9, criteria,
+      regions: [{ criterionId: "goal-1", x: 30, y: 30, width: 900, height: 260, priority: 1, note: "The hero lacks material separation from the page.", desiredOutcome: "Give the hero a softer sense of depth." }],
+      successes: [{ criterionId: "goal-2", note: "The existing content is already readable." }], regressions: [], summary: "The hero needs one material-depth pass.",
+    });
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("codex_request", expect.objectContaining({ method: "turn/start", params: expect.objectContaining({ threadId: "evolve-designer-2" }) })));
+    finishTurn("evolve-designer-2", { updates: [{ id: "headline", patchJson: JSON.stringify({ effects: [{ type: "layer-blur", blur: null }] }) }], creates: [], reorders: [], removeCreatedIds: [], summary: "Added a softer hero treatment." });
+
+    expect(await screen.findByText(/Canvas rejected the proposal: Node evolve_hero_aura layer blur must be a finite number/)).toBeInTheDocument();
+    await waitFor(() => {
+      const turns = invokeMock.mock.calls.filter(([, args]) => args?.method === "turn/start" && args?.params?.threadId === "evolve-designer-2");
+      expect(turns).toHaveLength(2);
+      expect(turns[1]?.[1]?.params?.input?.[0]?.text).toContain("Node evolve_hero_aura layer blur must be a finite number");
+      expect(turns[1]?.[1]?.params?.input?.[0]?.text).toContain('LayerBlurEffect { type: "layer-blur"; radius: number');
+    });
+    finishTurn("evolve-designer-2", { updates: [{ id: "headline", patchJson: JSON.stringify({ effects: [{ type: "layer-blur", radius: 18 }] }) }], creates: [], reorders: [], removeCreatedIds: [], summary: "Corrected the soft hero treatment." });
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("codex_request", expect.objectContaining({ method: "mcpServer/tool/call", params: expect.objectContaining({ tool: "operations_preview", arguments: expect.objectContaining({ operations: [{ kind: "update", id: "headline", patch: { effects: [{ type: "layer-blur", radius: 18 }] } }] }) }) })));
+    expect(screen.queryByText("Discarded pass 1")).not.toBeInTheDocument();
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("codex_request", expect.objectContaining({ method: "turn/start", params: expect.objectContaining({ threadId: "evolve-director-3" }) })));
+    await fireEvent.click(screen.getByRole("button", { name: "Stop Codex" }));
   });
 
   it("retries a stopped evolution without duplicating its user message", async () => {

@@ -25,6 +25,7 @@ The loop finishes when two independent reviews agree that the requested directio
 
 - Rejected candidates restore the current best version.
 - A temporary network failure retries the current stage instead of restarting the run.
+- If a proposal contains invalid native properties, Figmaboy sends the exact validation error and node contract back to the same designer for correction. The failed implementation does not count as a discarded visual candidate.
 - Accepted passes form one undoable Figmaboy change. Press <kbd>Ctrl/Cmd</kbd> + <kbd>Z</kbd> once to return to the design from before `/evolve`.
 - Text, image assets, crops, locked layers, and the selected frame bounds remain protected.
 

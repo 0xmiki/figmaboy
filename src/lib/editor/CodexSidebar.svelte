@@ -2,6 +2,7 @@
   import { onMount, tick } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
+  import figmaboyTypes from "../../../mcp/types.ts?raw";
   import {
     Archive, Robot as Bot, Check, CaretDown as ChevronDown, WarningCircle as CircleAlert,
     Clock as Clock3, Copy, FileImage,
@@ -57,6 +58,14 @@
     updates: Map<string, JsonObject>;
     reorders: Map<string, JsonObject>;
   };
+  type EvolveProposal = {
+    state: EvolveOperationState;
+    operations: JsonObject[];
+    summary: string;
+    threadId: string;
+    rawText: string;
+    baseInput: JsonObject[];
+  };
   type EvolveActivity = { id: string; pass: number; title: string; detail: string; notes: string[]; status: "working" | "complete" | "kept" | "discarded" | "recovering" };
   type PromptSegment = { type: "text" | "skill"; value: string; name?: string };
   type HiddenTurnWaiter = {
@@ -68,6 +77,12 @@
     inactivityMs: number;
     expiring: boolean;
   };
+
+  const evolveContractStart = figmaboyTypes.indexOf("export type NodeType");
+  const evolveContractEnd = figmaboyTypes.indexOf("export interface OperationsApplyParams");
+  const evolveNativeContract = evolveContractStart >= 0 && evolveContractEnd > evolveContractStart
+    ? figmaboyTypes.slice(evolveContractStart, evolveContractEnd)
+    : figmaboyTypes;
 
   let { workspaceId, pageId, fileName, visible, embedded = false, onAttentionChange, onClose, onEditorRpc }: {
     workspaceId: string;
@@ -646,7 +661,7 @@
 
   function evolveFastTier(): string {
     const catalogTier = activeModel?.serviceTiers?.find((tier) => tier.name.toLowerCase() === "fast" || tier.id === "fast" || tier.id === "priority")?.id;
-    return catalogTier ?? activeModel?.additionalSpeedTiers?.find((tier) => tier === "fast" || tier === "priority") ?? "fast";
+    return catalogTier ?? activeModel?.additionalSpeedTiers?.find((tier) => tier === "fast" || tier === "priority") ?? "default";
   }
 
   async function runHiddenTurn(threadId: string, input: JsonObject[], outputSchema: JsonObject, inactivityMs: number, effort: string): Promise<string> {
@@ -662,6 +677,7 @@
       inactivityMs,
       expiring: false,
     };
+    hiddenThreadIds.add(threadId);
     hiddenTurnWaiters.set(threadId, waiter);
     try {
       const response = await request<{ turn?: { id?: string } }>("turn/start", {
@@ -702,7 +718,7 @@
         verdict: { type: "string", enum: ["revise", "satisfied"] },
         preference: { type: "string", enum: ["image_1", "image_2", "tie", "not_applicable"] },
         confidence: { type: "number", minimum: 0, maximum: 1 },
-        criteria: { type: "array", minItems: 1, maxItems: 6, items: {
+        criteria: { type: "array", minItems: 2, maxItems: 6, items: {
           type: "object", additionalProperties: false, required: ["id", "requirement", "status", "evidence"],
           properties: { id: { type: "string" }, requirement: { type: "string" }, status: { type: "string", enum: ["met", "partial", "unmet"] }, evidence: { type: "string" } },
         } },
@@ -799,19 +815,24 @@
       if (!state.creates.has(id)) throw new Error(`Designer can only remove evolve-created layer ${id}`);
       state.creates.delete(id); state.updates.delete(id);
     }
-    for (const createValue of value.creates) {
+    for (const [index, createValue] of value.creates.entries()) {
       const create = object(createValue);
       if (typeof create.parentId !== "string" || typeof create.nodeJson !== "string") throw new Error("Designer returned an invalid create operation");
-      const node = JSON.parse(create.nodeJson);
-      if (!node || typeof node !== "object" || Array.isArray(node) || typeof node.id !== "string") throw new Error("Every created layer needs a stable ID");
-      state.creates.set(node.id, { kind: "create", parentId: create.parentId, node, ...(Number(create.index) >= 0 ? { index: Number(create.index) } : {}) });
+      let node: unknown;
+      try { node = JSON.parse(create.nodeJson); }
+      catch (cause) { throw new Error(`creates[${index}].nodeJson is not valid JSON: ${errorMessage(cause)}`); }
+      const nodeObject = object(node);
+      if (typeof nodeObject.id !== "string") throw new Error("Every created layer needs a stable ID");
+      state.creates.set(nodeObject.id, { kind: "create", parentId: create.parentId, node: nodeObject, ...(Number(create.index) >= 0 ? { index: Number(create.index) } : {}) });
     }
-    for (const updateValue of value.updates) {
+    for (const [index, updateValue] of value.updates.entries()) {
       const update = object(updateValue);
       if (typeof update.id !== "string" || typeof update.patchJson !== "string") throw new Error("Designer returned an invalid layer update");
-      const patch = JSON.parse(update.patchJson);
+      let patch: unknown;
+      try { patch = JSON.parse(update.patchJson); }
+      catch (cause) { throw new Error(`updates[${index}].patchJson is not valid JSON: ${errorMessage(cause)}`); }
       if (!patch || typeof patch !== "object" || Array.isArray(patch)) throw new Error("Designer returned an invalid layer patch");
-      state.updates.set(update.id, { ...(state.updates.get(update.id) ?? {}), ...patch });
+      state.updates.set(update.id, { ...(state.updates.get(update.id) ?? {}), ...patch as JsonObject });
     }
     for (const reorderValue of value.reorders) {
       const reorder = object(reorderValue);
@@ -862,6 +883,12 @@
     if (evolveCancelled) throw new Error("Evolution stopped");
   }
 
+  function designerCorrectionText(cause: unknown, previousText: string): string {
+    const failure = errorMessage(cause).replace(/\s+/g, " ").trim().slice(0, 1_200);
+    const rejected = previousText.trim().slice(0, 16_000);
+    return `Your previous proposal was rejected before visual review. Correct that same proposal instead of starting a different design direction. Preserve the director's requested outcome and all protected content. Return a complete replacement response in the required structured format. Do not repeat the invalid value. Every numeric property must be a finite JSON number. A layer-blur effect requires radius; a drop-shadow effect requires blur. patchJson and nodeJson must each contain exactly one valid JSON object.\n\nEXACT FIGMABOY VALIDATION ERROR\n${failure}\n\nREJECTED RESPONSE\n${rejected || "The previous turn failed before returning a complete response."}\n\nAUTHORITATIVE FIGMABOY NODE AND OPERATION CONTRACT\n${evolveNativeContract}`;
+  }
+
   async function runDirector(args: {
     direction: string;
     frame: JsonObject;
@@ -876,7 +903,7 @@
   }): Promise<EvolveAssessment> {
     const title = args.previousImage && args.candidateImage ? `Comparing pass ${evolvePass} with the current best` : args.verification ? "Checking the direction one more time" : "Reviewing the current design";
     const includeBaseline = !args.frozen || args.verification || evolvePass % 5 === 0;
-    const criteria = args.frozen ? `Frozen direction criteria: ${JSON.stringify(args.frozen.map(({ id, requirement }) => ({ id, requirement })))}` : "Create 3 to 6 concise direction criteria from the user prompt and keep their IDs stable.";
+    const criteria = args.frozen ? `Frozen direction criteria: ${JSON.stringify(args.frozen.map(({ id, requirement }) => ({ id, requirement })))}` : "Create 2 to 6 concise direction criteria from the user prompt and keep their IDs stable.";
     const comparison = args.previousImage && args.candidateImage
       ? `Compare IMAGE 1 and IMAGE 2. Return the stronger direction match in preference. The candidate is ${args.candidateLabel}. Judge remaining regions on the preferred image.${includeBaseline ? " Use the baseline only as a drift anchor." : ""}`
       : "Review CURRENT against the frozen direction. Set preference to not_applicable.";
@@ -907,27 +934,71 @@
     throw new Error("Evolution stopped");
   }
 
-  async function runDesigner(args: { direction: string; frameId: string; context: JsonObject; image: string; assessment: EvolveAssessment; accepted: EvolveOperationState }): Promise<{ state: EvolveOperationState; operations: JsonObject[]; summary: string }> {
-    const input = [
-        textInput(`Act as the next fresh designer in an ongoing direction-seeking loop. Move the accepted frame materially closer to the frozen user direction. Address the supplied opportunities while preserving the listed successes. You may update native layers, create decorative or structural native layers inside the selected frame, reorder complete sibling lists, and remove only IDs created by earlier evolve passes. Preserve every existing word, image asset, crop, locked layer, and the outer frame bounds. patchJson and nodeJson must contain valid JSON objects using Figmaboy native properties. Return absolute property values for the current accepted frame, not relative deltas.\n\nUser direction: ${args.direction}\nFrame ID: ${args.frameId}\nDirection criteria: ${JSON.stringify(args.assessment.criteria.map(({ id, requirement }) => ({ id, requirement })))}\nOpportunities: ${JSON.stringify(args.assessment.regions)}\nPreserve: ${JSON.stringify(args.assessment.successes)}\nCurrent frame layers: ${JSON.stringify(args.context)}`),
+  async function runDesigner(args: { direction: string; frameId: string; context: JsonObject; image: string; assessment: EvolveAssessment; accepted: EvolveOperationState }): Promise<EvolveProposal> {
+    const baseInput = [
+        textInput(`Act as the next fresh designer in an ongoing direction-seeking loop. Move the accepted frame materially closer to the frozen user direction. Address the supplied opportunities while preserving the listed successes. You may update native layers, create decorative or structural native layers inside the selected frame, and reorder complete sibling lists. Preserve every existing word, image asset, crop, locked layer, accepted layer, and the outer frame bounds. removeCreatedIds must be empty. patchJson and nodeJson must each contain one valid JSON object that follows the authoritative Figmaboy contract below. Every numeric field must be a finite JSON number. Layer blur uses radius; drop shadow uses blur. Return absolute property values for the current accepted frame, not relative deltas.\n\nAUTHORITATIVE FIGMABOY NODE AND OPERATION CONTRACT\n${evolveNativeContract}\n\nUser direction: ${args.direction}\nFrame ID: ${args.frameId}\nDirection criteria: ${JSON.stringify(args.assessment.criteria.map(({ id, requirement }) => ({ id, requirement })))}\nOpportunities: ${JSON.stringify(args.assessment.regions)}\nPreserve: ${JSON.stringify(args.assessment.successes)}\nCurrent frame layers: ${JSON.stringify(args.context)}`),
         imageInput(args.image),
       ];
+    let input = baseInput;
     let attempt = 0;
+    let threadId = "";
+    let previousText = "";
     const target = args.assessment.regions[0]?.desiredOutcome ?? args.assessment.summary;
     const activityId = beginEvolveActivity(`Designing pass ${evolvePass}`, target);
     while (!evolveCancelled) {
-      if (attempt) updateEvolveActivity(activityId, { status: "working", detail: "Trying again with a fresh designer" });
+      if (attempt) updateEvolveActivity(activityId, { status: "working", detail: threadId ? "Correcting the rejected proposal" : "Trying again with a fresh designer" });
       try {
-        const threadId = await startEvolveThread("designer");
-        const text = await runHiddenTurn(threadId, input, designerSchema(), 180_000, evolveEffort());
-        const candidate = designerCandidate(parseAgentJson(text), args.accepted);
+        if (!threadId) threadId = await startEvolveThread("designer");
+        previousText = await runHiddenTurn(threadId, input, designerSchema(), 180_000, evolveEffort());
+        const candidate = designerCandidate(parseAgentJson(previousText), args.accepted);
         finishEvolveActivity(activityId, "complete", candidate.summary);
-        return candidate;
+        return { ...candidate, threadId, rawText: previousText, baseInput };
       } catch (cause) {
-        if (!retryableEvolveError(cause) || evolveCancelled) { finishEvolveActivity(activityId, "discarded", errorMessage(cause)); throw cause; }
+        if (evolveCancelled) { finishEvolveActivity(activityId, "discarded", "Evolution stopped"); throw cause; }
         attempt += 1;
-        finishEvolveActivity(activityId, "recovering", evolveRecoveryDetail("designer", cause));
-        await waitForRetry(attempt);
+        if (retryableEvolveError(cause)) {
+          finishEvolveActivity(activityId, "recovering", evolveRecoveryDetail("designer", cause));
+          await waitForRetry(attempt);
+          threadId = "";
+          input = baseInput;
+        } else {
+          if (!threadId) { finishEvolveActivity(activityId, "discarded", errorMessage(cause)); throw cause; }
+          finishEvolveActivity(activityId, "recovering", `Correcting proposal: ${errorMessage(cause)}`);
+          input = [textInput(designerCorrectionText(cause, previousText))];
+        }
+      }
+    }
+    throw new Error("Evolution stopped");
+  }
+
+  async function correctDesignerProposal(proposal: EvolveProposal, cause: unknown, accepted: EvolveOperationState): Promise<EvolveProposal> {
+    let threadId = proposal.threadId;
+    let previousText = proposal.rawText;
+    let failure = cause;
+    let attempt = 0;
+    let freshThread = false;
+    const activityId = beginEvolveActivity(`Correcting pass ${evolvePass}`, errorMessage(cause));
+    while (!evolveCancelled) {
+      try {
+        if (!threadId) { threadId = await startEvolveThread("designer"); freshThread = true; }
+        const correction = textInput(designerCorrectionText(failure, previousText));
+        const input = freshThread ? [...proposal.baseInput, correction] : [correction];
+        freshThread = false;
+        previousText = await runHiddenTurn(threadId, input, designerSchema(), 180_000, evolveEffort());
+        const candidate = designerCandidate(parseAgentJson(previousText), accepted);
+        finishEvolveActivity(activityId, "complete", `Corrected proposal: ${candidate.summary}`);
+        return { ...candidate, threadId, rawText: previousText, baseInput: proposal.baseInput };
+      } catch (nextCause) {
+        if (evolveCancelled) { finishEvolveActivity(activityId, "discarded", "Evolution stopped"); throw nextCause; }
+        attempt += 1;
+        failure = nextCause;
+        if (retryableEvolveError(nextCause)) {
+          finishEvolveActivity(activityId, "recovering", evolveRecoveryDetail("designer", nextCause));
+          await waitForRetry(attempt);
+          threadId = "";
+        } else {
+          finishEvolveActivity(activityId, "recovering", `Still correcting: ${errorMessage(nextCause)}`);
+        }
       }
     }
     throw new Error("Evolution stopped");
@@ -1039,27 +1110,26 @@
 
         evolvePass += 1;
         evolveStage = "design";
-        let proposal: { state: EvolveOperationState; operations: JsonObject[]; summary: string };
+        let proposal: EvolveProposal;
         let applyActivity = "";
-        try {
-          proposal = await runDesigner({ direction, frameId, context: acceptedContext, image: acceptedImage, assessment, accepted: acceptedState });
-          if (JSON.stringify(proposal.operations) === JSON.stringify(operationsFromState(acceptedState))) throw new Error("Designer repeated the accepted candidate");
-          if (evolveCancelled) return;
-          evolveStage = "preview";
+        proposal = await runDesigner({ direction, frameId, context: acceptedContext, image: acceptedImage, assessment, accepted: acceptedState });
+        if (evolveCancelled) return;
+        evolveStage = "preview";
+        while (!evolveCancelled) {
           applyActivity = beginEvolveActivity(`Applying pass ${evolvePass} on canvas`);
-          await callEditor("operations_preview", { runId: evolveRunId, frameId, expectedChangeToken: changeToken, label: "Evolve frame", operations: proposal.operations });
-          if (evolveCancelled) return;
-        } catch (cause) {
-          const message = errorMessage(cause);
-          if (/STALE_DOCUMENT|EVOLVE_SELECTION_CHANGED|EVOLVE_NEEDS_FRAME/.test(message)) throw cause;
-          evolveDiscarded += 1;
-          if (applyActivity) finishEvolveActivity(applyActivity, "discarded", message);
-          const failed = beginEvolveActivity(`Discarded pass ${evolvePass}`);
-          finishEvolveActivity(failed, "discarded", message);
-          await showOperationState(frameId, changeToken, acceptedState);
-          assessment = null;
-          continue;
+          try {
+            if (JSON.stringify(proposal.operations) === JSON.stringify(operationsFromState(acceptedState))) throw new Error("Designer repeated the accepted candidate without correcting it");
+            await callEditor("operations_preview", { runId: evolveRunId, frameId, expectedChangeToken: changeToken, label: "Evolve frame", operations: proposal.operations });
+            break;
+          } catch (cause) {
+            const message = errorMessage(cause);
+            if (/STALE_DOCUMENT|EVOLVE_SELECTION_CHANGED|EVOLVE_NEEDS_FRAME/.test(message)) throw cause;
+            finishEvolveActivity(applyActivity, "recovering", `Canvas rejected the proposal: ${message}`);
+            await showOperationState(frameId, changeToken, acceptedState).catch(() => undefined);
+            proposal = await correctDesignerProposal(proposal, cause, acceptedState);
+          }
         }
+        if (evolveCancelled) return;
 
         const candidateImage = screenshotDataUrl(await callEditor("frame_screenshot", { frameId, scale: 1 }));
         if (evolveCancelled) return;
