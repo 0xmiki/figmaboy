@@ -142,6 +142,7 @@ describe("Codex sidebar diagnostics", () => {
       payload: { method: "turn/started", params: { threadId: "thread", turn: { id: "turn", status: "inProgress", items: [], error: null } } },
     });
     await screen.findByRole("button", { name: "Steer Codex" });
+    expect(screen.getByRole("button", { name: "Stop Codex" })).toHaveTextContent("Stop");
     await fireEvent.input(textbox, { target: { value: "Make it denser" } });
     await fireEvent.click(screen.getByRole("button", { name: "Steer Codex" }));
     await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("codex_request", expect.objectContaining({ method: "turn/steer", params: expect.objectContaining({ expectedTurnId: "turn" }) })));
@@ -245,6 +246,41 @@ describe("Codex sidebar diagnostics", () => {
     await fireEvent.input(screen.getByRole("textbox", { name: "Message Codex" }), { target: { value: "$" } });
     expect(await screen.findAllByText("$agents-sdk")).toHaveLength(1);
     expect(screen.queryByText(/long description/i)).not.toBeInTheDocument();
+  });
+
+  it("sends a selected skill once as a structured composer attachment", async () => {
+    skillFixture.push({ name: "first-principles-ui", path: "/skills/first-principles-ui" });
+    render(CodexSidebar, {
+      workspaceId: "file",
+      pageId: "page-1",
+      fileName: "Untitled",
+      visible: true,
+      onAttentionChange: () => {},
+      onClose: () => {},
+    });
+    const textbox = await screen.findByRole("textbox", { name: "Message Codex" });
+    await screen.findByRole("button", { name: /GPT Test/ });
+    await fireEvent.input(textbox, { target: { value: "$first" } });
+    await fireEvent.click(await screen.findByRole("button", { name: "$first-principles-ui" }));
+    expect(textbox).toHaveValue("");
+    expect(screen.getByText("First Principles UI")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Remove First Principles UI skill" })).toBeInTheDocument();
+
+    await fireEvent.input(textbox, { target: { value: "- First" } });
+    (textbox as HTMLTextAreaElement).setSelectionRange(7, 7);
+    await fireEvent.keyDown(textbox, { key: "Enter", shiftKey: true });
+    await waitFor(() => expect(textbox).toHaveValue("- First\n- "));
+
+    await fireEvent.input(textbox, { target: { value: "## Goal\n- Improve hierarchy" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("codex_request", expect.objectContaining({ method: "turn/start" })));
+    const turnStart = invokeMock.mock.calls.find(([, args]) => args?.method === "turn/start");
+    expect(turnStart?.[1]?.params?.input).toEqual([
+      { type: "text", text: "## Goal\n- Improve hierarchy", text_elements: [] },
+      { type: "skill", name: "first-principles-ui", path: "/skills/first-principles-ui" },
+    ]);
+    expect(screen.getByText("Goal")).toBeInTheDocument();
+    expect(screen.getByText("Improve hierarchy")).toBeInTheDocument();
   });
 
   it("lists stored Figmaboy threads from current and legacy app-server sources", async () => {

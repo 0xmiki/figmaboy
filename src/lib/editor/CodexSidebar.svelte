@@ -4,11 +4,11 @@
   import { listen } from "@tauri-apps/api/event";
   import {
     Archive, Robot as Bot, Check, CaretDown as ChevronDown, WarningCircle as CircleAlert,
-    StopCircle as CircleStop, Clock as Clock3, Copy, FileImage,
+    Clock as Clock3, Copy, Cube, FileImage,
     ClockCounterClockwise as History, CircleNotch as LoaderCircle, SignIn as LogIn,
     ChatText as MessageSquareText, DotsThree as MoreHorizontal, PushPin as Pin,
     PushPinSlash as PinOff, Plus, ArrowClockwise as RotateCcw,
-    MagnifyingGlass as Search, ArrowUp as Send, Trash as Trash2,
+    MagnifyingGlass as Search, ArrowUp as Send, Square, Trash as Trash2,
     ArrowCounterClockwise as Undo2, Wrench, X,
   } from "phosphor-svelte";
   import MarkdownText from "$lib/editor/MarkdownText.svelte";
@@ -19,7 +19,7 @@
   import { describeApprovalRequest } from "$lib/editor/codex-approval";
   import {
     buildDisplayTimelineRows, emptyTimeline, formatTokenCount,
-    inputText, itemText, object, reduceCodexEvent,
+    inputSkills, inputText, itemText, object, reduceCodexEvent,
     resolveCodexSelection, threadAttention, threadTitle, uniqueEnabledSkills,
     timelineFromThread, type CodexEvent, type CodexItem, type CodexModel,
     type CodexSelection, type CodexThread, type CodexTimeline, type CodexTurnMeta,
@@ -69,6 +69,7 @@
   let timeline = $state<CodexTimeline>(emptyTimeline());
   let prompt = $state("");
   let attachments = $state<CodexAttachment[]>([]);
+  let selectedSkills = $state<Skill[]>([]);
   let lastPrompt = $state("");
   let pendingRequests = $state<PendingRequest[]>([]);
   let requestAnswers = $state<Record<string, string[]>>({});
@@ -215,7 +216,7 @@
 
   $effect(() => {
     if (!uiStateLoaded) return;
-    prompt; attachments; selection.model; selection.effort; selection.serviceTier; selectionExplicit; uiState.approvalMode; uiState.promptStash.join("|"); uiState.pinnedThreadIds.join("|"); currentThreadId;
+    prompt; attachments; selectedSkills.map((skill) => `${skill.name}:${skill.path}`).join("|"); selection.model; selection.effort; selection.serviceTier; selectionExplicit; uiState.approvalMode; uiState.promptStash.join("|"); uiState.pinnedThreadIds.join("|"); currentThreadId;
     if (saveStateTimer) clearTimeout(saveStateTimer);
     saveStateTimer = setTimeout(() => void persistUiState(), 180);
   });
@@ -266,6 +267,7 @@
       selection = resolveCodexSelection(models, newDraft?.selection);
       prompt = newDraft?.prompt ?? "";
       attachments = newDraft?.attachments ?? [];
+      selectedSkills = newDraft?.skills?.map((saved) => skills.find((skill) => skill.name === saved.name) ?? saved) ?? [];
       const hasPageThread = Object.prototype.hasOwnProperty.call(uiState.lastThreadIdByPage, pageId);
       const preferredThreadId = hasPageThread ? uiState.lastThreadIdByPage[pageId] : uiState.lastThreadId;
       const preferredThread = threads.find((thread) => thread.id === preferredThreadId);
@@ -341,7 +343,7 @@
       ...uiState,
       drafts: {
         ...uiState.drafts,
-        [key]: { prompt, selection, selectionExplicit, attachments: attachments.map(({ previewUrl: _, ...item }) => item) },
+        [key]: { prompt, selection, selectionExplicit, attachments: attachments.map(({ previewUrl: _, ...item }) => item), skills: selectedSkills.map(({ name, path }) => ({ name, path })) },
       },
       lastThreadId: currentThreadId,
       lastThreadIdByPage: { ...uiState.lastThreadIdByPage, [pageId]: currentThreadId },
@@ -365,6 +367,7 @@
     const draft = uiState.drafts[draftKey(threadId)];
     prompt = draft?.prompt ?? "";
     attachments = draft?.attachments ?? [];
+    selectedSkills = draft?.skills?.map((saved) => skills.find((skill) => skill.name === saved.name) ?? saved) ?? [];
     selectionExplicit = draft?.selectionExplicit === true;
     selection = resolveCodexSelection(models, selectionExplicit ? draft?.selection : fallback ?? draft?.selection);
   }
@@ -425,30 +428,52 @@
     return response.thread.id;
   }
 
-  function turnInput(text: string) {
-    const inputs: JsonObject[] = [{ type: "text", text, text_elements: [] }];
-    for (const attachment of attachments) inputs.push({ type: "localImage", path: attachment.path });
+  function skillLabel(name: string): string {
+    return name.split(/[-_]+/).map((part) => part.toLowerCase() === "ui" ? "UI" : `${part.charAt(0).toUpperCase()}${part.slice(1)}`).join(" ");
+  }
+
+  function skillPattern(name: string, global = false): RegExp {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`(^|\\s)\\$${escaped}(?=\\s|$)`, global ? "g" : "");
+  }
+
+  function skillsForPrompt(text: string): Skill[] {
+    const included = [...selectedSkills];
     for (const skill of skills) {
-      if (new RegExp(`(^|\\s)\\$${skill.name.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}(?=\\s|$)`).test(text)) inputs.push({ type: "skill", name: skill.name, path: skill.path });
+      if (skillPattern(skill.name).test(text) && !included.some((item) => item.name === skill.name)) included.push(skill);
     }
+    return included;
+  }
+
+  function withoutSkillTokens(text: string, included: Skill[]): string {
+    let clean = text;
+    for (const skill of included) clean = clean.replace(skillPattern(skill.name, true), "$1");
+    return clean.replace(/[ \t]{2,}/g, " ").replace(/^[ \t]+|[ \t]+$/gm, "").replace(/\n{3,}/g, "\n\n").trim();
+  }
+
+  function turnInput(text: string, sentAttachments: CodexAttachment[], sentSkills: Skill[]) {
+    const inputs: JsonObject[] = [{ type: "text", text, text_elements: [] }];
+    for (const attachment of sentAttachments) inputs.push({ type: "localImage", path: attachment.path });
+    for (const skill of sentSkills) inputs.push({ type: "skill", name: skill.name, path: skill.path });
     return inputs;
   }
 
   async function send(value = prompt) {
-    const text = value.trim();
+    const sentSkills = skillsForPrompt(value);
+    const text = withoutSkillTokens(value, sentSkills);
     if ((!text && attachments.length === 0) || connection !== "ready" || rpcBusy || account === null || blockedByRequest) return;
     const sentAttachments = attachments;
+    const fallback = "Use the attached image as a visual reference for the open design.";
+    const input = turnInput(text || fallback, sentAttachments, sentSkills);
     prompt = "";
     attachments = [];
+    selectedSkills = [];
     lastPrompt = text;
-    timeline = { ...timeline, error: "", items: [...timeline.items, { id: `local_${Date.now()}`, type: "userMessage", content: [{ type: "text", text: text || "Shared image reference", text_elements: [] }] }] };
+    timeline = { ...timeline, error: "", items: [...timeline.items, { id: `local_${Date.now()}`, type: "userMessage", content: input }] };
     pinnedToBottom = true;
     rpcBusy = true;
     try {
-      attachments = sentAttachments;
       const threadId = await ensureThread();
-      const input = turnInput(text || "Use the attached image as a visual reference for the open design.");
-      attachments = [];
       if (timeline.activeTurnId) {
         await request("turn/steer", { threadId, input, expectedTurnId: timeline.activeTurnId });
       } else {
@@ -463,7 +488,9 @@
         if (timeline.items.filter((item) => item.type === "userMessage").length === 1) void renameThread(threadId, text.slice(0, 72));
       }
     } catch (cause) {
+      prompt = text;
       attachments = sentAttachments;
+      selectedSkills = sentSkills;
       timeline = { ...timeline, activeTurnId: null, error: errorMessage(cause) };
       setAttention("error");
     } finally {
@@ -517,8 +544,11 @@
   function chooseSuggestion(suggestion: (typeof suggestions)[number]) {
     if (!trigger) return;
     if (suggestion.kind === "command") { prompt = ""; void runCommand(suggestion.value as ComposerCommand); return; }
-    const replacement = suggestion.kind === "skill" ? `$${(suggestion.value as Skill).name}` : String(suggestion.value);
-    prompt = replaceComposerTrigger(prompt, trigger.start, replacement);
+    if (suggestion.kind === "skill") {
+      const skill = suggestion.value as Skill;
+      if (!selectedSkills.some((item) => item.name === skill.name)) selectedSkills = [...selectedSkills, skill];
+      prompt = prompt.slice(0, trigger.start);
+    } else prompt = replaceComposerTrigger(prompt, trigger.start, String(suggestion.value));
     void tick().then(() => composer?.focus());
   }
 
@@ -664,12 +694,36 @@
     return item._turnId ? timeline.turns[item._turnId] ?? null : null;
   }
 
+  function continueMarkdownList(event: KeyboardEvent): boolean {
+    if (!event.shiftKey || event.key !== "Enter" || event.isComposing || !composer) return false;
+    const start = composer.selectionStart;
+    const end = composer.selectionEnd;
+    const lineStart = prompt.lastIndexOf("\n", start - 1) + 1;
+    const line = prompt.slice(lineStart, start);
+    const match = /^(\s*)([-*+]|(\d+)[.)]|>)\s+(.*)$/.exec(line);
+    if (!match) return false;
+    event.preventDefault();
+    const content = match[4] ?? "";
+    if (!content.trim()) {
+      prompt = `${prompt.slice(0, lineStart)}\n${prompt.slice(end)}`;
+      void tick().then(() => composer.setSelectionRange(lineStart + 1, lineStart + 1));
+      return true;
+    }
+    const marker = match[3] ? `${Number(match[3]) + 1}${match[2].endsWith(")") ? ")" : "."}` : match[2];
+    const insertion = `\n${match[1]}${marker} `;
+    prompt = `${prompt.slice(0, start)}${insertion}${prompt.slice(end)}`;
+    const cursor = start + insertion.length;
+    void tick().then(() => composer.setSelectionRange(cursor, cursor));
+    return true;
+  }
+
   function onComposerKeydown(event: KeyboardEvent) {
     if (trigger && suggestions.length) {
       if (event.key === "ArrowDown") { event.preventDefault(); suggestionIndex = Math.min(suggestions.length - 1, suggestionIndex + 1); return; }
       if (event.key === "ArrowUp") { event.preventDefault(); suggestionIndex = Math.max(0, suggestionIndex - 1); return; }
       if (event.key === "Enter" && !event.shiftKey && suggestions[suggestionIndex]) { event.preventDefault(); chooseSuggestion(suggestions[suggestionIndex]); return; }
     }
+    if (continueMarkdownList(event)) return;
     if (event.key === "Enter" && !event.shiftKey && !event.isComposing && !trigger) { event.preventDefault(); void send(); }
   }
 
@@ -786,7 +840,7 @@
           {#if row.kind === "tools"}
             <CodexToolGroup group={row.group} label={row.label} expanded={expandedToolGroups.has(row.group.id)} onExpandedChange={(expanded) => { const next = new Set(expandedToolGroups); expanded ? next.add(row.group.id) : next.delete(row.group.id); expandedToolGroups = next; }} />
           {:else if row.item.type === "userMessage"}
-            <div class="message user"><div>{inputText(row.item.content)}</div></div>
+            <div class="message user"><div>{#if inputSkills(row.item.content).length}<div class="message-skills">{#each inputSkills(row.item.content) as name}<span><Cube size={14} weight="duotone" />{skillLabel(name)}</span>{/each}</div>{/if}<MarkdownText text={inputText(row.item.content)} /></div></div>
           {:else if row.item.type === "agentMessage"}
             <article class="message assistant"><div class="assistant-body"><MarkdownText text={String(row.item.text ?? "")} />{#if row.item.text}<button class="copy-message" title="Copy response" onclick={() => copyMessage(row.item.id, String(row.item.text))}>{#if copiedMessage === row.item.id}<Check size={13} />{:else}<Copy size={13} />{/if}</button>{/if}{#if terminalAgent(row.item) && turnMeta(row.item)?.status !== "inProgress"}<div class="turn-meta">{#if timeline.usage}<span>{formatTokenCount(timeline.usage.totalTokens)} context tokens</span>{/if}<button title="Undo the last Figmaboy change" onclick={() => runCommand(COMPOSER_COMMANDS.find((command) => command.action === "undo")!)}><Undo2 size={11} />Undo last change</button></div>{/if}</div></article>
           {:else if row.item.type === "reasoning" && itemText(row.item)}
@@ -829,6 +883,7 @@
 
     <div class="composer" class:disabled={connection !== "ready" || account === null || blockedByRequest}>
       {#if attachments.length}<div class="attachment-strip">{#each attachments as attachment (attachment.id)}<div>{#if attachment.previewUrl}<img src={attachment.previewUrl} alt="" />{:else}<FileImage size={15} />{/if}<span title={attachment.name}>{attachment.name}</span><button title="Remove attachment" onclick={() => (attachments = attachments.filter((item) => item.id !== attachment.id))}><X size={11} /></button></div>{/each}</div>{/if}
+      {#if selectedSkills.length}<div class="skill-strip">{#each selectedSkills as skill (skill.name)}<div class="skill-chip"><Cube size={16} weight="duotone" /><span>{skillLabel(skill.name)}</span><button aria-label={`Remove ${skillLabel(skill.name)} skill`} title="Remove skill" onclick={() => (selectedSkills = selectedSkills.filter((item) => item.name !== skill.name))}><X size={12} /></button></div>{/each}</div>{/if}
       <textarea aria-label="Message Codex" bind:this={composer} bind:value={prompt} onkeydown={onComposerKeydown} onpaste={onPaste} placeholder={blockedByRequest ? "Resolve the request above to continue" : working ? "Steer Codex while it works…" : "Ask anything about this design"} rows="1" disabled={connection !== "ready" || account === null || blockedByRequest}></textarea>
       {#if trigger && suggestions.length}<div class="command-menu">{#each suggestions as suggestion, index}<button class:highlighted={index === suggestionIndex} class:skill-row={suggestion.kind === "skill"} onmouseenter={() => (suggestionIndex = index)} onclick={() => chooseSuggestion(suggestion)}><strong>{suggestion.label}</strong>{#if suggestion.description}<span>{suggestion.description}</span>{/if}</button>{/each}</div>{/if}
       <div class="composer-controls">
@@ -839,11 +894,11 @@
         <CodexModelPicker {models} selected={selection.model} disabled={working || rpcBusy} onSelect={(model) => updateSelection({ ...selection, model })} />
         <CodexTraitsPicker model={activeModel} {selection} {approvalMode} disabled={working || rpcBusy} onChange={updateSelection} onApprovalModeChange={updateApprovalMode} />
         {#if timeline.usage}<CodexContextMeter usage={timeline.usage} {compacting} onCompact={() => runCommand(COMPOSER_COMMANDS.find((command) => command.action === "compact")!)} />{/if}
-        {#if working}<button class="stop" aria-label="Stop Codex" title="Stop Codex" disabled={rpcBusy} onclick={stop}><CircleStop size={15} /></button>{/if}
+        {#if working}<button class="stop" aria-label="Stop Codex" title="Stop the active turn" disabled={rpcBusy} onclick={stop}><Square size={10} weight="fill" /><span>Stop</span></button>{/if}
         <button class="send" aria-label={working ? "Steer Codex" : "Send message"} title={sendDisabledReason ?? (working ? "Steer Codex" : "Send (Enter)")} disabled={sendDisabledReason !== null} onclick={() => send()}>{#if rpcBusy}<LoaderCircle class="spin" size={14} />{:else}<Send size={15} weight="bold" />{/if}</button>
       </div>
     </div>
-    <div class="footer-meta"><span>{working ? "You can steer the active turn" : "Working locally"}</span><kbd>Shift ↵ newline</kbd></div>
+    <div class="footer-meta"><span>{working ? "You can steer the active turn" : "Working locally"}</span><kbd>Markdown · Shift ↵ newline</kbd></div>
   </footer>
 </aside>
 
@@ -853,11 +908,12 @@
   .messages { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #4b4b51 transparent; }.timeline { padding: 19px 18px 32px; display: flex; flex-direction: column; gap: 8px; }
   .center-state { min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 36px; text-align: center; color: #9999a2; }.center-state strong { color: #ededf0; font-size: var(--text-emphasis); }.center-state p { max-width: 245px; margin: 6px 0 14px; font-size: var(--text-small); line-height: var(--leading-body); }.center-state button,.center-state a { min-height: 31px; padding: 0 11px; border: 1px solid #4b4b52; border-radius: 6px; background: #333338; color: white; display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: var(--text-small); text-decoration: none; }.center-state a { margin-top: 7px; background: transparent; }
   .empty-chat { min-height: 100%; position: relative; display: flex; flex-direction: column; }.recent-chats { padding: 16px 13px 0; }.recent-chats header { height: 24px; display: flex; align-items: center; justify-content: space-between; color: #8b8b92; font-size: var(--text-control); }.recent-chats header button { border: 0; background: transparent; color: #696970; cursor: pointer; font: inherit; }.recent-chats header button:hover { color: #c5c5ca; }.recent-row { width: 100%; height: 32px; padding: 0 1px; border: 0; border-radius: 5px; background: transparent; color: #c7c7cc; display: flex; align-items: center; gap: 12px; text-align: left; cursor: pointer; }.recent-row:hover { padding: 0 7px; background: #29292c; }.recent-row span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-body); }.recent-row time { flex: 0 0 auto; color: #77777e; font-size: var(--text-small); }
-  .message.user { display: flex; justify-content: flex-end; margin: 7px 0 16px; }.message.user > div { max-width: 82%; padding: 12px 15px; border: 0; border-radius: 17px; background: #2d2d30; color: #eeeeef; box-shadow: inset 0 0 0 1px #ffffff08; font-size: var(--text-body); line-height: var(--leading-body); white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }.message.assistant { display: block; min-width: 0; margin: 4px 0 12px; }.assistant-body { position: relative; min-width: 0; padding: 1px 29px 0 2px; user-select: text; }.copy-message { position: absolute; top: 0; right: 0; width: 27px; height: 27px; border: 0; border-radius: 5px; background: transparent; color: #777780; display: grid; place-items: center; cursor: pointer; opacity: 0; }.assistant:hover .copy-message,.copy-message:focus { opacity: 1; }.copy-message:hover { background: #313136; color: #ddd; }.turn-meta { margin-top: 10px; display: flex; flex-wrap: wrap; align-items: center; gap: 9px; color: #7d7d87; font-size: var(--text-small); opacity: 0; transition: opacity 150ms ease; }.assistant:hover .turn-meta,.turn-meta:focus-within { opacity: 1; }.turn-meta button { height: 25px; padding: 0 7px; border: 0; border-radius: 4px; background: transparent; color: #85858e; display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: var(--text-small); }.turn-meta button:hover { background: #303035; color: #ddd; }
+  .message.user { display: flex; justify-content: flex-end; margin: 7px 0 16px; }.message.user > div { max-width: 82%; padding: 12px 15px; border: 0; border-radius: 17px; background: #2d2d30; color: #eeeeef; box-shadow: inset 0 0 0 1px #ffffff08; font-size: var(--text-body); line-height: var(--leading-body); overflow-wrap: anywhere; user-select: text; }.message-skills { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 9px; }.message-skills span { display: inline-flex; align-items: center; gap: 6px; color: #76c9e8; font-size: var(--text-control); font-weight: var(--weight-medium); }.message.assistant { display: block; min-width: 0; margin: 4px 0 12px; }.assistant-body { position: relative; min-width: 0; padding: 1px 29px 0 2px; user-select: text; }.copy-message { position: absolute; top: 0; right: 0; width: 27px; height: 27px; border: 0; border-radius: 5px; background: transparent; color: #777780; display: grid; place-items: center; cursor: pointer; opacity: 0; }.assistant:hover .copy-message,.copy-message:focus { opacity: 1; }.copy-message:hover { background: #313136; color: #ddd; }.turn-meta { margin-top: 10px; display: flex; flex-wrap: wrap; align-items: center; gap: 9px; color: #7d7d87; font-size: var(--text-small); opacity: 0; transition: opacity 150ms ease; }.assistant:hover .turn-meta,.turn-meta:focus-within { opacity: 1; }.turn-meta button { height: 25px; padding: 0 7px; border: 0; border-radius: 4px; background: transparent; color: #85858e; display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: var(--text-small); }.turn-meta button:hover { background: #303035; color: #ddd; }
   .reasoning,.plan { border: 0; border-radius: 6px; background: transparent; }.reasoning summary,.plan summary { min-height: 29px; padding: 0 4px; display: flex; align-items: center; gap: 7px; list-style: none; color: #81818a; cursor: pointer; }.reasoning summary span,.plan summary span { flex: 1; font-size: var(--text-caption); }.reasoning p,.plan > div { margin: 0; padding: 4px 8px 8px 23px; color: #7d7d86; font-size: var(--text-caption); line-height: var(--leading-body); white-space: pre-wrap; }.plan { border: 1px solid #3c3c42; background: #28282c; }.plan > div { border-top: 1px solid #38383e; color: #aaa; }.plan-actions { margin-top: 8px; display: flex; gap: 5px; }.plan-actions button { height: 26px; padding: 0 7px; border: 1px solid #484850; border-radius: 5px; background: #343439; color: #ddd; cursor: pointer; font-size: var(--text-micro); }.working { height: 28px; color: #888891; display: flex; align-items: center; gap: 7px; font-size: var(--text-small); }
   .turn-error { position: relative; padding: 10px 11px; border: 1px solid #633b3b; border-radius: 7px; background: #352525; }.turn-error > button:first-child { position: absolute; top: 5px; right: 5px; width: 22px; height: 22px; border: 0; background: transparent; color: #b99090; }.turn-error strong { color: #f2c2c2; font-size: var(--text-small); }.turn-error p { margin: 4px 24px 8px 0; color: #b99090; font-size: var(--text-caption); }.turn-error .retry { height: 26px; border: 1px solid #714848; border-radius: 5px; background: #452e2e; color: #f1d0d0; display: flex; align-items: center; gap: 5px; cursor: pointer; font-size: var(--text-caption); }
-  .composer-wrap { position: relative; z-index: 50; flex: 0 0 auto; padding: 10px 12px 7px; border-top: 0; background: #222224; box-shadow: 0 -14px 28px #222224; overflow: visible; }.composer { position: relative; overflow: visible; border: 1px solid #3d3d42; border-radius: 17px; background: #1d1d1f; box-shadow: inset 0 1px #ffffff07, 0 8px 24px #0003; transition: border-color 120ms ease, box-shadow 120ms ease; }.composer:focus-within { border-color: #595960; box-shadow: inset 0 1px #ffffff0a, 0 8px 24px #0003, 0 0 0 1px #ffffff05; }.composer.disabled { opacity: .65; }.composer textarea { width: 100%; box-sizing: border-box; min-height: 78px; max-height: 180px; resize: none; border: 0; outline: 0; padding: 15px 14px 8px; background: transparent; color: #f1f1f3; font: var(--text-emphasis)/var(--leading-body) var(--font-ui); field-sizing: content; }.composer textarea::placeholder { color: #72727a; }.composer-controls { height: 42px; display: flex; align-items: center; padding: 0 8px 6px; gap: 2px; }.control-spacer { flex: 1; }.composer-controls > button { width: 30px; height: 30px; border: 0; border-radius: 50%; display: grid; place-items: center; cursor: pointer; }.attach,.stash,.stop { background: transparent; color: #909098; }.attach:hover,.stash:hover,.stop:hover { background: #2d2d31; color: #ededf0; }.send { background: #e7e7e9; color: #252528; box-shadow: 0 1px 2px #0005; }.send:not(:disabled):hover { background: #fff; }.composer-controls button:disabled { opacity: .35; cursor: default; }.send:disabled { opacity: 1; background: #3a3a3f; color: #777780; box-shadow: none; }.footer-meta { height: 21px; padding: 0 4px; display: flex; align-items: center; justify-content: space-between; gap: 8px; color: #707078; font-size: var(--text-caption); }.footer-meta span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.footer-meta kbd { flex: 0 0 auto; font: inherit; }
+  .composer-wrap { position: relative; z-index: 50; flex: 0 0 auto; padding: 10px 12px 7px; border-top: 0; background: #222224; box-shadow: 0 -14px 28px #222224; overflow: visible; }.composer { position: relative; overflow: visible; border: 1px solid #3d3d42; border-radius: 17px; background: #1d1d1f; box-shadow: inset 0 1px #ffffff07, 0 8px 24px #0003; transition: border-color 120ms ease, box-shadow 120ms ease; }.composer:focus-within { border-color: #595960; box-shadow: inset 0 1px #ffffff0a, 0 8px 24px #0003, 0 0 0 1px #ffffff05; }.composer.disabled { opacity: .65; }.composer textarea { width: 100%; box-sizing: border-box; min-height: 78px; max-height: 180px; resize: none; border: 0; outline: 0; padding: 15px 14px 8px; background: transparent; color: #f1f1f3; font: var(--text-emphasis)/var(--leading-body) var(--font-ui); field-sizing: content; }.composer textarea::placeholder { color: #72727a; }.composer-controls { height: 42px; display: flex; align-items: center; padding: 0 8px 6px; gap: 2px; }.control-spacer { flex: 1; }.composer-controls > button { width: 30px; height: 30px; border: 0; border-radius: 50%; display: grid; place-items: center; cursor: pointer; }.attach,.stash { background: transparent; color: #909098; }.attach:hover,.stash:hover { background: #2d2d31; color: #ededf0; }.composer-controls > button.stop { width: auto; min-width: 57px; padding: 0 9px; border: 1px solid #6a3d43; border-radius: 8px; background: #392529; color: #f2a8b0; display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: var(--text-control); font-weight: var(--weight-medium); }.composer-controls > button.stop:hover { border-color: #8d4a54; background: #4a292f; color: #ffd5da; }.send { background: #e7e7e9; color: #252528; box-shadow: 0 1px 2px #0005; }.send:not(:disabled):hover { background: #fff; }.composer-controls button:disabled { opacity: .35; cursor: default; }.send:disabled { opacity: 1; background: #3a3a3f; color: #777780; box-shadow: none; }.footer-meta { height: 21px; padding: 0 4px; display: flex; align-items: center; justify-content: space-between; gap: 8px; color: #707078; font-size: var(--text-caption); }.footer-meta span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.footer-meta kbd { flex: 0 0 auto; font: inherit; }
   .attachment-strip { display: flex; gap: 6px; padding: 8px 8px 0; overflow-x: auto; }.attachment-strip > div { width: 58px; height: 48px; position: relative; flex: 0 0 auto; overflow: hidden; border: 1px solid #45454c; border-radius: 6px; background: #252529; display: grid; place-items: center; }.attachment-strip img { width: 100%; height: 100%; object-fit: cover; }.attachment-strip span { position: absolute; inset: auto 2px 2px; overflow: hidden; padding: 2px; background: #171719c9; color: white; font-size: var(--text-micro); text-overflow: ellipsis; white-space: nowrap; }.attachment-strip button { position: absolute; top: 2px; right: 2px; width: 18px; height: 18px; border: 0; border-radius: 4px; background: #18181bd9; color: white; display: grid; place-items: center; }
+  .skill-strip { display: flex; flex-wrap: wrap; gap: 6px; padding: 11px 12px 0; }.skill-chip { min-width: 0; height: 29px; padding: 0 4px 0 8px; border: 1px solid #28566b; border-radius: 8px; background: linear-gradient(180deg,#203944,#1c3039); color: #78d3f4; display: inline-flex; align-items: center; gap: 7px; box-shadow: inset 0 1px #ffffff0a; }.skill-chip > span { overflow: hidden; color: #bcecff; font-size: var(--text-control); font-weight: var(--weight-medium); text-overflow: ellipsis; white-space: nowrap; }.skill-chip button { width: 23px; height: 23px; border: 0; border-radius: 5px; background: transparent; color: #78aebe; display: grid; place-items: center; cursor: pointer; }.skill-chip button:hover { background: #ffffff10; color: #d9f7ff; }
   .command-menu { position: absolute; z-index: 25; left: 7px; right: 7px; bottom: 100px; max-height: 220px; overflow-y: auto; padding: 5px; border: 1px solid #46464d; border-radius: 7px; background: #29292d; box-shadow: 0 12px 35px #000a; }.command-menu button { width: 100%; min-height: 42px; padding: 7px 9px; border: 0; border-radius: 5px; background: transparent; color: #eee; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; cursor: pointer; }.command-menu button.skill-row { min-height: 32px; justify-content: center; }.command-menu button:hover,.command-menu button.highlighted { background: #3a3a40; }.command-menu strong { font-size: var(--text-control); }.command-menu span { color: #83838c; font-size: var(--text-small); }
   .pending-card { margin-bottom: 8px; overflow: hidden; border: 1px solid #665331; border-radius: 8px; background: #302b22; }.pending-card header { min-height: 40px; padding: 0 8px 0 11px; display: flex; align-items: center; gap: 8px; }.pending-card header strong { flex: 1; font-size: var(--text-body); }.pending-card header span { color: #a99d86; font-size: var(--text-small); }.pending-card > p { margin: 0; padding: 0 11px 9px; color: #aea28e; font-size: var(--text-control); line-height: var(--leading-ui); }.pending-card > p.collapsed-question { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.collapse-pending { width: 26px; height: 26px; border: 0; border-radius: 4px; background: transparent; color: #a99d86; display: grid; place-items: center; }.collapse-pending :global(.rotated) { transform: rotate(180deg); }.pending-card pre { max-height: 140px; margin: 0; padding: 9px 11px; overflow: auto; border-top: 1px solid #51452f; background: #252118; color: #ddd2bb; font: var(--text-small)/var(--leading-body) var(--font-code); white-space: pre-wrap; }.pending-actions { padding: 8px; border-top: 1px solid #51452f; display: flex; justify-content: flex-end; gap: 5px; }.pending-actions button { min-height: 29px; padding: 0 9px; border: 1px solid #5a513e; border-radius: 5px; background: #3b3529; color: #d4cbb8; cursor: pointer; font-size: var(--text-small); }.pending-actions .approve { border-color: #9b6c27; background: #a96c1d; color: white; }.pending-actions .decline { color: #f1b6a9; }.answer-options { padding: 0 8px 8px; display: grid; gap: 4px; }.answer-options button { min-height: 42px; padding: 7px 9px; border: 0; border-radius: 5px; background: transparent; color: #e2dac9; display: flex; align-items: center; text-align: left; cursor: pointer; }.answer-options button:hover,.answer-options button.selected { background: #423927; }.answer-options button span { flex: 1; display: flex; flex-direction: column; gap: 2px; }.answer-options strong { font-size: var(--text-control); }.answer-options small { color: #998e7b; font-size: var(--text-small); }.answer-options kbd { color: #8f846f; font-family: var(--font-ui); font-size: var(--text-small); }.custom-answer { width: calc(100% - 18px); box-sizing: border-box; height: 33px; margin: 0 9px 9px; border: 1px solid #5b513d; border-radius: 5px; outline: 0; padding: 0 9px; background: #28241d; color: white; font-size: var(--text-control); }
   .pending-scopes { margin: 0; padding: 0 11px 9px 28px; color: #d8cdb8; font-size: var(--text-control); line-height: var(--leading-body); }.pending-scopes li + li { margin-top: 2px; }

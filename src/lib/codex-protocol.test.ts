@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildDisplayTimelineRows, contextPercentage, emptyTimeline, groupToolItems, reduceCodexEvent, resolveCodexSelection, serviceTierOptions, timelineFromThread, uniqueEnabledSkills, type CodexModel, type CodexTimeline } from "$lib/codex-protocol";
+import { buildDisplayTimelineRows, contextPercentage, emptyTimeline, groupToolItems, inputSkills, inputText, reduceCodexEvent, resolveCodexSelection, serviceTierOptions, timelineFromThread, uniqueEnabledSkills, type CodexModel, type CodexTimeline } from "$lib/codex-protocol";
 
 const empty = (): CodexTimeline => emptyTimeline();
 
@@ -28,6 +28,20 @@ describe("Codex app-server timeline", () => {
       params: { threadId: "thread", item: { id: "server_1", type: "userMessage", content: [{ type: "text", text: "Make a card" }] } },
     }, "thread");
     expect(state.items).toEqual([{ id: "server_1", type: "userMessage", content: [{ type: "text", text: "Make a card" }] }]);
+  });
+
+  it("reconciles structured skill messages without duplicating skill text", () => {
+    const content = [
+      { type: "text", text: "Improve the hierarchy" },
+      { type: "skill", name: "first-principles-ui", path: "/skills/first-principles-ui" },
+    ];
+    const state = reduceCodexEvent({ ...empty(), items: [{ id: "local_1", type: "userMessage", content }] }, {
+      method: "item/started",
+      params: { threadId: "thread", item: { id: "server_1", type: "userMessage", content } },
+    }, "thread");
+    expect(state.items).toHaveLength(1);
+    expect(inputText(state.items[0].content)).toBe("Improve the hierarchy");
+    expect(inputSkills(state.items[0].content)).toEqual(["first-principles-ui"]);
   });
 
   it("loads persisted turns and ignores other threads", () => {

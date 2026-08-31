@@ -10,11 +10,17 @@ export type CodexAttachment = {
   previewUrl?: string;
 };
 
+export type CodexSkillReference = {
+  name: string;
+  path: string;
+};
+
 export type CodexDraft = {
   prompt: string;
   selection?: Partial<CodexSelection>;
   selectionExplicit?: boolean;
   attachments: CodexAttachment[];
+  skills: CodexSkillReference[];
 };
 
 export type CodexUiState = {
@@ -56,6 +62,13 @@ function attachment(value: unknown): CodexAttachment | null {
   return { id: item.id, name: item.name, mime: item.mime, path: item.path };
 }
 
+function skill(value: unknown): CodexSkillReference | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const item = value as JsonObject;
+  if (typeof item.name !== "string" || typeof item.path !== "string") return null;
+  return { name: item.name, path: item.path };
+}
+
 export function parseCodexUiState(value: unknown): CodexUiState {
   const empty = emptyCodexUiState();
   if (!value || typeof value !== "object" || Array.isArray(value)) return empty;
@@ -73,6 +86,7 @@ export function parseCodexUiState(value: unknown): CodexUiState {
         ...(selection ? { selection } : {}),
         ...(draft.selectionExplicit === true ? { selectionExplicit: true } : {}),
         attachments: Array.isArray(draft.attachments) ? draft.attachments.map(attachment).filter((item): item is CodexAttachment => item !== null) : [],
+        skills: Array.isArray(draft.skills) ? draft.skills.map(skill).filter((item): item is CodexSkillReference => item !== null) : [],
       };
     }
   }

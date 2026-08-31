@@ -22,4 +22,12 @@ describe("Codex UI state", () => {
       lastThreadIdByPage: { page_a: "thread_a", page_b: null },
     }));
   });
+
+  it("repairs persisted skill attachments", () => {
+    expect(parseCodexUiState({ drafts: { __new__: { prompt: "Polish this", attachments: [], skills: [{ name: "first-principles-ui", path: "/skills/ui" }, { name: 42 }] } } }).drafts.__new__).toEqual({
+      prompt: "Polish this",
+      attachments: [],
+      skills: [{ name: "first-principles-ui", path: "/skills/ui" }],
+    });
+  });
 });

@@ -132,11 +132,30 @@ export function inputText(content: unknown): string {
       const value = object(part);
       if (value.type === "text" && typeof value.text === "string") return value.text;
       if (value.type === "localImage" || value.type === "image") return "[Image]";
-      if (value.type === "skill" && typeof value.name === "string") return `$${value.name}`;
       return "";
     })
     .filter(Boolean)
     .join("\n");
+}
+
+export function inputSkills(content: unknown): string[] {
+  if (!Array.isArray(content)) return [];
+  return [...new Set(content
+    .map((part) => object(part))
+    .filter((part) => part.type === "skill" && typeof part.name === "string")
+    .map((part) => String(part.name)))];
+}
+
+function userMessageSignature(item: CodexItem): string {
+  if (!Array.isArray(item.content)) return "";
+  const parts = item.content.map((part) => {
+    const value = object(part);
+    if (value.type === "text") return ["text", typeof value.text === "string" ? value.text : ""];
+    if (value.type === "skill") return ["skill", typeof value.name === "string" ? value.name : ""];
+    if (value.type === "localImage" || value.type === "image") return ["image", typeof value.path === "string" ? value.path : ""];
+    return [String(value.type ?? "unknown")];
+  });
+  return JSON.stringify(parts);
 }
 
 export function itemText(item: CodexItem): string {
@@ -165,8 +184,8 @@ function upsert(items: CodexItem[], incoming: CodexItem): CodexItem[] {
     return items.map((item, itemIndex) => itemIndex === index ? merged : item);
   }
   if (incoming.type === "userMessage") {
-    const text = itemText(incoming);
-    const optimistic = items.findIndex((item) => item.type === "userMessage" && item.id.startsWith("local_") && itemText(item) === text);
+    const signature = userMessageSignature(incoming);
+    const optimistic = items.findIndex((item) => item.type === "userMessage" && item.id.startsWith("local_") && userMessageSignature(item) === signature);
     if (optimistic >= 0) return items.map((item, itemIndex) => itemIndex === optimistic ? incoming : item);
   }
   return [...items, incoming];
