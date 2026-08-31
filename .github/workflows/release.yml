@@ -89,11 +89,13 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: Figmaboy ${{ github.ref_name }}
           releaseBody: |
-            Figmaboy 0.4 replaces the embedded Codex terminal with a native Codex app-server sidebar. Chats persist locally per design page, and the sidebar supports saved threads, streaming replies, tool activity, approvals, image attachments, steering, model controls, and context usage.
+            Figmaboy 0.5 adds `/evolve`, a design loop that gives an independent director and designer a selected frame and a visual direction. Accepted candidates appear on the canvas as the loop runs, the sidebar explains each pass, and one undo returns to the starting design.
 
-            The built-in Codex tab starts Figmaboy's bundled design tools automatically. It does not ask users to install or register an MCP server.
+            The Codex composer now supports inline skills, Markdown, pasted or dropped image references, prompt copying, clearer stop and approval controls, and saved `/evolve` conversations. Design and Codex share the right sidebar, so switching between inspection and chat no longer moves the canvas between competing panels.
 
-            Large documents now render fewer off-screen canvas nodes and virtualize the Layers panel. Sidebar resizing, autosave previews, snapping, and initial editor loading do less work. This release also adds Figma-style nested selection, fixes text editing typography and position changes, and moves the interface to Phosphor icons with shared typography tokens.
+            Frames can open in a focused fullscreen preview from the canvas or Layers menu. Editor navigation now uses a clear Back control, page transitions stay quiet, and fixes cover image pasting in Tauri, text editing stability, page startup, home scrolling, and sidebar resizing.
+
+            The built-in Codex tab starts Figmaboy's bundled design tools automatically. It does not ask users to install or register an MCP server. Standalone MCP binaries remain available only for people who intentionally control Figmaboy from another Codex client.
 
             Download the installer for your platform below. This release also includes standalone `figmaboy-mcp` binaries and a `SHA256SUMS` file.
 
@@ -124,8 +126,23 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          asset_count="$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets | length')"
-          test "$asset_count" -ge 8
+          version="${GITHUB_REF_NAME#v}"
+          assets="$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
+          for expected in \
+            "Figmaboy_${version}_linux_amd64.AppImage" \
+            "Figmaboy_${version}_linux_amd64.deb" \
+            "Figmaboy_${version}_linux_x86_64.rpm" \
+            "Figmaboy_${version}_windows_x64.exe" \
+            "Figmaboy_${version}_windows_x64.msi" \
+            "Figmaboy_${version}_darwin_aarch64.dmg" \
+            "Figmaboy_${version}_darwin_x64.dmg" \
+            "figmaboy-mcp-x86_64-unknown-linux-gnu" \
+            "figmaboy-mcp-x86_64-pc-windows-msvc.exe" \
+            "figmaboy-mcp-aarch64-apple-darwin" \
+            "figmaboy-mcp-x86_64-apple-darwin"
+          do
+            grep -Fxq "$expected" <<< "$assets" || { echo "Missing release asset: $expected"; exit 1; }
+          done
           mkdir release-assets
           gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --dir release-assets
           cd release-assets

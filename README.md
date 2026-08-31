@@ -4,7 +4,7 @@
 
 Draw and style native layers by hand, or ask Codex to work on the open document. Replies, tool calls, and approvals stay in the sidebar. Codex edits use the same undo history and local autosave as manual edits.
 
-[Website](https://0xmiki.github.io/figmaboy/) · [Documentation](https://0xmiki.github.io/figmaboy/docs/) · [Download Figmaboy](https://0xmiki.github.io/figmaboy/download/)
+[Website](https://0xmiki.github.io/figmaboy/) · [Documentation](https://0xmiki.github.io/figmaboy/docs/) · [Download Figmaboy](https://0xmiki.github.io/figmaboy/download/) · [Changelog](CHANGELOG.md)
 
 [![CI](https://github.com/0xmiki/figmaboy/actions/workflows/ci.yml/badge.svg)](https://github.com/0xmiki/figmaboy/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/0xmiki/figmaboy)](https://github.com/0xmiki/figmaboy/releases/latest)
@@ -19,6 +19,7 @@ Choose an installer on the [Figmaboy download page](https://0xmiki.github.io/fig
 - Linux: AppImage, Debian package, and RPM package
 - macOS: DMG builds for Apple Silicon and Intel
 - Windows: NSIS and MSI installers
+
 Each release includes `SHA256SUMS`. Every desktop build includes the matching Figmaboy design tools used by the built-in Codex tab.
 
 macOS builds are ad hoc signed but not notarized. The first launch may require approval in **System Settings → Privacy & Security**. Windows builds are not code-signed and may show a SmartScreen warning.
@@ -30,6 +31,15 @@ Install the Codex CLI and sign in once. Open a design, select **Codex** in the r
 Figmaboy supplies its bundled MCP to the built-in chat automatically. Open the Codex tab and start working. There is no MCP setup prompt, registration step, or terminal command.
 
 [Create your first design](https://0xmiki.github.io/figmaboy/docs/getting-started/quickstart/)
+
+## What is new in 0.5
+
+- `/evolve [direction]` runs repeated design passes on one selected frame and shows accepted candidates on the canvas.
+- The Codex composer supports inline skills, Markdown, pasted or dropped image references, and prompt copying.
+- Frames open in a focused fullscreen preview from the canvas or Layers context menu.
+- Design and Codex share one right sidebar, with quieter navigation and faster page transitions.
+
+[Read the 0.5 release notes](https://0xmiki.github.io/figmaboy/docs/reference/release-notes/)
 
 ## Projects and designs
 

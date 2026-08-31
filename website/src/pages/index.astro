@@ -1,5 +1,6 @@
 ---
 import "../styles/landing.css";
+import release from "../release.json";
 
 const base = `${import.meta.env.BASE_URL.replace(/\/$/, "")}/`;
 const github = "https://github.com/0xmiki/figmaboy";
@@ -8,6 +9,7 @@ const download = `${base}download/`;
 const nativeAsset = `${base}figmaboy-landing-page-asset.png`;
 const generatedAsset = `${base}gptimage-landing-page-asset.png`;
 const productScreenshot = `${base}figmaboy-screenshot.png`;
+const releaseTag = `v${release.version}`;
 ---
 
 <!doctype html>
@@ -58,7 +60,7 @@ const productScreenshot = `${base}figmaboy-screenshot.png`;
               <a class="button button-dark" href={`${docs}getting-started/install/`}>Get started <svg class="button-arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4h8v8M12 4 4 12" /></svg></a>
               <a class="button button-light" href={download}><span data-download-copy>Download Figmaboy</span> <span class="arrow">↓</span></a>
             </div>
-            <p class="hero-meta">Linux · macOS · Windows &nbsp;/&nbsp; v0.4.0<br />Local-first workspace · MCP companion included</p>
+            <p class="hero-meta">Linux · macOS · Windows &nbsp;/&nbsp; {releaseTag}<br />Local-first workspace · Codex tools included</p>
             <div class="chat-badge"><span class="signal"></span>CODEX CHAT BUILT IN</div>
           </div>
 
@@ -77,7 +79,7 @@ const productScreenshot = `${base}figmaboy-screenshot.png`;
             <div class="product-bottom"><div>LOCAL FIRST&nbsp; / &nbsp;NATIVE LAYERS<br />SERIAL NO. 2026–0830</div><div class="hardware"><div class="knob-wrap"><div class="knob"></div>MODE</div><div class="knob-wrap"><div class="knob"></div>ZOOM</div></div></div>
           </div>
         </div>
-        <div class="wrap hero-annotation"><span>01 — DESIGNED FOR FOCUS</span><span>VERSION 0.4.0 / &nbsp;AUG 2026</span></div>
+        <div class="wrap hero-annotation"><span>01 — DESIGNED FOR FOCUS</span><span>VERSION {release.version} / &nbsp;AUG 2026</span></div>
       </section>
 
       <section class="principles" aria-labelledby="principles-title">
@@ -143,7 +145,7 @@ const productScreenshot = `${base}figmaboy-screenshot.png`;
       </section>
 
       <section class="closing" id="download" aria-labelledby="closing-title">
-        <div class="wrap"><div class="closing-main" data-reveal><p class="eyebrow">07&nbsp; / &nbsp;Get Figmaboy</p><h2 class="display" id="closing-title">Make room for<br />the work.</h2><div class="closing-signal" aria-hidden="true"></div><div class="closing-action"><a class="button button-dark" href={download}><span class="signal"></span><span data-download-copy>Download Figmaboy</span> <span class="arrow">↓</span></a><p class="closing-note">Open source · v0.4.0<br />Linux · macOS · Windows</p></div></div><footer class="site-footer"><div class="footer-row"><a class="footer-brand" href={base}>FIGMABOY®</a><span class="footer-made">THIS WEBSITE WAS DESIGNED IN FIGMABOY.</span><span class="footer-links"><a href={docs}>DOCS</a><a href={github}>GITHUB</a><a href={`${github}/issues`}>ISSUES</a></span></div><div class="copyright">© 2026 FIGMABOY. A SMALL DESKTOP TOOL.</div></footer></div>
+        <div class="wrap"><div class="closing-main" data-reveal><p class="eyebrow">07&nbsp; / &nbsp;Get Figmaboy</p><h2 class="display" id="closing-title">Make room for<br />the work.</h2><div class="closing-signal" aria-hidden="true"></div><div class="closing-action"><a class="button button-dark" href={download}><span class="signal"></span><span data-download-copy>Download Figmaboy</span> <span class="arrow">↓</span></a><p class="closing-note">Open source · {releaseTag}<br />Linux · macOS · Windows</p></div></div><footer class="site-footer"><div class="footer-row"><a class="footer-brand" href={base}>FIGMABOY®</a><span class="footer-made">THIS WEBSITE WAS DESIGNED IN FIGMABOY.</span><span class="footer-links"><a href={docs}>DOCS</a><a href={github}>GITHUB</a><a href={`${github}/issues`}>ISSUES</a></span></div><div class="copyright">© 2026 FIGMABOY. A SMALL DESKTOP TOOL.</div></footer></div>
       </section>
     </main>
 

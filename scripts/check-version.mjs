@@ -26,6 +26,7 @@ const versions = new Map([
   ["src-tauri/tauri.conf.json", json("src-tauri/tauri.conf.json").version],
   ["src-tauri/Cargo.toml", cargoVersion("src-tauri/Cargo.toml")],
   ["src-tauri/mcp/Cargo.toml", cargoVersion("src-tauri/mcp/Cargo.toml")],
+  ["website/src/release.json", json("website/src/release.json").version],
 ]);
 
 const unique = new Set(versions.values());

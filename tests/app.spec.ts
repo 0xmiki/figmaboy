@@ -1,4 +1,10 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+
+async function showDesignInspector(page: Page) {
+  const tab = page.getByRole("tab", { name: "Design", exact: true });
+  await tab.click();
+  await expect(tab).toHaveAttribute("aria-selected", "true");
+}
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/");
@@ -8,9 +14,12 @@ test.beforeEach(async ({ page }) => {
 
 test("opens the Codex chat sidebar and returns to the design inspector", async ({ page }) => {
   await page.getByRole("button", { name: "New design" }).first().click();
+  await expect(page.getByRole("tab", { name: "Codex", exact: true })).toHaveAttribute("aria-selected", "true");
+  await showDesignInspector(page);
   const inspector = page.locator("aside.inspector");
+  const sharedSidebar = page.getByRole("complementary", { name: "Right sidebar" });
   await expect(inspector).toBeVisible();
-  await expect(inspector).toHaveCSS("width", "280px");
+  await expect(sharedSidebar).toHaveCSS("width", "390px");
 
   const resize = async (name: string, deltaX: number) => {
     const handle = page.getByRole("separator", { name });
@@ -26,8 +35,8 @@ test("opens the Codex chat sidebar and returns to the design inspector", async (
 
   await resize("Resize left sidebar", 40);
   await expect(page.locator("aside.left-shell")).toHaveCSS("width", "337px");
-  await resize("Resize inspector", -40);
-  await expect(inspector).toHaveCSS("width", "320px");
+  await resize("Resize right sidebar", -40);
+  await expect(sharedSidebar).toHaveCSS("width", "430px");
 
   await page.evaluate(() => {
     let callbackId = 1;
@@ -58,10 +67,12 @@ test("opens the Codex chat sidebar and returns to the design inspector", async (
     };
   });
 
-  await page.getByTitle("Toggle Codex chat (Ctrl + `)").click();
+  await page.getByRole("tab", { name: "Codex", exact: true }).click();
   const sidebar = page.getByRole("complementary", { name: "Codex chat" });
   await expect(sidebar).toBeVisible();
-  await expect(inspector).toHaveCount(0);
+  const reconnect = sidebar.getByRole("button", { name: "Reconnect" });
+  if (await reconnect.isVisible()) await reconnect.click();
+  await expect(inspector).toBeHidden();
   await expect(sidebar.getByPlaceholder("Ask anything about this design")).toBeVisible();
   await expect(sidebar.getByText("Design with Codex")).toHaveCount(0);
   await expect(sidebar.getByText("Review the design")).toHaveCount(0);
@@ -87,19 +98,19 @@ test("opens the Codex chat sidebar and returns to the design inspector", async (
   await expect(traitsPopup.getByText("Balanced reasoning")).toHaveCount(0);
   await insideSidebar(traitsPopup);
   await sidebar.getByTitle("Model settings").click();
-  await resize("Resize chat sidebar", -50);
-  await expect(sidebar).toHaveCSS("width", "440px");
-  await expect(page.locator(".canvas-region")).toHaveCSS("right", "440px");
+  await resize("Resize right sidebar", -50);
+  await expect(sharedSidebar).toHaveCSS("width", "480px");
+  await expect(page.locator(".canvas-region")).toHaveCSS("right", "480px");
 
   await page.reload();
   await expect(page.getByRole("complementary", { name: "Codex chat" })).toBeVisible();
-  await expect(page.locator(".canvas-region")).toHaveCSS("right", "440px");
+  await expect(page.locator(".canvas-region")).toHaveCSS("right", "480px");
 
   await page.getByRole("complementary", { name: "Codex chat" }).getByTitle("Close Codex").click();
   await expect(page.getByRole("complementary", { name: "Codex chat" })).toBeHidden();
   await expect(page.locator("aside.inspector")).toBeVisible();
-  await expect(page.locator("aside.inspector")).toHaveCSS("width", "320px");
-  await expect(page.locator(".canvas-region")).toHaveCSS("right", "320px");
+  await expect(sharedSidebar).toHaveCSS("width", "480px");
+  await expect(page.locator(".canvas-region")).toHaveCSS("right", "480px");
 });
 
 test("copies a stable design ID for MCP lookup", async ({ page, context }) => {
@@ -124,6 +135,7 @@ test("copies a stable design ID for MCP lookup", async ({ page, context }) => {
 test("creates a truly blank local design and draws a rectangle", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Recently viewed" })).toBeVisible();
   await page.getByRole("button", { name: "New design" }).first().click();
+  await showDesignInspector(page);
   await expect(page).toHaveURL(/\/editor\/file_/);
   await expect(page.getByText("No layers yet")).toBeVisible();
   await page.keyboard.press("r");
@@ -183,6 +195,7 @@ test("runs an extension canvas action immediately as one undoable change", async
     records: [{ id: extension.id, name: extension.name, enabled: true, activeHash: "release", previewHash: null, active: extension, preview: null, versions: [{ hash: "release", version: extension.version, createdAt: new Date(0).toISOString(), status: "release" }] }],
   })), manifest);
   await page.getByRole("button", { name: "New design" }).first().click();
+  await showDesignInspector(page);
 
   await page.getByTitle("Extensions").click();
   await expect(page.getByText("Cards", { exact: true })).toBeVisible();
@@ -286,9 +299,7 @@ test("selects a parent, double-clicks down one level, and respects a locked subt
   // selection. The Layers panel can still select and unlock them.
   const frameRow = page.getByRole("treeitem").filter({ hasText: "Frame" }).first();
   await frameRow.getByRole("button", { name: "Lock" }).click();
-  const movedFrameBounds = await frame.boundingBox();
-  if (!movedFrameBounds) throw new Error("moved frame was not rendered");
-  await page.mouse.move(movedFrameBounds.x + movedFrameBounds.width - 20, movedFrameBounds.y + movedFrameBounds.height - 20);
+  await page.mouse.move(bounds.x + bounds.width - 24, bounds.y + bounds.height - 24);
   await page.mouse.down();
   await page.mouse.move(movedChildBounds.x - 15, movedChildBounds.y - 15);
   await expect(canvas).toHaveAttribute("data-mode", "marquee");
@@ -488,6 +499,7 @@ test("zooms around a trackpad pinch position", async ({ page }) => {
 
 test("creates, types, places the caret, and re-edits text", async ({ page }) => {
   await page.getByRole("button", { name: "New design" }).first().click();
+  await showDesignInspector(page);
   const canvas = page.locator("#design-canvas");
   const bounds = await canvas.boundingBox();
   if (!bounds) throw new Error("canvas was not rendered");
@@ -646,6 +658,7 @@ test("keeps projects and standalone designs together on the home screen", async 
 test("scrolls a large home library while keeping its toolbar fixed", async ({ page }) => {
   await page.getByRole("button", { name: "New design" }).first().click();
   await page.getByRole("button", { name: "Back to projects" }).click();
+  await expect(page).toHaveURL(/\/$/);
 
   await page.evaluate(() => {
     const key = "figmaboy.workspace.v1";

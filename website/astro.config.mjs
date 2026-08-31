@@ -57,6 +57,7 @@ export default defineConfig({
         {
           label: "Reference",
           items: [
+            { label: "Release notes", slug: "docs/reference/release-notes" },
             { label: "Keyboard shortcuts", slug: "docs/reference/shortcuts" },
             { label: "External Codex clients", slug: "docs/getting-started/connect-codex" },
             { label: "Codex and MCP", slug: "docs/core-concepts/codex-mcp" },
