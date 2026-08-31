@@ -242,11 +242,20 @@ describe("Codex sidebar diagnostics", () => {
     expect(await screen.findByText("The headline and metadata have equal visual weight. → Make the headline the unmistakable first reading point.")).toBeInTheDocument();
 
     await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("codex_request", expect.objectContaining({ method: "turn/start", params: expect.objectContaining({ threadId: "evolve-designer-2" }) })));
+    const designerThread = invokeMock.mock.calls.find(([, args]) => args?.method === "thread/start" && args?.params?.serviceName === "figmaboy-evolve-designer");
+    expect(designerThread?.[1]?.params).toMatchObject({
+      ephemeral: true,
+      sandbox: "read-only",
+      serviceTier: "priority",
+      config: { mcp_servers: { figmaboy: { enabled: true, enabled_tools: ["types_get"] } } },
+    });
+    expect(designerThread?.[1]?.params?.developerInstructions).toContain("call the Figmaboy types_get tool");
+    expect(designerThread?.[1]?.params?.developerInstructions).toContain("types_get is your only available tool");
     const designerStart = invokeMock.mock.calls.find(([, args]) => args?.method === "turn/start" && args?.params?.threadId === "evolve-designer-2");
     expect(designerStart?.[1]?.params?.input?.[0]?.text).toContain("User direction: Make it more editorial");
     expect(designerStart?.[1]?.params?.input?.[0]?.text).toContain("equal visual weight");
-    expect(designerStart?.[1]?.params?.input?.[0]?.text).toContain('LayerBlurEffect { type: "layer-blur"; radius: number');
-    expect(designerStart?.[1]?.params?.input?.[0]?.text).toContain("Every numeric field must be a finite JSON number");
+    expect(designerStart?.[1]?.params?.input?.[0]?.text).toContain("Fetch the authoritative native node and style contract with types_get");
+    expect(designerStart?.[1]?.params?.input?.[0]?.text).not.toContain("export type NodeType");
     expect(designerStart?.[1]?.params).toMatchObject({ effort: "medium", serviceTier: "priority" });
     finishTurn("evolve-designer-2", { updates: [{ id: "headline", patchJson: JSON.stringify({ x: 96, fontSize: 72 }) }], creates: [], reorders: [], removeCreatedIds: [], summary: "Improved the headline hierarchy." });
 
@@ -415,7 +424,8 @@ describe("Codex sidebar diagnostics", () => {
       const turns = invokeMock.mock.calls.filter(([, args]) => args?.method === "turn/start" && args?.params?.threadId === "evolve-designer-2");
       expect(turns).toHaveLength(2);
       expect(turns[1]?.[1]?.params?.input?.[0]?.text).toContain("Node evolve_hero_aura layer blur must be a finite number");
-      expect(turns[1]?.[1]?.params?.input?.[0]?.text).toContain('LayerBlurEffect { type: "layer-blur"; radius: number');
+      expect(turns[1]?.[1]?.params?.input?.[0]?.text).toContain("Use the authoritative Figmaboy contract you fetched with types_get");
+      expect(turns[1]?.[1]?.params?.input?.[0]?.text).not.toContain("export type NodeType");
     });
     finishTurn("evolve-designer-2", { updates: [{ id: "headline", patchJson: JSON.stringify({ effects: [{ type: "layer-blur", radius: 18 }] }) }], creates: [], reorders: [], removeCreatedIds: [], summary: "Corrected the soft hero treatment." });
     await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("codex_request", expect.objectContaining({ method: "mcpServer/tool/call", params: expect.objectContaining({ tool: "operations_preview", arguments: expect.objectContaining({ operations: [{ kind: "update", id: "headline", patch: { effects: [{ type: "layer-blur", radius: 18 }] } }] }) }) })));

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import type { DesignNode, Rect, TextNode, Tool } from "$lib/domain";
   import { defaultNode } from "$lib/domain";
   import { containsRect, drawingParentFrame, frameAtPoint, intersects, nodeMatrix, normalizeRect, rectContainsPoint, screenToWorld, selectionBounds, transformPoint, worldBounds, worldMatrix, worldToNodeLocal } from "$lib/geometry";
@@ -8,6 +8,7 @@
   import type { EditorSession } from "$lib/editor/editor.svelte";
   import CanvasNode from "$lib/editor/CanvasNode.svelte";
   import { canvasSelectionTarget, isCanvasNodeSelectable } from "$lib/editor/canvas-selection";
+  import { createRenderBounds, shouldRefreshRenderBounds } from "$lib/editor/canvas-culling";
 
   let { session, onContextMenu }: { session: EditorSession; onContextMenu: (event: MouseEvent, world: Point, hitId?: string) => void } = $props();
   let host = $state<HTMLDivElement>();
@@ -45,6 +46,11 @@
   let pendingWheelZoom = 1;
   let pendingWheelPoint: Point = { x: 0, y: 0 };
   let viewportCommitTimer: ReturnType<typeof setTimeout> | undefined;
+  let renderBounds = $state<Rect | null>(null);
+  let previousRenderBounds = $state<Rect | null>(null);
+  let renderBoundsZoom = 1;
+  let renderPruneFrame = 0;
+  let renderWindowGeneration = 0;
   let gestureStartZoom = 1;
   let activePointerId: number | null = null;
   let activeGestureVersion = 0;
@@ -70,13 +76,8 @@
     const rootIds = session.document.rootIds;
     const nodes = session.document.nodes;
     if (session.renderAllNodes || Object.keys(nodes).length < 160 || hostSize.width === 0 || hostSize.height === 0) return null;
-    const overscan = 320 / viewport.zoom;
-    const visibleBounds = {
-      x: -viewport.x / viewport.zoom - overscan,
-      y: -viewport.y / viewport.zoom - overscan,
-      width: hostSize.width / viewport.zoom + overscan * 2,
-      height: hostSize.height / viewport.zoom + overscan * 2,
-    };
+    const currentBounds = renderBounds ?? createRenderBounds(viewport, hostSize);
+    const retainedBounds = previousRenderBounds;
     const requiredIds = new Set<string>();
     for (const selectedId of session.selectedIds) {
       let id: string | null = selectedId;
@@ -89,7 +90,8 @@
     const visit = (id: string): boolean => {
       const node = nodes[id];
       if (!node || !node.visible) return false;
-      const intersectsViewport = intersects(visibleBounds, worldBounds(session.document, node));
+      const bounds = worldBounds(session.document, node);
+      const intersectsViewport = intersects(currentBounds, bounds) || Boolean(retainedBounds && intersects(retainedBounds, bounds));
       let keep = intersectsViewport || requiredIds.has(id);
       if (node.type === "frame" || node.type === "group") {
         const canShowChildren = node.type === "group" || !node.clipContent || keep;
@@ -235,6 +237,7 @@
     if (!target) return;
     const updateHostSize = () => {
       hostSize = { width: target.clientWidth, height: target.clientHeight };
+      refreshRenderWindow(true);
     };
     const resizeObserver = new ResizeObserver(() => {
       if (!document.body.classList.contains("resizing-panels")) updateHostSize();
@@ -286,7 +289,9 @@
     }
     return () => {
       disposed = true;
+      renderWindowGeneration += 1;
       cancelAnimationFrame(wheelFrame);
+      cancelAnimationFrame(renderPruneFrame);
       if (mode !== "idle") cancelInteraction();
       if (viewportCommitTimer) {
         clearTimeout(viewportCommitTimer);
@@ -1068,6 +1073,7 @@
   }
 
   function applyViewportPreview() {
+    refreshRenderWindow();
     const transform = viewportTransform(liveViewport);
     if (viewportElement) viewportElement.style.transform = transform;
     const gridSize = 8 * liveViewport.zoom;
@@ -1089,6 +1095,24 @@
       textEditor.style.fontSize = `${node.fontSize * liveViewport.zoom}px`;
       textEditor.style.letterSpacing = `${node.letterSpacing * liveViewport.zoom}px`;
     }
+  }
+
+  function refreshRenderWindow(force = false) {
+    if (hostSize.width <= 0 || hostSize.height <= 0) return;
+    if (!force && !shouldRefreshRenderBounds(renderBounds, renderBoundsZoom, liveViewport, hostSize)) return;
+    const nextBounds = createRenderBounds(liveViewport, hostSize);
+    const generation = ++renderWindowGeneration;
+    previousRenderBounds = renderBounds;
+    renderBounds = nextBounds;
+    renderBoundsZoom = liveViewport.zoom;
+    if (renderPruneFrame) cancelAnimationFrame(renderPruneFrame);
+    void tick().then(() => {
+      if (generation !== renderWindowGeneration) return;
+      renderPruneFrame = requestAnimationFrame(() => {
+        if (generation === renderWindowGeneration) previousRenderBounds = null;
+        renderPruneFrame = 0;
+      });
+    });
   }
 
   function scheduleViewportCommit() {

@@ -497,6 +497,61 @@ test("zooms around a trackpad pinch position", async ({ page }) => {
   await expect(viewportLayer).toHaveAttribute("style", /transform: translate3d\(.+px, .+px, 0(?:px)?\) scale\(.+\)/);
 });
 
+test("mounts destination nodes before a fast wheel pan can expose a blank canvas", async ({ page }) => {
+  await page.getByRole("button", { name: "New design" }).first().click();
+  await expect(page).toHaveURL(/\/editor\/file_/);
+  const editorUrl = page.url();
+  const fileId = new URL(editorUrl).pathname.split("/").at(-1);
+  if (!fileId) throw new Error("The design URL did not contain a file ID");
+  await page.getByRole("button", { name: "Back to projects" }).click();
+  await expect(page).toHaveURL(/\/$/);
+
+  await page.evaluate((activeFileId) => {
+    const key = "figmaboy.workspace.v1";
+    const state = JSON.parse(localStorage.getItem(key) ?? "{}");
+    const activePage = state.pages.find((candidate: { fileId?: string }) => candidate.fileId === activeFileId);
+    if (!activePage) throw new Error("The design page was not found");
+    const rootIds: string[] = [];
+    const nodes: Record<string, unknown> = {};
+    for (let index = 0; index < 400; index += 1) {
+      const id = `cull-node-${index}`;
+      rootIds.push(id);
+      nodes[id] = {
+        id, type: "rectangle", name: `Cull node ${index}`,
+        x: 80, y: index * 180, width: 220, height: 120,
+        fill: { type: "solid", color: index % 2 ? "#f97316" : "#2563eb", opacity: 1 },
+      };
+    }
+    state.documents[activePage.id] = { schemaVersion: 1, rootIds, nodes, viewport: { x: 0, y: 0, zoom: 1 }, prototypeStartFrameId: null };
+    localStorage.setItem(key, JSON.stringify(state));
+  }, fileId);
+  await page.goto(editorUrl);
+
+  const canvas = page.locator("#design-canvas");
+  const origin = canvas.locator("g[data-node-id='cull-node-1']");
+  await expect(origin).toBeVisible();
+  const waitForTwoFrames = () => page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+
+  await canvas.dispatchEvent("wheel", { deltaY: 3_000, deltaX: 0, deltaMode: 0, clientX: 500, clientY: 400 });
+  await waitForTwoFrames();
+  const destination = canvas.locator("g[data-node-id='cull-node-17']");
+  expect(await destination.count()).toBe(1);
+  const canvasBounds = await canvas.boundingBox();
+  const destinationBounds = await destination.boundingBox();
+  if (!canvasBounds || !destinationBounds) throw new Error("The fast-pan destination was not rendered");
+  expect(destinationBounds.y).toBeGreaterThanOrEqual(canvasBounds.y);
+  expect(destinationBounds.y).toBeLessThan(canvasBounds.y + canvasBounds.height);
+  expect(await canvas.locator("g[data-node-id]").count()).toBeLessThan(80);
+
+  await canvas.dispatchEvent("wheel", { deltaY: -3_000, deltaX: 0, deltaMode: 0, clientX: 500, clientY: 400 });
+  await waitForTwoFrames();
+  expect(await origin.count()).toBe(1);
+  const originBounds = await origin.boundingBox();
+  if (!originBounds) throw new Error("The origin did not remount after reversing the fast pan");
+  expect(originBounds.y).toBeGreaterThanOrEqual(canvasBounds.y);
+  expect(originBounds.y).toBeLessThan(canvasBounds.y + canvasBounds.height);
+});
+
 test("creates, types, places the caret, and re-edits text", async ({ page }) => {
   await page.getByRole("button", { name: "New design" }).first().click();
   await showDesignInspector(page);

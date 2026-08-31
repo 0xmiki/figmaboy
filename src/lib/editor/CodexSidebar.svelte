@@ -2,7 +2,6 @@
   import { onMount, tick } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
-  import figmaboyTypes from "../../../mcp/types.ts?raw";
   import {
     Archive, Robot as Bot, Check, CaretDown as ChevronDown, WarningCircle as CircleAlert,
     Clock as Clock3, Copy, FileImage,
@@ -77,12 +76,6 @@
     inactivityMs: number;
     expiring: boolean;
   };
-
-  const evolveContractStart = figmaboyTypes.indexOf("export type NodeType");
-  const evolveContractEnd = figmaboyTypes.indexOf("export interface OperationsApplyParams");
-  const evolveNativeContract = evolveContractStart >= 0 && evolveContractEnd > evolveContractStart
-    ? figmaboyTypes.slice(evolveContractStart, evolveContractEnd)
-    : figmaboyTypes;
 
   let { workspaceId, pageId, fileName, visible, embedded = false, onAttentionChange, onClose, onEditorRpc }: {
     workspaceId: string;
@@ -632,17 +625,21 @@
   }
 
   async function startEvolveThread(role: "control" | "director" | "designer"): Promise<string> {
-    const noTools = role === "control" ? undefined : { mcp_servers: { figmaboy: { enabled: false } } };
+    const specialistConfig = role === "director"
+      ? { mcp_servers: { figmaboy: { enabled: false } } }
+      : role === "designer"
+        ? { mcp_servers: { figmaboy: { enabled: true, enabled_tools: ["types_get"] } } }
+        : undefined;
     const specialistInstructions = role === "director"
       ? "You are a visual design director. Judge how strongly the rendered frame satisfies the frozen user direction, retain visible successes, identify only material opportunities, and prefer the stronger image in comparisons. You have no tools and must return only the requested structured result."
-      : "You are an isolated native designer. Move the current accepted design toward the frozen user direction using only the supplied opportunities and successes. Preserve protected content and return only the requested structured operations. You have no tools.";
+      : "You are an isolated native designer. Before your first proposal, call the Figmaboy types_get tool and treat its TypeScript contract as authoritative. Move the current accepted design toward the frozen user direction using only the supplied opportunities and successes. Preserve protected content and return only the requested structured operations. types_get is your only available tool. Call it once per thread unless you need to recover missing contract details.";
     const params = approvalParams({
       cwd,
       model: selection.model,
       serviceTier: evolveFastTier(),
       serviceName: `figmaboy-evolve-${role}`,
       ephemeral: true,
-      ...(noTools ? { config: noTools } : {}),
+      ...(specialistConfig ? { config: specialistConfig } : {}),
       developerInstructions: role === "control"
         ? "This ephemeral thread exists only so Figmaboy can call its own MCP tools. Do not start a turn."
         : specialistInstructions,
@@ -886,7 +883,7 @@
   function designerCorrectionText(cause: unknown, previousText: string): string {
     const failure = errorMessage(cause).replace(/\s+/g, " ").trim().slice(0, 1_200);
     const rejected = previousText.trim().slice(0, 16_000);
-    return `Your previous proposal was rejected before visual review. Correct that same proposal instead of starting a different design direction. Preserve the director's requested outcome and all protected content. Return a complete replacement response in the required structured format. Do not repeat the invalid value. Every numeric property must be a finite JSON number. A layer-blur effect requires radius; a drop-shadow effect requires blur. patchJson and nodeJson must each contain exactly one valid JSON object.\n\nEXACT FIGMABOY VALIDATION ERROR\n${failure}\n\nREJECTED RESPONSE\n${rejected || "The previous turn failed before returning a complete response."}\n\nAUTHORITATIVE FIGMABOY NODE AND OPERATION CONTRACT\n${evolveNativeContract}`;
+    return `Your previous proposal was rejected before visual review. Correct that same proposal instead of starting a different design direction. Preserve the director's requested outcome and all protected content. Use the authoritative Figmaboy contract you fetched with types_get. Return a complete replacement response in the required structured format. Do not repeat the invalid value. patchJson and nodeJson must each contain exactly one valid JSON object.\n\nEXACT FIGMABOY VALIDATION ERROR\n${failure}\n\nREJECTED RESPONSE\n${rejected || "The previous turn failed before returning a complete response."}`;
   }
 
   async function runDirector(args: {
@@ -936,7 +933,7 @@
 
   async function runDesigner(args: { direction: string; frameId: string; context: JsonObject; image: string; assessment: EvolveAssessment; accepted: EvolveOperationState }): Promise<EvolveProposal> {
     const baseInput = [
-        textInput(`Act as the next fresh designer in an ongoing direction-seeking loop. Move the accepted frame materially closer to the frozen user direction. Address the supplied opportunities while preserving the listed successes. You may update native layers, create decorative or structural native layers inside the selected frame, and reorder complete sibling lists. Preserve every existing word, image asset, crop, locked layer, accepted layer, and the outer frame bounds. removeCreatedIds must be empty. patchJson and nodeJson must each contain one valid JSON object that follows the authoritative Figmaboy contract below. Every numeric field must be a finite JSON number. Layer blur uses radius; drop shadow uses blur. Return absolute property values for the current accepted frame, not relative deltas.\n\nAUTHORITATIVE FIGMABOY NODE AND OPERATION CONTRACT\n${evolveNativeContract}\n\nUser direction: ${args.direction}\nFrame ID: ${args.frameId}\nDirection criteria: ${JSON.stringify(args.assessment.criteria.map(({ id, requirement }) => ({ id, requirement })))}\nOpportunities: ${JSON.stringify(args.assessment.regions)}\nPreserve: ${JSON.stringify(args.assessment.successes)}\nCurrent frame layers: ${JSON.stringify(args.context)}`),
+        textInput(`Act as the next fresh designer in an ongoing direction-seeking loop. Fetch the authoritative native node and style contract with types_get before proposing changes. Move the accepted frame materially closer to the frozen user direction. Address the supplied opportunities while preserving the listed successes. You may update native layers, create decorative or structural native layers inside the selected frame, and reorder complete sibling lists. Preserve every existing word, image asset, crop, locked layer, accepted layer, and the outer frame bounds. removeCreatedIds must be empty. patchJson and nodeJson must each contain one valid JSON object that follows the fetched Figmaboy contract. Return absolute property values for the current accepted frame, not relative deltas.\n\nUser direction: ${args.direction}\nFrame ID: ${args.frameId}\nDirection criteria: ${JSON.stringify(args.assessment.criteria.map(({ id, requirement }) => ({ id, requirement })))}\nOpportunities: ${JSON.stringify(args.assessment.regions)}\nPreserve: ${JSON.stringify(args.assessment.successes)}\nCurrent frame layers: ${JSON.stringify(args.context)}`),
         imageInput(args.image),
       ];
     let input = baseInput;
