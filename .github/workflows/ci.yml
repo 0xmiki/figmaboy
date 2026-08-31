@@ -3,7 +3,25 @@ name: CI
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "website/**"
+      - "docs/**"
+      - "README.md"
+      - "CHANGELOG.md"
+      - ".github/workflows/pages.yml"
+      - "static/figmaboy-landing-page-asset.png"
+      - "static/gptimage-landing-page-asset.png"
+      - "static/figmaboy-screenshot.png"
   pull_request:
+    paths-ignore:
+      - "website/**"
+      - "docs/**"
+      - "README.md"
+      - "CHANGELOG.md"
+      - ".github/workflows/pages.yml"
+      - "static/figmaboy-landing-page-asset.png"
+      - "static/gptimage-landing-page-asset.png"
+      - "static/figmaboy-screenshot.png"
   workflow_dispatch:
 
 permissions:
