@@ -3,6 +3,18 @@ title: Release notes
 description: What changed in the current Figmaboy release.
 ---
 
+## Figmaboy 0.5.1
+
+Released September 1, 2026.
+
+### More reliable evolve passes
+
+Evolve designers read Figmaboy's complete native type contract before proposing a change. Their only Figmaboy tool is the read-only contract lookup. If a proposal fails parsing or canvas validation, Figmaboy sends the exact error back to the same designer for correction.
+
+### Canvas rendering fix
+
+Large documents keep the previous render window mounted until layers in the new viewport are ready. Fast panning and scrolling no longer expose a blank canvas while off-screen layers remount.
+
 ## Figmaboy 0.5.0
 
 Released August 31, 2026.

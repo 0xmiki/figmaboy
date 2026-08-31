@@ -1,6 +1,6 @@
 {
   "name": "figmaboy",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "A local-first desktop interface design tool",
   "type": "module",
   "scripts": {

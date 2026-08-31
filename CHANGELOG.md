@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.1, 2026-09-01
+
+### Changed
+
+- Evolve designers now read the complete native TypeScript contract through a read-only `types_get` tool before proposing changes. No canvas-writing MCP tools are available to these agents.
+- Invalid evolve proposals return the exact parser or canvas validation error to the same designer for correction instead of discarding the pass or repeating it with a new agent.
+
+### Fixed
+
+- Fast canvas panning and scrolling retain the previous render window until destination layers mount, preventing large documents from briefly turning blank.
+- Evolve rejects malformed JSON, non-finite numeric properties, and invalid effect fields before visual comparison, then gives the designer enough information to repair them.
+
 ## 0.5.0, 2026-08-31
 
 ### Added

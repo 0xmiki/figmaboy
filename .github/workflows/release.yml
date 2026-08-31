@@ -89,13 +89,9 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: Figmaboy ${{ github.ref_name }}
           releaseBody: |
-            Figmaboy 0.5 adds `/evolve`, a design loop that gives an independent director and designer a selected frame and a visual direction. Accepted candidates appear on the canvas as the loop runs, the sidebar explains each pass, and one undo returns to the starting design.
+            Figmaboy 0.5.1 makes `/evolve` proposals far more reliable. Designer agents fetch the complete native type contract through one read-only tool, and Figmaboy returns exact parser or canvas errors to the same designer for correction.
 
-            The Codex composer now supports inline skills, Markdown, pasted or dropped image references, prompt copying, clearer stop and approval controls, and saved `/evolve` conversations. Design and Codex share the right sidebar, so switching between inspection and chat no longer moves the canvas between competing panels.
-
-            Frames can open in a focused fullscreen preview from the canvas or Layers menu. Editor navigation now uses a clear Back control, page transitions stay quiet, and fixes cover image pasting in Tauri, text editing stability, page startup, home scrolling, and sidebar resizing.
-
-            The built-in Codex tab starts Figmaboy's bundled design tools automatically. It does not ask users to install or register an MCP server. Standalone MCP binaries remain available only for people who intentionally control Figmaboy from another Codex client.
+            Large canvases now retain the previous render window until layers in the destination viewport mount. This prevents blank regions during fast panning and scrolling without disabling canvas culling.
 
             Download the installer for your platform below. This release also includes standalone `figmaboy-mcp` binaries and a `SHA256SUMS` file.
 
