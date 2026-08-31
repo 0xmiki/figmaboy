@@ -1,7 +1,7 @@
 <script lang="ts">
   import {
     CaretDown as ChevronDown, WarningCircle as CircleAlert, FileCode as FileCode2,
-    CircleNotch as LoaderCircle, TerminalWindow as TerminalSquare, Wrench,
+    CircleNotch as LoaderCircle, TerminalWindow as TerminalSquare, UsersThree, Wrench,
   } from "phosphor-svelte";
   import { isToolItem, itemStatus, itemText, object, titleCase, type CodexItem, type ToolGroup } from "$lib/codex-protocol";
   let { group, label, expanded = false, onExpandedChange }: { group: ToolGroup; label?: string; expanded?: boolean; onExpandedChange?: (expanded: boolean) => void } = $props();
@@ -11,6 +11,13 @@
     if (item.type === "agentMessage") return "Agent update";
     if (item.type === "reasoning") return "Reasoning";
     if (item.type === "plan") return "Plan";
+    if (item.type === "collabAgentToolCall") {
+      const prompt = String(item.prompt ?? "");
+      if (item.tool === "spawnAgent") return /critic/i.test(prompt) ? "Started visual critic" : /fixer/i.test(prompt) ? "Started design fixer" : "Started specialist agent";
+      if (item.tool === "wait") return "Waited for specialist agents";
+      if (item.tool === "closeAgent") return "Closed specialist agent";
+      return titleCase(String(item.tool ?? "Agent coordination"));
+    }
     if (item.type === "mcpToolCall") {
       const labels: Record<string, string> = {
         document_get: "Read document",
@@ -18,6 +25,9 @@
         design_capabilities: "Read design capabilities",
         types_get: "Read design contract",
         operations_apply: "Applied layer changes",
+        operations_preview: "Previewed evolution candidate",
+        operations_preview_commit: "Kept evolution candidate",
+        operations_preview_discard: "Discarded evolution candidate",
         frame_screenshot: "Captured frame preview",
         image_place: "Placed image",
         nodes_center: "Centered layers",
@@ -35,6 +45,7 @@
   }
 
   function icon(item: CodexItem) {
+    if (item.type === "collabAgentToolCall") return UsersThree;
     if (item.type === "commandExecution") return TerminalSquare;
     if (item.type === "fileChange") return FileCode2;
     return Wrench;

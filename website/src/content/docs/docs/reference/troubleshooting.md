@@ -1,52 +1,15 @@
 ---
 title: Troubleshooting
-description: Diagnose MCP registration, offline context, live editor access, Linux libraries, macOS security, and Windows warnings.
+description: Diagnose the built-in Codex tools, saved context, live editor access, and platform problems.
 ---
 
 ## Codex does not show Figmaboy tools
 
-Ask Codex to repair the connection:
+The built-in Codex tab receives Figmaboy's tools automatically. It does not depend on global MCP registration. Restart the Codex connection or reopen the desktop app if a tool is missing.
 
-```text
-Open https://raw.githubusercontent.com/0xmiki/figmaboy/main/docs/INSTALL_FIGMABOY_MCP.md and follow it to install or repair the Figmaboy MCP for this computer. Keep any working custom registration.
-```
+If the sidebar reports that the bundled MCP is missing, reinstall the matching Figmaboy desktop build. The application and MCP must come from the same release.
 
-If Figmaboy is open, run `/install-mcp` in its chat. Start a new external Codex session after setup.
-
-<details>
-<summary>Check or repair the registration manually</summary>
-
-Check the registration and the exact executable Codex will launch:
-
-```bash
-codex mcp get figmaboy
-```
-
-If the configured path points to an old repository or no longer exists:
-
-```bash
-codex mcp remove figmaboy
-codex mcp add figmaboy -- "/absolute/path/to/figmaboy-mcp"
-```
-
-Start a new Codex session after changing MCP configuration.
-
-</details>
-
-## `figmaboy-mcp` is not found
-
-Ask Codex to follow the installation prompt above. It will look for the bundled executable first and download a checksum-verified release binary only when needed.
-
-<details>
-<summary>Check the Linux path manually</summary>
-
-```bash
-command -v figmaboy-mcp
-```
-
-AppImage users need the standalone release binary at a stable path. macOS DMG and Windows installers bundle the executable with the app. See [Manual MCP installation](../../getting-started/install/#manual-mcp-installation) for platform paths.
-
-</details>
+External Codex clients use a separate installation. See [Use Figmaboy from other Codex clients](../../getting-started/connect-codex/) only if the problem occurs outside Figmaboy.
 
 ## No saved workspace was found
 

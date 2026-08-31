@@ -200,7 +200,10 @@ export class EditorSession {
     this.persistencePaused = false;
     this.externalPreviewActive = false;
     if (JSON.stringify(preview.before) === JSON.stringify(after)) return;
-    this.undoStack.push({ before: preview.before, after, label: preview.label, source: preview.source });
+    const previous = this.undoStack.at(-1);
+    const coalesce = preview.source.kind === "codex" && preview.source.id.startsWith("evolve:") && previous?.source?.kind === "codex" && previous.source.id === preview.source.id;
+    if (coalesce && previous) this.undoStack[this.undoStack.length - 1] = { ...previous, after, label: preview.label };
+    else this.undoStack.push({ before: preview.before, after, label: preview.label, source: preview.source });
     if (this.undoStack.length > 100) this.undoStack.shift();
     this.redoStack = [];
     this.changed();
@@ -216,6 +219,7 @@ export class EditorSession {
   }
 
   get hasExternalPreview(): boolean { return this.externalPreview !== null; }
+  get externalPreviewSource(): HistoryEntry["source"] | null { return this.externalPreview?.source ?? null; }
 
   mutate(mutator: (document: PageDocument) => void, record = true): void {
     if (record && this.gestureBefore) this.cancelGesture();
@@ -713,10 +717,12 @@ export class EditorSession {
   }
 
   setPage(page: PageMeta, document: PageDocument): void {
+    if (this.externalPreview) this.cancelExternalPreview();
     if (this.gestureBefore) this.gestureVersion += 1;
     this.gestureBefore = null;
     this.editingTextId = null;
     this.persistencePaused = false;
+    this.externalPreviewActive = false;
     this.guides = { x: null, y: null };
     this.page = page;
     const sanitized = sanitizeDocument(document);

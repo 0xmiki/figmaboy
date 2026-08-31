@@ -1,6 +1,6 @@
 ---
 title: Files and paths
-description: Locate the Figmaboy workspace, bridge discovery file, installed MCP executable, and development sidecar.
+description: Locate the Figmaboy workspace, bridge discovery file, and development sidecar.
 ---
 
 ## Application data
@@ -12,31 +12,6 @@ description: Locate the Figmaboy workspace, bridge discovery file, installed MCP
 | Windows | `%LOCALAPPDATA%\com.miki.figmaboy\` |
 
 The workspace database is `figmaboy.sqlite3`. The live bridge discovery file is `editor-bridge.json`.
-
-## Installed MCP executable
-
-Most users should let [Codex connect Figmaboy](../../getting-started/connect-codex/). Use this reference when checking a registration by hand.
-
-Linux package installs normally expose the executable on `PATH`:
-
-```bash
-command -v figmaboy-mcp
-```
-
-Installer bundles and standalone installs use these stable paths:
-
-| Installation | MCP path |
-| --- | --- |
-| Linux `.deb` or `.rpm` | `/usr/bin/figmaboy-mcp` |
-| Linux AppImage / standalone | `~/.local/bin/figmaboy-mcp` |
-| Native Nix package | The stable profile path returned by `command -v figmaboy-mcp` |
-| macOS DMG in Applications | `/Applications/Figmaboy.app/Contents/MacOS/figmaboy-mcp` |
-| macOS standalone fallback | `~/.local/bin/figmaboy-mcp` |
-| Windows NSIS (typical per-user install) | `%LOCALAPPDATA%\Figmaboy\figmaboy-mcp.exe` |
-| Windows MSI (typical system install) | `%ProgramFiles%\Figmaboy\figmaboy-mcp.exe` |
-| Windows standalone fallback | `%LOCALAPPDATA%\Figmaboy\bin\figmaboy-mcp.exe` |
-
-The path saved by `codex mcp add` must keep pointing to the executable. Moving or deleting it breaks future Codex sessions until you replace the entry.
 
 ## Repository development paths
 
@@ -50,15 +25,11 @@ When building from source:
 | Staged Tauri sidecars | `src-tauri/binaries/figmaboy-mcp-<target-triple>` |
 
 <details>
-<summary>Build and register a development server</summary>
+<summary>Build the development server</summary>
 
 ```bash
 nix-shell --run 'cargo build --locked --release --manifest-path src-tauri/mcp/Cargo.toml'
-codex mcp remove figmaboy
-codex mcp add figmaboy -- "$(pwd)/src-tauri/target/release/figmaboy-mcp"
 ```
-
-Start a new Codex session after switching between installed and repository binaries.
 
 </details>
 

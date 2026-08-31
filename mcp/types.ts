@@ -123,6 +123,15 @@ export interface OperationsApplyParams {
   operations: EditOperation[];
 }
 
+export interface OperationsPreviewParams extends OperationsApplyParams {
+  /** Stable ID for one evolve run, used to coalesce accepted checkpoints into one undo entry. */
+  runId: string;
+  /** The single frame selected when /evolve started. */
+  frameId: Id;
+  /** Short undo label. Defaults to "Evolve frame". */
+  label?: string;
+}
+
 /**
  * Figma-compatible centering behavior:
  * - auto + one node: center it in its parent frame/group.
@@ -220,6 +229,9 @@ export interface FigmaBoyTools {
   nodes_get(params?: NodesGetParams): Promise<ToolResult>;
   geometry_get(params?: { ids?: Id[] }): Promise<ToolResult>;
   operations_apply(params: OperationsApplyParams): Promise<ToolResult>;
+  operations_preview(params: OperationsPreviewParams): Promise<ToolResult>;
+  operations_preview_commit(params?: Record<string, never>): Promise<ToolResult>;
+  operations_preview_discard(params?: Record<string, never>): Promise<ToolResult>;
   nodes_center(params: NodesCenterParams): Promise<ToolResult>;
   nodes_set_border_radius(params: NodesSetBorderRadiusParams): Promise<ToolResult>;
   image_place(params: ImagePlaceParams): Promise<ToolResult>;

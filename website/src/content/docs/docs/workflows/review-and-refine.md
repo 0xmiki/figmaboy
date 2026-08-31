@@ -38,3 +38,7 @@ If you edit manually while Codex is working, change-token validation may reject 
 ## Save the accepted state
 
 Ask Codex to call `document_save` after the last review pass. The response includes the database revision and save state, giving you a clear completion boundary.
+
+## Choose one review or an evolution loop
+
+Use `/review` for one inspection and correction pass. Use [`/evolve [direction]`](./evolve/) when one selected frame needs repeated visual exploration toward a named direction.

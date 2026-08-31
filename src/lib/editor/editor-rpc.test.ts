@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { emptyDocument } from "$lib/domain";
 import type { OpenedFile } from "$lib/domain";
 import { EditorSession } from "$lib/editor/editor.svelte";
-import { applyExternalOperations, centerNodes, placeImageNode, setBorderRadius } from "$lib/editor/editor-rpc";
+import { applyExternalOperations, centerNodes, placeImageNode, setBorderRadius, validateEvolutionOperations } from "$lib/editor/editor-rpc";
 
 function metadata() {
   const timestamp = new Date(0).toISOString();
@@ -38,6 +38,24 @@ describe("editor RPC operations", () => {
     const editor = session();
     expect(() => applyExternalOperations(editor, { expectedChangeToken: 4, operations: [{ kind: "delete", ids: [] }] })).toThrow("STALE_DOCUMENT");
     expect(editor.document.rootIds).toEqual([]);
+  });
+
+  it("keeps evolution operations inside one selected frame and preserves content", () => {
+    const editor = session();
+    applyExternalOperations(editor, { operations: [
+      { kind: "create", node: { id: "screen", type: "frame", width: 1440, height: 810 } },
+      { kind: "create", parentId: "screen", node: { id: "headline", type: "text", text: "Keep this", fontSize: 64 } },
+      { kind: "create", node: { id: "outside", type: "rectangle" } },
+    ] });
+    editor.setSelection(["screen"]);
+    expect(() => validateEvolutionOperations(editor, "screen", [
+      { kind: "update", id: "headline", patch: { fontSize: 72, x: 80 } },
+      { kind: "create", parentId: "screen", node: { id: "accent", type: "rectangle" } },
+    ])).not.toThrow();
+    expect(() => validateEvolutionOperations(editor, "screen", [{ kind: "update", id: "headline", patch: { text: "Rewrite this" } }])).toThrow("preserves existing content");
+    expect(() => validateEvolutionOperations(editor, "screen", [{ kind: "update", id: "outside", patch: { x: 20 } }])).toThrow("selected frame");
+    expect(() => validateEvolutionOperations(editor, "screen", [{ kind: "delete", ids: ["headline"] }])).toThrow("cannot delete");
+    expect(() => validateEvolutionOperations(editor, "screen", [{ kind: "update", id: "screen", patch: { width: 1200 } }])).toThrow("cannot move or resize");
   });
 
   it("accepts rich native styling inside a semantic component tree", () => {

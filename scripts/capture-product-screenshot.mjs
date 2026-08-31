@@ -22,7 +22,6 @@ const installTauriMock = () => {
         return { lastThreadId: "visual-thread", lastThreadIdByPage: { page_visual: "visual-thread" } };
       }
       if (command === "codex_connect") return { workspaceId: "file_visual", cwd: "/tmp/figmaboy-visual", reused: false };
-      if (command === "codex_mcp_status") return { installed: true, healthy: true, matchesBundled: true, command: "/usr/bin/figmaboy-mcp", bundledPath: "/usr/bin/figmaboy-mcp" };
       if (command !== "codex_request") return null;
       if (args.method === "account/read") return { account: { type: "chatgpt" } };
       if (args.method === "model/list") {

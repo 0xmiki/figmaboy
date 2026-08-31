@@ -124,17 +124,22 @@ export type ComposerCommand = {
   label: string;
   description: string;
   prompt?: string;
-  action?: "new" | "review" | "save" | "compact" | "undo" | "install-mcp";
+  action?: "new" | "review" | "evolve" | "save" | "compact" | "undo";
 };
 
 export const COMPOSER_COMMANDS: ComposerCommand[] = [
   { id: "/new", label: "/new", description: "Start a new chat", action: "new" },
   { id: "/review", label: "/review", description: "Review the current design", action: "review" },
+  { id: "/evolve", label: "/evolve", description: "Loop a director and designer toward your direction", action: "evolve" },
   { id: "/save", label: "/save", description: "Save the open design", action: "save" },
   { id: "/compact", label: "/compact", description: "Compact this chat context", action: "compact" },
   { id: "/undo", label: "/undo", description: "Undo the last Figmaboy change", action: "undo" },
-  { id: "/install-mcp", label: "/install-mcp", description: "Connect external Codex clients", action: "install-mcp" },
 ];
+
+export function evolveDirection(value: string): string | null {
+  const match = /^\/evolve(?:\s+([\s\S]*))?$/i.exec(value.trim());
+  return match ? (match[1] ?? "").trim() : null;
+}
 
 export const CONTEXT_MENTIONS = [
   { id: "@selection", label: "@selection", description: "The selected layers" },
@@ -143,16 +148,19 @@ export const CONTEXT_MENTIONS = [
   { id: "@design", label: "@design", description: "The complete open design" },
 ];
 
-export function composerTrigger(value: string): { kind: "command" | "mention" | "skill"; query: string; start: number } | null {
-  const match = /(^|\s)([/@$])([^\s]*)$/.exec(value);
+export function composerTrigger(value: string, caret = value.length): { kind: "command" | "mention" | "skill"; query: string; start: number; end: number } | null {
+  const beforeCaret = value.slice(0, Math.max(0, Math.min(value.length, caret)));
+  const match = /(^|\s)([/@$])([^\s]*)$/.exec(beforeCaret);
   if (!match) return null;
   return {
     kind: match[2] === "/" ? "command" : match[2] === "@" ? "mention" : "skill",
     query: match[3]?.toLowerCase() ?? "",
     start: match.index + match[1]!.length,
+    end: beforeCaret.length,
   };
 }
 
-export function replaceComposerTrigger(value: string, start: number, replacement: string): string {
-  return `${value.slice(0, start)}${replacement} `;
+export function replaceComposerTrigger(value: string, start: number, replacement: string, end = value.length): string {
+  const suffix = value.slice(end);
+  return `${value.slice(0, start)}${replacement}${suffix.startsWith(" ") ? "" : " "}${suffix}`;
 }

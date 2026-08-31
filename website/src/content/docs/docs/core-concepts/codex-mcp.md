@@ -47,7 +47,7 @@ The editor applies each mutation. It uses the same validation, history, renderin
 
 ## Tool discovery
 
-The integrated sidebar tells each new thread which Figmaboy file is open. External Codex clients need the MCP registered in Codex configuration. The [Codex-led setup](../../getting-started/connect-codex/) handles that registration.
+The integrated sidebar tells each new thread which Figmaboy file is open. It supplies the bundled MCP without changing global Codex configuration. Only [external Codex clients](../../getting-started/connect-codex/) need a separate MCP installation.
 
 The model picker comes from app-server's paginated `model/list` catalog. Figmaboy validates reasoning and service-tier choices against the selected model, then uses the effective values returned by `thread/start` and `thread/resume`. This prevents the composer from displaying a stale model configuration after switching chats.
 

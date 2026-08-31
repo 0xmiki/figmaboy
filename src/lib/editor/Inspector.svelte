@@ -10,9 +10,9 @@
   import type { EditorSession } from "$lib/editor/editor.svelte";
   import { centerNodes } from "$lib/editor/editor-rpc";
 
-  let { session, onCreatePreset, onPresent, onExport }: {
+  let { session, onCreatePreset, onPresent, onExport, embedded = false }: {
     session: EditorSession; onCreatePreset: (name: string, width: number, height: number) => void;
-    onPresent: () => void; onExport: (format: "svg" | "png", scale?: number) => void;
+    onPresent: () => void; onExport: (format: "svg" | "png", scale?: number) => void; embedded?: boolean;
   } = $props();
   let openSections = $state(new Set(["position", "appearance", "typography", "fill", "stroke", "prototype"]));
   const selected = $derived(session.selectedNodes);
@@ -98,7 +98,7 @@
   }
 </script>
 
-<aside class="inspector" data-editor-inspector>
+<aside class="inspector" class:embedded data-editor-inspector>
   <header class="top-controls">
     <div class="avatar">M</div><button class="play" title="Present prototype" onclick={onPresent}><Play size={16} weight="fill" /></button><button class="export" onclick={() => onExport("png", 1)}>Export</button>
   </header>
@@ -212,8 +212,8 @@
 </aside>
 
 <style>
-  .inspector { position: absolute; z-index: 30; inset: 0 0 0 auto; width: var(--right-panel-width,280px); background: #292929; border-left: 1px solid #444; display: flex; flex-direction: column; }.top-controls { height: 42px; border-bottom: 1px solid #3d3d3d; display: flex; align-items: center; padding: 0 7px 0 11px; gap: 8px; }.avatar { width: 24px; height: 24px; border-radius: 50%; background: #64748b; display: grid; place-items: center; font-size: var(--text-control); }.top-controls .play { margin-left: auto; background: transparent; border: 0; color: #eee; width: 31px; height: 29px; display: grid; place-items: center; border-radius: 5px; cursor: pointer; }.top-controls .play:hover { background: #3b3b3b; }.top-controls .export { height: 27px; border: 0; border-radius: 5px; background: #0d99ff; color: white; padding: 0 10px; font-size: var(--text-small); font-weight: var(--weight-semibold); cursor: pointer; }
-  .tabs { height: 36px; border-bottom: 1px solid #3d3d3d; display: flex; align-items: center; padding: 0 7px; gap: 4px; }.tabs button { border: 0; border-radius: 4px; background: transparent; color: #999; height: 23px; padding: 0 8px; font-size: var(--text-small); cursor: pointer; }.tabs button.active { background: #383838; color: white; }.tabs span { margin-left: auto; color: #ccc; font-size: var(--text-small); padding-right: 4px; }
+  .inspector { position: absolute; z-index: 30; inset: 0 0 0 auto; width: var(--right-panel-width,280px); background: #292929; border-left: 1px solid #444; display: flex; flex-direction: column; }.inspector.embedded { position: relative; z-index: auto; inset: auto; width: 100%; height: 100%; border-left: 0; }.top-controls { height: 42px; border-bottom: 1px solid #3d3d3d; display: flex; align-items: center; padding: 0 7px 0 11px; gap: 8px; }.avatar { width: 24px; height: 24px; border-radius: 50%; background: #64748b; display: grid; place-items: center; font-size: var(--text-control); }.top-controls .play { margin-left: auto; background: transparent; border: 0; color: #eee; width: 31px; height: 29px; display: grid; place-items: center; border-radius: 5px; cursor: pointer; }.top-controls .play:hover { background: #3b3b3b; }.top-controls .export { height: 27px; border: 0; border-radius: 5px; background: #0d99ff; color: white; padding: 0 10px; font-size: var(--text-small); font-weight: var(--weight-semibold); cursor: pointer; }
+  .tabs { height: 36px; border-bottom: 1px solid #3d3d3d; display: flex; align-items: center; padding: 0 7px; gap: 4px; }.inspector.embedded .tabs { display: none; }.tabs button { border: 0; border-radius: 4px; background: transparent; color: #999; height: 23px; padding: 0 8px; font-size: var(--text-small); cursor: pointer; }.tabs button.active { background: #383838; color: white; }.tabs span { margin-left: auto; color: #ccc; font-size: var(--text-small); padding-right: 4px; }
   .inspector-body { flex: 1; min-height: 0; overflow: auto; }.selection-title { min-height: 48px; border-bottom: 1px solid #3d3d3d; display: flex; align-items: center; padding: 0 14px; gap: 8px; }.selection-title strong { font-size: var(--text-control); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.selection-title span { color: #777; font-size: var(--text-caption); text-transform: capitalize; }
   section { border-bottom: 1px solid #3d3d3d; }.section-head { width: 100%; min-height: 40px; padding: 0 13px; border: 0; background: transparent; color: #eee; display: flex; justify-content: space-between; align-items: center; cursor: pointer; font-size: var(--text-control); font-weight: var(--weight-semibold); }.section-head:hover { background: #2d2d2d; }.section-content { padding: 0 14px 13px; display: grid; gap: 7px; }
   .align-row, .segmented { display: flex; height: 25px; border-radius: 5px; overflow: hidden; background: #363636; }.align-row button, .segmented button { flex: 1; border: 0; border-right: 1px solid #424242; background: transparent; color: #ccc; display: grid; place-items: center; cursor: pointer; font-size: var(--text-caption); }.align-row button:hover:not(:disabled), .segmented button:hover, .segmented button.active { background: #494949; color: white; }.align-row button:disabled { opacity: .3; cursor: default; }.center-row { display: grid; grid-template-columns: 1fr repeat(3, auto); align-items: center; gap: 4px; color: #999; font-size: var(--text-caption); }.center-row button { height: 24px; min-width: 30px; padding: 0 7px; border: 1px solid #444; border-radius: 4px; background: #363636; color: #ddd; font-size: var(--text-caption); cursor: pointer; }.center-row button:hover { border-color: #0d99ff; color: white; }

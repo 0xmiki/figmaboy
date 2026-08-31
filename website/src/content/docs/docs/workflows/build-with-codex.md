@@ -1,6 +1,6 @@
 ---
-title: Build with Codex
-description: Turn a product brief into a native Figmaboy design, then inspect and refine the result.
+title: Chat beside the canvas
+description: Build, inspect, and refine native Figmaboy layers from the Codex tab.
 ---
 
 Build the structure first. Then inspect a screenshot and fix the problems you can see. Codex produces better edits when each pass has a clear scope.
@@ -18,7 +18,7 @@ This distinguishes a Figmaboy design task from a request to create or edit code 
 ## Before the first prompt
 
 1. Open the target design and page.
-2. Open the Codex sidebar from the bottom toolbar.
+2. Select **Codex** in the shared right sidebar.
 3. Decide the screen size, content, visual direction, and important states.
 4. Preserve any existing layers that should remain untouched by saying so explicitly.
 
@@ -64,3 +64,15 @@ Before accepting the result, confirm that Codex:
 - Reviewed a complete screenshot.
 - Saved the document.
 - Left no accidental off-canvas or clipped nodes.
+
+## Chat commands
+
+| Command | Use it for |
+| --- | --- |
+| `/review` | Inspect the current design and fix the most important visible issues once. |
+| `/evolve [direction]` | Run repeated design passes on one selected frame. |
+| `/save` | Save the current page immediately. |
+| `/undo` | Undo the latest Figmaboy change. |
+| `/compact` | Reduce a long chat's context while keeping the thread. |
+
+Use [Evolve a frame](./evolve/) when you want a direction-seeking loop instead of one scoped refinement.

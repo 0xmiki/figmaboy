@@ -1194,6 +1194,54 @@ fn copy_image_to_clipboard(_data_base64: String, _filename: String) -> CommandRe
     Err("Native image clipboard support is currently available on Linux".into())
 }
 
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+enum NativeClipboardContent {
+    Image {
+        #[serde(rename = "dataUrl")]
+        data_url: String,
+        name: String,
+    },
+    Text {
+        text: String,
+    },
+    Empty,
+}
+
+#[cfg(target_os = "linux")]
+#[tauri::command]
+fn codex_clipboard_read() -> CommandResult<NativeClipboardContent> {
+    const MAX_ATTACHMENT_BYTES: usize = 20 * 1024 * 1024;
+    let clipboard = gtk::Clipboard::get(&gtk::gdk::SELECTION_CLIPBOARD);
+    if clipboard.wait_is_image_available() {
+        let pixbuf = clipboard
+            .wait_for_image()
+            .ok_or_else(|| "The clipboard image is no longer available".to_string())?;
+        let png = pixbuf
+            .save_to_bufferv("png", &[])
+            .map_err(|error| format!("Could not read the clipboard image: {error}"))?;
+        if png.len() > MAX_ATTACHMENT_BYTES {
+            return Err("The clipboard image is larger than 20 MB".into());
+        }
+        return Ok(NativeClipboardContent::Image {
+            data_url: format!("data:image/png;base64,{}", BASE64.encode(png)),
+            name: format!("pasted-image-{}.png", Uuid::new_v4().simple()),
+        });
+    }
+    Ok(match clipboard.wait_for_text() {
+        Some(text) => NativeClipboardContent::Text {
+            text: text.to_string(),
+        },
+        None => NativeClipboardContent::Empty,
+    })
+}
+
+#[cfg(not(target_os = "linux"))]
+#[tauri::command]
+fn codex_clipboard_read() -> CommandResult<NativeClipboardContent> {
+    Ok(NativeClipboardContent::Empty)
+}
+
 #[tauri::command]
 fn read_asset(id: String, state: State<'_, AppState>) -> CommandResult<String> {
     let connection = database(&state)?;
@@ -2015,14 +2063,13 @@ pub fn run() {
             extension_remove,
             extension_import,
             codex::codex_connect,
-            codex::codex_mcp_status,
-            codex::codex_mcp_install,
             codex::codex_request,
             codex::codex_respond,
             codex::codex_disconnect,
             codex::codex_ui_state_read,
             codex::codex_ui_state_write,
             codex::codex_attachment_save,
+            codex_clipboard_read,
             editor_bridge::editor_bridge_complete,
         ])
         .run(tauri::generate_context!())
@@ -2032,6 +2079,18 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_clipboard_image_uses_camel_case_data_url() {
+        let value = serde_json::to_value(NativeClipboardContent::Image {
+            data_url: "data:image/png;base64,test".into(),
+            name: "paste.png".into(),
+        })
+        .expect("clipboard content should serialize");
+        assert_eq!(value["kind"], "image");
+        assert_eq!(value["dataUrl"], "data:image/png;base64,test");
+        assert!(value.get("data_url").is_none());
+    }
 
     #[test]
     fn new_document_is_empty() {

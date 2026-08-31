@@ -10,7 +10,7 @@ Draw and style native layers by hand, or ask Codex to work on the open document.
 [![Latest release](https://img.shields.io/github/v/release/0xmiki/figmaboy)](https://github.com/0xmiki/figmaboy/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-![Figmaboy showing Codex building and reviewing the editable Figmaboy landing page and documentation](docs/assets/figmaboy-codex-workflow.png)
+![Figmaboy showing one complete editable radio interface with its native layers and Codex conversation](docs/assets/figmaboy-codex-workflow.png)
 
 ## Download
 
@@ -19,37 +19,23 @@ Choose an installer on the [Figmaboy download page](https://0xmiki.github.io/fig
 - Linux: AppImage, Debian package, and RPM package
 - macOS: DMG builds for Apple Silicon and Intel
 - Windows: NSIS and MSI installers
-- MCP: standalone `figmaboy-mcp` binaries for every release target
-
-Each release includes `SHA256SUMS`. Linux packages install `figmaboy` and `figmaboy-mcp`. AppImage users can get the standalone MCP binary from the same release.
+Each release includes `SHA256SUMS`. Every desktop build includes the matching Figmaboy design tools used by the built-in Codex tab.
 
 macOS builds are ad hoc signed but not notarized. The first launch may require approval in **System Settings → Privacy & Security**. Windows builds are not code-signed and may show a SmartScreen warning.
 
-## Let Codex install the MCP
+## Start with Codex
 
-The chat inside Figmaboy already loads the bundled MCP. There is nothing to register for that sidebar.
+Install the Codex CLI and sign in once. Open a design, select **Codex** in the right sidebar, and describe the screen or change you want.
 
-To use Figmaboy from Codex CLI, the IDE extension, or the ChatGPT desktop app, paste this into Codex:
+Figmaboy supplies its bundled MCP to the built-in chat automatically. Open the Codex tab and start working. There is no MCP setup prompt, registration step, or terminal command.
 
-```text
-Open https://raw.githubusercontent.com/0xmiki/figmaboy/main/docs/INSTALL_FIGMABOY_MCP.md and follow it to install or repair the Figmaboy MCP for this computer. Verify the checksum before running a downloaded binary. Keep any working custom registration.
-```
-
-If Figmaboy is open, type `/install-mcp` in its chat instead. Both paths check the existing configuration before changing it.
-
-[Read the short setup guide](https://0xmiki.github.io/figmaboy/docs/getting-started/connect-codex/)
+[Create your first design](https://0xmiki.github.io/figmaboy/docs/getting-started/quickstart/)
 
 ## Projects and designs
 
 The local workspace holds standalone designs and projects. Choose **New project** on the home toolbar, open it, then choose **New design** to add a file. The home screen shows both kinds of work. A project view shows only its files.
 
 Existing standalone designs remain in **Drafts** and do not need to be migrated into a project.
-
-## Extensions
-
-Ask Codex to turn a repeatable canvas workflow into a reusable tool, or open Tools from the left rail and import one manually. Every generated or imported extension starts as a trial. Test its controls, then keep or discard it. Kept versions can be disabled or restored from the Manage tab.
-
-Phase 1 extensions use declarative JSON. Figmaboy renders their controls and runs canvas changes through the same validated, undoable transaction path as Codex. See the [extension format](docs/extensions.md) and the [selection tools example](examples/selection-tools.figmaboy-extension).
 
 ## Codex design MCP
 
@@ -114,41 +100,19 @@ Set `FIGMABOY_DB_PATH` to override the saved workspace database path, primarily 
 
 ### Use the integrated Codex sidebar
 
-Install the Codex CLI and sign in once. Open a design, then select the chat button in the bottom toolbar. Figmaboy starts the documented `codex app-server` protocol. It does not embed or parse the terminal interface.
+Install the Codex CLI and sign in once. Open a design, then select **Codex** in the shared right sidebar. Figmaboy starts the documented `codex app-server` protocol. It does not embed or parse the terminal interface.
 
 Codex stores chat history in a separate local working directory for each design. The sidebar includes model and reasoning controls, saved drafts, image attachments, steering, approvals, context usage, pinned chats, and ChatGPT sign-in.
 
-The composer recognizes `@selection`, `@current-frame`, `@page`, and `@design`. Type `$` to invoke an installed Codex skill or `/` for Figmaboy chat actions such as `/review`, `/save`, `/compact`, `/undo`, and `/install-mcp`.
+The composer recognizes `@selection`, `@current-frame`, `@page`, and `@design`. Type `$` to invoke an installed Codex skill or `/` for Figmaboy chat actions such as `/review`, `/evolve`, `/save`, `/compact`, and `/undo`.
 
-### Use the MCP from external Codex clients
+Select one frame and run `/evolve [direction]` when you want repeated design passes. Accepted candidates stay on the canvas, rejected candidates restore the current best, and one undo returns to the design from before the run.
 
-The integrated sidebar needs no global MCP registration. For other Codex clients, use the setup prompt near the top of this README or run this inside Figmaboy:
+### Use Figmaboy from another Codex client
 
-```text
-/install-mcp
-```
+Most people can ignore this. The built-in Codex tab already has every Figmaboy tool it needs.
 
-After registration, begin a new Codex session. Saved-context tools work whether Figmaboy is open or closed. Live editor and mutation tools require an open design and report a clear error when the app is unavailable.
-
-<details>
-<summary>Manual MCP registration</summary>
-
-Use a stable absolute path. Do not register a temporary path or an AppImage mount.
-
-```console
-codex mcp get figmaboy --json
-codex mcp add figmaboy -- /absolute/path/to/figmaboy-mcp
-```
-
-If the saved entry points to a missing file, remove it before adding the new one:
-
-```console
-codex mcp remove figmaboy
-```
-
-See [Install and connect](https://0xmiki.github.io/figmaboy/docs/getting-started/install/#manual-mcp-installation) for platform paths.
-
-</details>
+Install the standalone Figmaboy MCP only if you want Codex CLI or an IDE integration outside Figmaboy to read saved designs or control the design currently open in Figmaboy. See [External Codex clients](https://0xmiki.github.io/figmaboy/docs/getting-started/connect-codex/) for the scope and limitations.
 
 ### Tools and authoring contract
 
@@ -168,14 +132,11 @@ Codex can generate artwork and place the final PNG, JPEG, or WebP with `image_pl
 
 ### Development server
 
-Build and register an MCP binary directly from this checkout:
+Build the MCP binary directly from this checkout:
 
 ```console
 nix-shell --run 'cargo build --locked --release --manifest-path src-tauri/mcp/Cargo.toml'
-codex mcp add figmaboy -- "$(pwd)/src-tauri/target/release/figmaboy-mcp"
 ```
-
-Remove an existing `figmaboy` entry first when switching between an installed package and a repository build.
 
 ### Bundled sidecar
 

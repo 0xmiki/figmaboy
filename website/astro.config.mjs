@@ -37,37 +37,31 @@ export default defineConfig({
       ],
       sidebar: [
         {
-          label: "Getting started",
+          label: "Start here",
           items: [
             { label: "Overview", slug: "docs" },
-            { label: "Let Codex connect Figmaboy", slug: "docs/getting-started/connect-codex" },
             { label: "Install Figmaboy", slug: "docs/getting-started/install" },
-            { label: "Quickstart", slug: "docs/getting-started/quickstart" },
+            { label: "Create your first design", slug: "docs/getting-started/quickstart" },
           ],
         },
         {
-          label: "Core concepts",
+          label: "Design with Codex",
           items: [
-            { label: "Canvas and native layers", slug: "docs/core-concepts/canvas-and-layers" },
-            { label: "Codex and the MCP", slug: "docs/core-concepts/codex-mcp" },
-            { label: "Local data and autosave", slug: "docs/core-concepts/local-data" },
-            { label: "Extensions", slug: "docs/core-concepts/extensions" },
-          ],
-        },
-        {
-          label: "Workflows",
-          items: [
-            { label: "Build with Codex", slug: "docs/workflows/build-with-codex" },
-            { label: "Use a saved design offline", slug: "docs/workflows/offline-context" },
+            { label: "Chat beside the canvas", slug: "docs/workflows/build-with-codex" },
+            { label: "Evolve a frame", slug: "docs/workflows/evolve" },
             { label: "Review and refine", slug: "docs/workflows/review-and-refine" },
+            { label: "Use a saved design", slug: "docs/workflows/offline-context" },
+            { label: "Canvas and layers", slug: "docs/core-concepts/canvas-and-layers" },
           ],
         },
         {
           label: "Reference",
           items: [
-            { label: "MCP tools", slug: "docs/reference/mcp-tools" },
             { label: "Keyboard shortcuts", slug: "docs/reference/shortcuts" },
-            { label: "Files and paths", slug: "docs/reference/files-and-paths" },
+            { label: "External Codex clients", slug: "docs/getting-started/connect-codex" },
+            { label: "Codex and MCP", slug: "docs/core-concepts/codex-mcp" },
+            { label: "MCP tools", slug: "docs/reference/mcp-tools" },
+            { label: "Local data and paths", slug: "docs/core-concepts/local-data" },
             { label: "Troubleshooting", slug: "docs/reference/troubleshooting" },
           ],
         },

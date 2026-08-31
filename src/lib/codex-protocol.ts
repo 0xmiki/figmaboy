@@ -169,7 +169,7 @@ export function itemText(item: CodexItem): string {
 }
 
 export function isToolItem(item: CodexItem): boolean {
-  return ["mcpToolCall", "commandExecution", "fileChange", "dynamicToolCall", "webSearch", "imageView", "imageGeneration"].includes(item.type);
+  return ["mcpToolCall", "commandExecution", "fileChange", "dynamicToolCall", "collabAgentToolCall", "webSearch", "imageView", "imageGeneration"].includes(item.type);
 }
 
 export function itemStatus(item: CodexItem): string {
@@ -355,11 +355,12 @@ export function titleCase(value: string): string {
   return value.replaceAll(/[-_]+/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
-function toolAction(item: CodexItem): "inspect" | "change" | "capture" | "command" | "search" | "other" {
+function toolAction(item: CodexItem): "inspect" | "change" | "capture" | "command" | "search" | "agent" | "coordination" | "other" {
+  if (item.type === "collabAgentToolCall") return item.tool === "spawnAgent" ? "agent" : "coordination";
   if (item.type === "mcpToolCall") {
     const tool = String(item.tool ?? "");
     if (/screenshot|render/.test(tool)) return "capture";
-    if (/apply|place|center|radius|undo|redo|save|select|viewport/.test(tool)) return "change";
+    if (/apply|preview|commit|discard|place|center|radius|undo|redo|save|select|viewport/.test(tool)) return "change";
     if (/get|list|status|capabilities|types/.test(tool)) return "inspect";
   }
   if (item.type === "fileChange") return "change";
@@ -381,6 +382,7 @@ export function summarizeToolItems(items: readonly CodexItem[]): string {
   if (counts.get("capture")) labels.push(`Captured ${plural(counts.get("capture")!, "preview")}`);
   if (counts.get("command")) labels.push(`Ran ${plural(counts.get("command")!, "command")}`);
   if (counts.get("search")) labels.push(`Searched ${plural(counts.get("search")!, "time")}`);
+  if (counts.get("agent")) labels.push(`Ran ${plural(counts.get("agent")!, "agent")}`);
   if (counts.get("other")) labels.push(`Used ${plural(counts.get("other")!, "tool")}`);
   return labels.join(" · ") || "Agent activity";
 }

@@ -59,12 +59,6 @@
 .asset-list small { color: #716e67; font-size: 10px; line-height: 1.3; }
 .asset-list a:hover small { color: #aaa69d; }
 .asset-list i { font-style: normal; font-size: 17px; }
-.fallbacks { min-height: 70px; display: flex; align-items: center; gap: 12px; padding: 13px 20px; color: #77736b; background: #dedbd1; font: 730 8px var(--mono); letter-spacing: .08em; }
-.fallbacks span { margin-right: auto; }
-.fallbacks a { color: var(--ink); }
-.fallbacks a:hover { color: var(--red); }
-.fallbacks.emphasized { color: var(--paper); background: var(--red); }
-.fallbacks.emphasized a { color: var(--white); }
 .release-links { margin-top: 28px; display: flex; justify-content: flex-end; gap: 28px; font: 750 9px var(--mono); letter-spacing: .1em; text-transform: uppercase; }
 .release-links a:hover { color: var(--red); }
 
@@ -123,7 +117,5 @@
   .detected-top span:last-child { margin-left: auto; }
   .detected-body h2 { max-width: 100%; }
   .platform-card > header { padding-inline: 16px; }
-  .fallbacks { align-items: flex-start; flex-wrap: wrap; }
-  .fallbacks span { width: 100%; }
   .connect-next .download-button { min-width: 0; }
 }

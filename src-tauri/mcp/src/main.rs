@@ -16,6 +16,7 @@ use std::path::PathBuf;
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::TcpStream,
+    time::{timeout, Duration},
 };
 use uuid::Uuid;
 
@@ -96,10 +97,13 @@ impl BridgeClient {
             .await
             .map_err(|error| error.to_string())?;
         let mut line = String::new();
-        BufReader::new(stream)
-            .read_line(&mut line)
-            .await
-            .map_err(|error| error.to_string())?;
+        timeout(
+            Duration::from_secs(30),
+            BufReader::new(stream).read_line(&mut line),
+        )
+        .await
+        .map_err(|_| format!("Figma Boy did not answer {method} within 30 seconds"))?
+        .map_err(|error| error.to_string())?;
         let response: BridgeResponse =
             serde_json::from_str(&line).map_err(|error| error.to_string())?;
         match response.error {
@@ -198,6 +202,21 @@ struct ApplyParams {
     expected_change_token: Option<u64>,
     /// Operations applied atomically as one undo entry.
     operations: Vec<EditOperation>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PreviewParams {
+    /// Stable ID for one evolve run, used to coalesce accepted checkpoints into one undo entry.
+    run_id: String,
+    /// The one frame selected when /evolve started. Every operation is restricted to this frame tree.
+    frame_id: String,
+    /// Change token returned by editor_status/document_get before the first candidate.
+    expected_change_token: Option<u64>,
+    /// Operations for the next candidate. A new call replaces any uncommitted evolve preview.
+    operations: Vec<EditOperation>,
+    /// Short undo label. Defaults to "Evolve frame".
+    label: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema, Serialize)]
@@ -478,6 +497,11 @@ impl FigmaboyMcp {
             },
             "containers": { "childIds": "managed by operations", "clipContent": "frame-only clipping toggle" },
             "review": { "tool": "frame_screenshot", "rule": "Capture each completed frame and visually review it before finishing." },
+            "evolution": {
+                "tools": ["operations_preview", "operations_preview_commit", "operations_preview_discard"],
+                "scope": "One selected frame. Existing text, image assets, crops, locked layers, and the frame bounds are preserved by the host.",
+                "previewRule": "Preview each candidate on the canvas. Commit every accepted pass as a checkpoint or discard the candidate. Checkpoints from one run coalesce into one undo entry."
+            },
             "typescriptContract": { "tool": "types_get", "path": "mcp/types.ts" },
             "extensions": extension_authoring_contract(),
             "workflow": ["inspect types/capabilities", "create semantic parents", "create children with parentId", "center and round surfaces", "frame_screenshot", "visually inspect", "refine", "save"]
@@ -532,6 +556,30 @@ impl FigmaboyMcp {
         Parameters(params): Parameters<ApplyParams>,
     ) -> CallToolResult {
         self.call("operations_apply", params).await
+    }
+
+    #[tool(
+        description = "Preview a bounded /evolve candidate inside one selected frame without saving it or adding history. Existing text and image content, locked layers, deletions, reparenting, and changes outside the selected frame are rejected. Each call replaces the current uncommitted evolve preview."
+    )]
+    async fn operations_preview(
+        &self,
+        Parameters(params): Parameters<PreviewParams>,
+    ) -> CallToolResult {
+        self.call("operations_preview", params).await
+    }
+
+    #[tool(
+        description = "Commit a visually accepted /evolve candidate as a checkpoint. Checkpoints with the same runId coalesce into one undoable Figmaboy history entry."
+    )]
+    async fn operations_preview_commit(&self) -> CallToolResult {
+        self.call("operations_preview_commit", json!({})).await
+    }
+
+    #[tool(
+        description = "Discard the active /evolve preview and restore the exact baseline without creating a history entry."
+    )]
+    async fn operations_preview_discard(&self) -> CallToolResult {
+        self.call("operations_preview_discard", json!({})).await
     }
 
     #[tool(

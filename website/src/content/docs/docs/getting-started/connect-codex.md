@@ -1,47 +1,32 @@
 ---
-title: Let Codex connect Figmaboy
-description: Give Codex one prompt and let it install or repair the Figmaboy MCP.
+title: Use Figmaboy from other Codex clients
+description: Understand when an external Codex client needs the standalone Figmaboy MCP.
 ---
 
-Figmaboy's built-in chat needs no MCP setup. It starts the bundled server whenever you open the sidebar.
+You probably do not need this page. The Codex tab inside Figmaboy receives its design tools automatically. Open a design and start chatting.
 
-Use this page when you want Figmaboy tools in Codex CLI, the IDE extension, or the ChatGPT desktop app.
+Install the standalone Figmaboy MCP only when you want Codex outside Figmaboy, such as Codex CLI or an IDE integration, to:
 
-## Ask Codex to do it
+- Read saved Figmaboy designs.
+- Inspect the design currently open in the desktop app.
+- Edit that open design through Figmaboy's normal history and autosave.
 
-Paste this into Codex:
+External MCP installation changes your Codex configuration and only affects new external Codex sessions. Figmaboy does not request or perform that setup during normal use.
 
-```text
-Open https://raw.githubusercontent.com/0xmiki/figmaboy/main/docs/INSTALL_FIGMABOY_MCP.md and follow it to install or repair the Figmaboy MCP for this computer. Verify the checksum before running a downloaded binary. Keep any working custom registration.
-```
+## What works after external setup
 
-Codex will inspect the current registration, detect the operating system, find the binary bundled with Figmaboy, and verify it before making changes. If the binary is missing, the guide tells Codex which release asset to download and where to keep it.
+Saved-design reads work while Figmaboy is closed. Screenshots, live inspection, and edits require Figmaboy to be open with a design loaded.
 
-You approve any commands through the normal Codex permission flow. The guide tells Codex to keep a working custom entry and avoid temporary paths.
+Use the standalone MCP asset from the same Figmaboy release and follow the MCP installation flow provided by your external Codex client. The desktop app does not show installation commands because none are needed for its built-in Codex tab.
 
-## Use the Figmaboy shortcut
+## Check the external connection
 
-If Figmaboy is already open, its sidebar can register the bundled binary directly. Type:
-
-```text
-/install-mcp
-```
-
-The shortcut repairs missing or stale registrations. It leaves working local and remote entries unchanged.
-
-## Test it
-
-Start a new Codex session, then ask:
+In a new external Codex session, ask:
 
 > List my saved Figmaboy designs.
 
-If Figmaboy is open with a design loaded, try:
+With Figmaboy open on a design, ask:
 
-> Inspect the current Figmaboy page and summarize its layer structure. Do not change it.
+> Inspect the current Figmaboy page and summarize its frame and layer structure. Do not change it.
 
-<details>
-<summary>Manual installation</summary>
-
-The [Install and connect](../install/#manual-mcp-installation) page lists stable platform paths and registration commands.
-
-</details>
+If those tools are unavailable, check the MCP settings in that external client and confirm it points to the standalone binary from your installed Figmaboy version.

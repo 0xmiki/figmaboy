@@ -1,7 +1,8 @@
 <script lang="ts">
   import { Check, Copy } from "phosphor-svelte";
+  import MarkdownInline from "$lib/editor/MarkdownInline.svelte";
 
-  let { text }: { text: string } = $props();
+  let { text, skills = [] }: { text: string; skills?: string[] } = $props();
   let copied = $state("");
 
   type Block =
@@ -77,11 +78,11 @@
         <pre><code>{block.value}</code></pre>
       </div>
     {:else if block.type === "list"}
-      {#if block.ordered}<ol>{#each block.items as item}<li>{item}</li>{/each}</ol>{:else}<ul>{#each block.items as item}<li>{item}</li>{/each}</ul>{/if}
+      {#if block.ordered}<ol>{#each block.items as item}<li><MarkdownInline text={item} {skills} /></li>{/each}</ol>{:else}<ul>{#each block.items as item}<li><MarkdownInline text={item} {skills} /></li>{/each}</ul>{/if}
     {:else if block.type === "heading"}
-      <p class="heading" class:h1={block.level === 1} class:h2={block.level === 2}>{block.value}</p>
+      <p class="heading" class:h1={block.level === 1} class:h2={block.level === 2}><MarkdownInline text={block.value} {skills} /></p>
     {:else}
-      <p>{block.value}</p>
+      <p><MarkdownInline text={block.value} {skills} /></p>
     {/if}
   {/each}
 </div>

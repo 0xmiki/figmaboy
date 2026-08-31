@@ -6,6 +6,7 @@
   import { listen } from "@tauri-apps/api/event";
   import {
     CaretDown as ChevronDown, CaretLeft as ChevronLeft, Copy, Eye, EyeSlash as EyeOff,
+    CornersOut as FullscreenIcon,
     Intersect as Group, Lock, ArrowDown as MoveDown, ArrowUp as MoveUp,
     SidebarSimple as PanelLeftClose, SidebarSimple as PanelRightClose,
     ArrowClockwise as RefreshCw, FloppyDisk as Save, Trash as Trash2,
@@ -16,25 +17,28 @@
   import { screenToWorld, selectionBounds, unionRects, worldBounds } from "$lib/geometry";
   import { repository } from "$lib/repository";
   import { EditorSession } from "$lib/editor/editor.svelte";
+  import { DesignService } from "$lib/editor/design-service";
   import EditorCanvas from "$lib/editor/EditorCanvas.svelte";
   import Inspector from "$lib/editor/Inspector.svelte";
+  import FrameFullscreenPreview from "$lib/editor/FrameFullscreenPreview.svelte";
   import { stageExtensionManifest } from "$lib/extensions/staging";
   import LeftPanel from "$lib/editor/LeftPanel.svelte";
   import PrototypePreview from "$lib/editor/PrototypePreview.svelte";
   import Toolbar from "$lib/editor/Toolbar.svelte";
-  import { applyExternalOperations, centerNodes, nodeGeometry, placeImageNode, setBorderRadius } from "$lib/editor/editor-rpc";
+  import { applyExternalOperations, centerNodes, nodeGeometry, placeImageNode, setBorderRadius, validateEvolutionOperations } from "$lib/editor/editor-rpc";
 
   const repo = repository();
   let session = $state<EditorSession | null>(null);
   let loading = $state(true);
   let error = $state("");
   let notice = $state("");
-  let context = $state<{ x: number; y: number; worldX: number; worldY: number } | null>(null);
+  let context = $state<{ x: number; y: number; worldX: number; worldY: number; targetId?: string } | null>(null);
   let pageMenu = $state<{ id: string; x: number; y: number } | null>(null);
   let preview = $state(false);
+  let fullscreenFrameId = $state<string | null>(null);
   let panels = $state({ left: true, right: true });
   let panelWidths = $state({ left: 297, right: 280, codex: 390 });
-  let codexOpen = $state(false);
+  let codexOpen = $state(true);
   let codexMounted = $state(false);
   let CodexSidebarComponent = $state<any>(null);
   let codexComponentPromise: Promise<void> | null = null;
@@ -44,6 +48,13 @@
   let thumbnailTimer: ReturnType<typeof setTimeout> | null = null;
   let noticeTimer: ReturnType<typeof setTimeout> | null = null;
   let nudgeTimer: ReturnType<typeof setTimeout> | null = null;
+  const codexVisible = $derived(codexOpen && panels.right && Boolean(CodexSidebarComponent));
+  const contextFrame = $derived.by(() => {
+    if (!session) return null;
+    const target = context?.targetId ? session.document.nodes[context.targetId] : null;
+    if (target?.type === "frame") return target;
+    return session.selectedNodes.length === 1 && session.selectedNodes[0].type === "frame" ? session.selectedNodes[0] : null;
+  });
 
   type StoredEditorLayout = {
     leftOpen?: boolean;
@@ -84,7 +95,7 @@
 
   function restorePageCodexState(pageId: string) {
     const stored = readEditorLayout();
-    codexOpen = stored.codexOpenByPage?.[pageId] === true;
+    codexOpen = stored.codexOpenByPage?.[pageId] !== false;
     codexMounted = codexOpen;
     if (codexOpen) void ensureCodexComponent();
     if (codexOpen) panels.right = true;
@@ -110,6 +121,16 @@
       void loadAssets(session.page.id);
     } catch (cause) { error = cause instanceof Error ? cause.message : "Could not open this design"; }
     finally { loading = false; }
+  });
+
+  onMount(() => {
+    const load = () => void ensureCodexComponent().catch(() => undefined);
+    if ("requestIdleCallback" in window) {
+      const id = window.requestIdleCallback(load, { timeout: 1500 });
+      return () => window.cancelIdleCallback(id);
+    }
+    const id = setTimeout(load, 250);
+    return () => clearTimeout(id);
   });
 
   type EditorRpcRequest = { id: string; method: string; params: unknown };
@@ -261,6 +282,7 @@
   }
 
   onDestroy(() => {
+    session?.cancelExternalPreview();
     if (saveTimer) clearTimeout(saveTimer);
     if (thumbnailTimer) clearTimeout(thumbnailTimer);
     if (noticeTimer) clearTimeout(noticeTimer);
@@ -314,24 +336,26 @@
     } catch (cause) { session.errorMessage = cause instanceof Error ? cause.message : "Page action failed"; }
   }
 
-  function showContext(event: MouseEvent, world: { x: number; y: number }) {
-    context = { x: Math.min(event.clientX, innerWidth - 230), y: Math.min(event.clientY, innerHeight - 390), worldX: world.x, worldY: world.y };
+  function showContext(event: MouseEvent, world: { x: number; y: number }, targetId?: string) {
+    context = { x: Math.min(event.clientX, innerWidth - 230), y: Math.min(event.clientY, innerHeight - 390), worldX: world.x, worldY: world.y, ...(targetId ? { targetId } : {}) };
   }
 
   function layerContext(event: MouseEvent, id: string) {
     if (!session) return;
     event.preventDefault(); event.stopPropagation();
     if (!session.selectedIds.includes(id)) session.select(id, false, true);
-    showContext(event, { x: session.document.nodes[id].x, y: session.document.nodes[id].y });
+    showContext(event, { x: session.document.nodes[id].x, y: session.document.nodes[id].y }, id);
   }
 
   async function contextAction(action: string) {
     if (!session || !context) return;
-    const point = { x: context.worldX, y: context.worldY }; context = null;
+    const point = { x: context.worldX, y: context.worldY };
+    const targetFrameId = contextFrame?.id ?? null;
+    context = null;
     if (action === "copy") session.copy();
-    if (action === "copy-image") {
-      const frame = session.selectedNodes.length === 1 && session.selectedNodes[0].type === "frame" ? session.selectedNodes[0] : null;
-      if (frame) await copyFrameAsImage(frame.id);
+    if (action === "copy-image" && targetFrameId) await copyFrameAsImage(targetFrameId);
+    if (action === "fullscreen") {
+      if (targetFrameId) fullscreenFrameId = targetFrameId;
     }
     if (action === "cut") session.cut();
     if (action === "paste") await session.paste(point);
@@ -384,7 +408,7 @@
       : unionRects(session.document.rootIds.map((id) => session!.document.nodes[id]).filter(Boolean).map((node) => worldBounds(session!.document, node)));
     if (!bounds) return;
     const canvas = document.querySelector<HTMLElement>("#design-canvas");
-    const rightWidth = codexOpen ? panelWidths.codex : panelWidths.right;
+    const rightWidth = panelWidths.codex;
     const width = canvas?.clientWidth ?? innerWidth - (panels.left ? panelWidths.left : 0) - (panels.right ? rightWidth : 0);
     const height = canvas?.clientHeight ?? innerHeight;
     const zoom = Math.min(4, Math.max(.05, Math.min((width - 160) / Math.max(1, bounds.width), (height - 160) / Math.max(1, bounds.height))));
@@ -522,6 +546,10 @@
     return { mimeType: "image/png", imageBase64: dataUrl.slice(dataUrl.indexOf(",") + 1), width: rendered.width, height: rendered.height, bounds: rendered.bounds, ids, scale: rendered.scale };
   }
 
+  function evolvePreviewOwner(): boolean {
+    return session?.externalPreviewSource?.kind === "codex" && session.externalPreviewSource.id.startsWith("evolve:");
+  }
+
   async function handleEditorRpc(request: EditorRpcRequest): Promise<unknown> {
     if (!session) throw new Error("NO_ACTIVE_EDITOR: open a design file");
     const params = (request.params && typeof request.params === "object" ? request.params : {}) as Record<string, unknown>;
@@ -545,6 +573,31 @@
       const ids = Array.isArray(params.ids) ? params.ids.filter((id): id is string => typeof id === "string") : session.selectedIds;
       const canvasClientRect = { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
       return { changeToken: session.changeToken, viewport: session.document.viewport, canvasClientRect, nodes: nodeGeometry(session, ids, canvasClientRect) };
+    }
+    if (request.method === "operations_preview") {
+      const frameId = typeof params.frameId === "string" ? params.frameId : "";
+      const runId = typeof params.runId === "string" && params.runId ? params.runId : "unknown";
+      if (session.hasExternalPreview && !evolvePreviewOwner()) throw new Error("ANOTHER_PREVIEW_ACTIVE: finish the current canvas preview first");
+      const operations = Array.isArray(params.operations) ? params.operations : [];
+      validateEvolutionOperations(session, frameId, operations);
+      const service = new DesignService(session);
+      const result = service.preview({
+        label: typeof params.label === "string" && params.label.trim() ? params.label.trim() : "Evolve frame",
+        source: { kind: "codex", id: `evolve:${runId}` },
+        expectedChangeToken: typeof params.expectedChangeToken === "number" ? params.expectedChangeToken : undefined,
+        operations,
+      });
+      return { ...result, previewActive: true, frameId };
+    }
+    if (request.method === "operations_preview_commit") {
+      if (!evolvePreviewOwner()) throw new Error("NO_EVOLVE_PREVIEW: there is no evolution candidate to commit");
+      new DesignService(session).commitPreview();
+      return { changeToken: session.changeToken, previewActive: false };
+    }
+    if (request.method === "operations_preview_discard") {
+      if (!evolvePreviewOwner()) throw new Error("NO_EVOLVE_PREVIEW: there is no evolution candidate to discard");
+      new DesignService(session).discardPreview();
+      return { changeToken: session.changeToken, previewActive: false };
     }
     if (request.method === "operations_apply") return applyExternalOperations(session, params);
     if (request.method === "nodes_center") return centerNodes(session, params);
@@ -697,35 +750,38 @@
     if (open) panels.right = true;
   }
 
+  function showInspectorTab(tab: "design" | "prototype") {
+    if (!session) return;
+    session.inspectorTab = tab;
+    setCodexOpen(false);
+  }
+
   function ensureCodexComponent(): Promise<void> {
     if (CodexSidebarComponent) return Promise.resolve();
     codexComponentPromise ??= import("$lib/editor/CodexSidebar.svelte").then((module) => {
       CodexSidebarComponent = module.default;
-    });
+    }).catch((cause) => { codexComponentPromise = null; throw cause; });
     return codexComponentPromise;
   }
 
   function toggleCodex() {
+    if (!panels.right) { panels.right = true; setCodexOpen(true); return; }
     setCodexOpen(!codexOpen);
   }
 
   function togglePanel(side: "left" | "right") {
     if (side === "left") panels.left = !panels.left;
-    else {
-      panels.right = !panels.right;
-      if (!panels.right) codexOpen = false;
-    }
+    else panels.right = !panels.right;
   }
 
   function setPanelsVisible(visible: boolean) {
     panels = { left: visible, right: visible };
-    if (!visible) codexOpen = false;
   }
 
   function startPanelResize(event: PointerEvent, side: "left" | "right") {
     event.preventDefault();
     const startX = event.clientX;
-    const rightKey = codexOpen ? "codex" : "right";
+    const rightKey = "codex" as const;
     const startWidth = side === "left" ? panelWidths.left : panelWidths[rightKey];
     const shell = (event.currentTarget as HTMLElement).closest<HTMLElement>(".editor-shell");
     const property = side === "left" ? "--left-panel-width" : rightKey === "codex" ? "--codex-panel-width" : "--right-panel-width";
@@ -737,8 +793,8 @@
     const applyWidth = () => {
       resizeFrame = 0;
       const delta = side === "left" ? pendingX - startX : startX - pendingX;
-      const min = side === "left" ? 220 : rightKey === "codex" ? 320 : 280;
-      const max = side === "left" ? Math.min(520, innerWidth - 360) : rightKey === "codex" ? Math.min(640, innerWidth - 280) : Math.min(520, innerWidth - 280);
+      const min = side === "left" ? 220 : 320;
+      const max = side === "left" ? Math.min(520, innerWidth - 360) : Math.min(640, innerWidth - 280);
       nextWidth = Math.max(min, Math.min(max, startWidth + delta));
       shell?.style.setProperty(property, `${nextWidth}px`);
     };
@@ -768,28 +824,40 @@
 <svelte:window onkeydown={keydown} onkeyup={keyup} onclick={() => { context = null; pageMenu = null; }} />
 
 {#if loading}
-  <div class="loading" role="status" aria-live="polite"><img class="loader-logo" src="/figmaboy.svg" alt="" /><strong>Figmaboy</strong><p>Opening your design…</p></div>
+  <div class="loading" aria-hidden="true"></div>
 {:else if error || !session}
   <div class="error-screen"><img class="screen-brand" src="/figmaboy.svg" alt="" /><div class="error-icon"><X size={24} /></div><h1>Couldn’t open this file</h1><p>{error}</p><button onclick={() => goto("/")}><ChevronLeft size={15} /> Back to projects</button></div>
 {:else}
-  <div class="editor-shell" class:left-hidden={!panels.left} class:right-hidden={!panels.right} class:codex-open={codexOpen && panels.right} style={`--left-panel-width:${panelWidths.left}px;--right-panel-width:${panelWidths.right}px;--codex-panel-width:${panelWidths.codex}px`}>
+  <div class="editor-shell" class:left-hidden={!panels.left} class:right-hidden={!panels.right} class:codex-open={panels.right} style={`--left-panel-width:${panelWidths.left}px;--right-panel-width:${panelWidths.right}px;--codex-panel-width:${panelWidths.codex}px`}>
     <div class="canvas-region">
       <EditorCanvas {session} onContextMenu={showContext} />
       <div class="editor-top-left">
-        <button class="home-mark" title="Back to projects" aria-label="Back to projects" onclick={backToFiles}><img src="/figmaboy.svg" alt="" /></button>
+        <button class="back-home" title="Back to projects" aria-label="Back to projects" onclick={backToFiles}><ChevronLeft size={15} weight="bold" /><span>Back</span></button>
         <button class="file-title" onclick={renameFile}>{session.file.name}<ChevronDown size={12} /></button>
         <button class="copy-file-id" title="Copy design ID" aria-label="Copy design ID" onclick={copyDesignId}><Copy size={12} /></button>
         <span class:bad={session.saveStatus === "error" || session.saveStatus === "conflict"}>{session.saveStatus === "saving" ? "Saving…" : session.saveStatus === "dirty" ? "Unsaved" : session.saveStatus === "conflict" ? "Save conflict" : session.saveStatus === "error" ? "Save failed" : "Saved locally"}</span>
       </div>
       <button class="panel-toggle left" title="Toggle left panel" onclick={() => togglePanel("left")}><PanelLeftClose size={15} /></button>
       <button class="panel-toggle right" title="Toggle right panel" onclick={() => togglePanel("right")}><PanelRightClose size={15} mirrored /></button>
-      <Toolbar {session} onFit={() => fitCanvas("auto")} {codexOpen} {codexAttention} onToggleCodex={toggleCodex} />
+      <Toolbar {session} onFit={() => fitCanvas("auto")} />
     </div>
     {#if panels.left}<LeftPanel {session} onCreatePage={createPage} onOpenPage={openPage} onPageMenu={showPageMenu} onLayerContext={layerContext} onPlaceIcon={placeIcon} />{/if}
-    {#if panels.right && !codexOpen}<Inspector {session} onCreatePreset={createPreset} onPresent={() => (preview = true)} onExport={exportSelection} />{/if}
-    {#if codexMounted && CodexSidebarComponent}{#key session.page.id}<CodexSidebarComponent workspaceId={session.file.id} pageId={session.page.id} fileName={session.file.name} visible={codexOpen && panels.right} onAttentionChange={(attention: typeof codexAttention) => (codexAttention = attention)} onClose={() => setCodexOpen(false)} />{/key}{/if}
+    {#if panels.right}
+      <aside class="right-sidebar" aria-label="Right sidebar">
+        <div class="right-sidebar-tabs" role="tablist" aria-label="Sidebar views">
+          <button role="tab" aria-selected={codexOpen} class:active={codexOpen} onclick={() => setCodexOpen(true)}>Codex{#if codexAttention !== "idle"}<span class={codexAttention} aria-label={`Codex ${codexAttention}`}></span>{/if}</button>
+          <button role="tab" aria-selected={!codexOpen && session.inspectorTab === "design"} class:active={!codexOpen && session.inspectorTab === "design"} onclick={() => showInspectorTab("design")}>Design</button>
+          <button role="tab" aria-selected={!codexOpen && session.inspectorTab === "prototype"} class:active={!codexOpen && session.inspectorTab === "prototype"} onclick={() => showInspectorTab("prototype")}>Prototype</button>
+          <button class="close-sidebar" aria-label="Close right sidebar" title="Close sidebar" onclick={() => togglePanel("right")}><PanelRightClose size={14} mirrored /></button>
+        </div>
+        <div class="right-sidebar-content" class:hidden={codexOpen}><Inspector embedded {session} onCreatePreset={createPreset} onPresent={() => (preview = true)} onExport={exportSelection} /></div>
+        <div class="right-sidebar-content" class:hidden={!codexOpen}>
+          {#if codexMounted && CodexSidebarComponent}{#key session.page.id}<CodexSidebarComponent embedded workspaceId={session.file.id} pageId={session.page.id} fileName={session.file.name} visible={codexVisible} onAttentionChange={(attention: typeof codexAttention) => (codexAttention = attention)} onClose={() => setCodexOpen(false)} onEditorRpc={(method: string, params: Record<string, unknown>) => handleEditorRpc({ id: "codex-local", method, params })} />{/key}{:else}<div class="right-sidebar-loading">Loading Codex…</div>{/if}
+        </div>
+      </aside>
+    {/if}
     {#if panels.left}<div class="panel-resizer left" role="separator" aria-label="Resize left sidebar" aria-orientation="vertical" onpointerdown={(event) => startPanelResize(event, "left")}></div>{/if}
-    {#if panels.right}<div class:codex={codexOpen} class="panel-resizer right" role="separator" aria-label={codexOpen ? "Resize chat sidebar" : "Resize inspector"} aria-orientation="vertical" onpointerdown={(event) => startPanelResize(event, "right")}></div>{/if}
+    {#if panels.right}<div class="panel-resizer right codex" role="separator" aria-label="Resize right sidebar" aria-orientation="vertical" onpointerdown={(event) => startPanelResize(event, "right")}></div>{/if}
 
     {#if session.errorMessage || session.saveStatus === "conflict"}
       <div class="save-error"><div><strong>{session.saveStatus === "conflict" ? "This page changed elsewhere" : "Could not save"}</strong><span>{session.saveStatus === "conflict" ? "Choose which version should win. Neither action happens automatically." : session.errorMessage}</span></div>{#if session.saveStatus === "conflict"}<button onclick={() => resolveConflict("reload")}><RefreshCw size={14} /> Reload</button><button onclick={() => resolveConflict("keep-local")}><Save size={14} /> Keep local</button>{:else}<button onclick={retrySave}><RefreshCw size={14} /> Retry</button><button class="dismiss" onclick={dismissSaveError}><X size={14} /></button>{/if}</div>
@@ -800,7 +868,7 @@
   {#if context}
     <div class="editor-context" role="menu" tabindex="-1" style:left={`${context.x}px`} style:top={`${context.y}px`} onclick={(event) => event.stopPropagation()} onkeydown={(event) => event.key === "Escape" && (context = null)}>
       {#if session.selectedIds.length}
-        <button onclick={() => contextAction("copy")}><Copy size={13} />Copy<kbd>⌘C</kbd></button>{#if session.selectedNodes.length === 1 && session.selectedNodes[0].type === "frame"}<button onclick={() => contextAction("copy-image")}><Copy size={13} />Copy as image</button>{/if}<button onclick={() => contextAction("cut")}>Cut<kbd>⌘X</kbd></button><button onclick={() => contextAction("paste")}>Paste here<kbd>⌘V</kbd></button><button onclick={() => contextAction("duplicate")}>Duplicate<kbd>⌘D</kbd></button><hr />
+        {#if contextFrame}<button onclick={() => contextAction("fullscreen")}><FullscreenIcon size={13} />Fullscreen</button><button onclick={() => contextAction("copy-image")}><Copy size={13} />Copy as image</button><hr />{/if}<button onclick={() => contextAction("copy")}><Copy size={13} />Copy<kbd>⌘C</kbd></button><button onclick={() => contextAction("cut")}>Cut<kbd>⌘X</kbd></button><button onclick={() => contextAction("paste")}>Paste here<kbd>⌘V</kbd></button><button onclick={() => contextAction("duplicate")}>Duplicate<kbd>⌘D</kbd></button><hr />
         {#if session.pages.length > 1}<button onclick={() => contextAction("move-page")}>Move to page<span>›</span></button>{/if}<button onclick={() => contextAction("front")}><MoveUp size={13} />Bring to front<kbd>]</kbd></button><button onclick={() => contextAction("back")}><MoveDown size={13} />Send to back<kbd>[</kbd></button><hr />
         {#if session.selectedNodes.some((node) => node.type === "group" || node.type === "frame")}<button onclick={() => contextAction("ungroup")}><Ungroup size={13} />Ungroup<kbd>⇧⌘G</kbd></button>{:else}<button onclick={() => contextAction("group")}><Group size={13} />Group selection<kbd>⌘G</kbd></button><button onclick={() => contextAction("frame")}>Frame selection</button>{/if}<hr />
         <button onclick={() => contextAction("visible")}>{#if session.selectedNodes.every((node) => node.visible)}<EyeOff size={13} />Hide{:else}<Eye size={13} />Show{/if}</button><button onclick={() => contextAction("lock")}>{#if session.selectedNodes.every((node) => node.locked)}<Unlock size={13} />Unlock{:else}<Lock size={13} />Lock{/if}</button><button class="danger" onclick={() => contextAction("delete")}><Trash2 size={13} />Delete<kbd>⌫</kbd></button>
@@ -813,18 +881,20 @@
   {/if}
 
   {#if preview}<PrototypePreview {session} onClose={() => (preview = false)} />{/if}
+  {#if fullscreenFrameId}<FrameFullscreenPreview {session} frameId={fullscreenFrameId} onClose={() => (fullscreenFrameId = null)} />{/if}
 {/if}
 
 <style>
   .editor-shell { position: fixed; inset: 0; background: #626262; overflow: hidden; }.canvas-region { position: absolute; inset: 0 var(--right-panel-width,280px) 0 var(--left-panel-width,297px); transition: left 180ms ease, right 180ms ease; }.left-hidden .canvas-region { left: 0; }.right-hidden .canvas-region { right: 0; }.codex-open .canvas-region { right: var(--codex-panel-width,390px); }
-  .editor-top-left { position: absolute; z-index: 35; top: 0; left: 0; height: 42px; background: #292929e8; border: 1px solid #444; border-top: 0; border-left: 0; border-radius: 0 0 7px 0; display: flex; align-items: center; padding: 0 7px; gap: 3px; box-shadow: 0 4px 14px #0003; }.editor-top-left button { border: 0; background: transparent; color: #ddd; height: 29px; border-radius: 5px; display: flex; align-items: center; cursor: pointer; }.editor-top-left button:hover { background: #3a3a3a; }.editor-top-left .home-mark { width: 29px; justify-content: center; }.home-mark img { width: 16px; height: 23px; object-fit: contain; filter: drop-shadow(0 2px 4px #0008); }.editor-top-left .file-title { max-width: 180px; gap: 5px; font-size: var(--text-control); font-weight: var(--weight-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.editor-top-left .copy-file-id { width: 27px; justify-content: center; color: #929299; }.editor-top-left > span { color: #6f6f76; font-size: var(--text-caption); margin-left: 4px; }.editor-top-left > span.bad { color: #fca5a5; }
+  .right-sidebar { position: absolute; z-index: 30; inset: 0 0 0 auto; width: var(--codex-panel-width,390px); display: flex; flex-direction: column; overflow: hidden; border-left: 1px solid #414146; background: #272729; color: #ececef; box-shadow: -8px 0 24px #0002; }.right-sidebar-tabs { height: 35px; flex: 0 0 35px; padding: 0 7px; display: flex; align-items: stretch; border-bottom: 1px solid #3b3b40; background: #252527; }.right-sidebar-tabs > button { position: relative; min-width: 58px; padding: 1px 9px 0; border: 0; background: transparent; color: #85858d; cursor: pointer; font-size: var(--text-caption); font-weight: var(--weight-medium); letter-spacing: .035em; text-transform: uppercase; }.right-sidebar-tabs > button:hover { color: #d1d1d6; }.right-sidebar-tabs > button.active { color: #ededf0; }.right-sidebar-tabs > button.active::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: 0; height: 1px; background: #79b8d1; }.right-sidebar-tabs > button > span { position: absolute; top: 8px; right: 2px; width: 6px; height: 6px; border-radius: 50%; background: #8b8b94; }.right-sidebar-tabs > button > span.working { background: #60a5fa; }.right-sidebar-tabs > button > span.approval { background: #f59e0b; }.right-sidebar-tabs > button > span.input { background: #a78bfa; }.right-sidebar-tabs > button > span.complete { background: #4ade80; }.right-sidebar-tabs > button > span.error { background: #f87171; }.right-sidebar-tabs > button.close-sidebar { width: 29px; min-width: 29px; height: 29px; align-self: center; margin-left: auto; padding: 0; border-radius: 5px; display: grid; place-items: center; color: #85858d; }.right-sidebar-tabs > button.close-sidebar::after { display: none; }.right-sidebar-tabs > button.close-sidebar:hover { background: #36363a; color: #eee; }.right-sidebar-content { min-height: 0; flex: 1; position: relative; }.right-sidebar-content.hidden { display: none; }.right-sidebar-loading { height: 100%; display: grid; place-items: center; color: #777780; font-size: var(--text-control); }
+  :global(body.resizing-panels) .canvas-region { transition: none; }
+  .editor-top-left { position: absolute; z-index: 35; top: 0; left: 0; height: 42px; background: #292929e8; border: 1px solid #444; border-top: 0; border-left: 0; border-radius: 0 0 7px 0; display: flex; align-items: center; padding: 0 7px; gap: 3px; box-shadow: 0 4px 14px #0003; }.editor-top-left button { border: 0; background: transparent; color: #ddd; height: 29px; border-radius: 5px; display: flex; align-items: center; cursor: pointer; }.editor-top-left button:hover { background: #3a3a3a; }.editor-top-left .back-home { gap: 3px; padding: 0 7px 0 5px; color: #b8b8be; font-size: var(--text-caption); font-weight: var(--weight-medium); }.editor-top-left .back-home:hover { color: #f2f2f4; }.editor-top-left .file-title { max-width: 180px; gap: 5px; font-size: var(--text-control); font-weight: var(--weight-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.editor-top-left .copy-file-id { width: 27px; justify-content: center; color: #929299; }.editor-top-left > span { color: #6f6f76; font-size: var(--text-caption); margin-left: 4px; }.editor-top-left > span.bad { color: #fca5a5; }
   .panel-toggle { position: absolute; z-index: 35; top: 8px; width: 29px; height: 28px; border: 1px solid #4a4a4a; background: #292929; color: #aaa; border-radius: 5px; display: grid; place-items: center; cursor: pointer; }.panel-toggle.left { left: 7px; opacity: 0; pointer-events: none; }.left-hidden .panel-toggle.left { opacity: 1; pointer-events: auto; }.panel-toggle.right { right: 7px; opacity: 0; pointer-events: none; }.right-hidden .panel-toggle.right { opacity: 1; pointer-events: auto; }
   .panel-resizer { position: absolute; z-index: 61; top: 0; bottom: 0; width: 7px; cursor: col-resize; touch-action: none; }.panel-resizer::after { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 1px; background: transparent; transition: background 120ms ease; }.panel-resizer:hover::after { background: #6f6f77; }.panel-resizer.left { left: calc(var(--left-panel-width,297px) - 7px); }.panel-resizer.right { right: calc(var(--right-panel-width,280px) - 7px); }.panel-resizer.right.codex { right: calc(var(--codex-panel-width,390px) - 7px); }
-  .loading, .error-screen { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #1d1d1d; }.loader-logo { width: 92px; height: 129px; object-fit: contain; filter: drop-shadow(0 16px 30px #000a); animation: logo-breathe 1.8s ease-in-out infinite; }.loading strong { margin-top: 20px; font-size: var(--text-title); letter-spacing: -.02em; }.loading p { color: #777; font-size: var(--text-control); margin: 6px 0 0; } @keyframes logo-breathe { 50% { transform: translateY(-3px) scale(.985); opacity: .78; } }
+  .loading, .error-screen { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #1d1d1d; }
   .screen-brand { width: 38px; height: 54px; object-fit: contain; margin-bottom: 19px; opacity: .9; filter: drop-shadow(0 7px 14px #0009); }.error-icon { width: 58px; height: 58px; display: grid; place-items: center; border: 1px solid #512727; background: #321d1d; color: #f87171; border-radius: 15px; }.error-screen h1 { font-size: var(--text-large); margin: 17px 0 4px; }.error-screen p { color: #888; font-size: var(--text-control); }.error-screen button { margin-top: 13px; height: 32px; border: 1px solid #414141; border-radius: 6px; background: #2c2c2c; color: white; display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 0 11px; font-size: var(--text-control); }
   .editor-context { position: fixed; z-index: 100; width: 225px; padding: 6px; border: 1px solid #444; border-radius: 7px; background: #202020; box-shadow: 0 15px 45px #0009; }.editor-context.small { width: 165px; }.editor-context button { width: 100%; min-height: 31px; border: 0; border-radius: 4px; background: transparent; color: #eee; padding: 0 8px; display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: var(--text-control); }.editor-context button:hover { background: #373737; }.editor-context kbd,.editor-context button > span { margin-left: auto; color: #888; font: inherit; }.editor-context hr { height: 1px; border: 0; background: #3d3d3d; margin: 5px -6px; }.editor-context .danger { color: #fca5a5; }
   .save-error { position: fixed; z-index: 80; left: 50%; top: 13px; transform: translateX(-50%); min-width: 380px; min-height: 48px; background: #3a2020; border: 1px solid #7f3737; border-radius: 8px; box-shadow: 0 8px 30px #0007; display: flex; align-items: center; gap: 10px; padding: 8px 9px 8px 13px; }.save-error > div { flex: 1; display: flex; flex-direction: column; }.save-error strong { font-size: var(--text-control); }.save-error span { color: #d4a1a1; font-size: var(--text-caption); margin-top: 3px; }.save-error button { height: 28px; border: 0; border-radius: 5px; background: #693333; color: #fff; display: flex; align-items: center; gap: 5px; padding: 0 9px; cursor: pointer; font-size: var(--text-small); }.save-error .dismiss { width: 28px; padding: 0; justify-content: center; background: transparent; }
   .copy-notice { position: fixed; z-index: 90; left: 50%; bottom: 24px; transform: translateX(-50%); min-height: 34px; display: flex; align-items: center; gap: 7px; padding: 0 13px; border: 1px solid #4a4a4a; border-radius: 7px; background: #252525; color: #f4f4f5; box-shadow: 0 8px 28px #0008; font-size: var(--text-small); }
-  @media (prefers-reduced-motion: reduce) { .loader-logo { animation: none; } }
   @media (max-width: 1050px) { .canvas-region { left: 56px; }.editor-shell :global(.left-shell) { width: 56px; grid-template-columns: 56px 0; }.editor-shell :global(.left-shell .panel) { display: none; }.panel-resizer.left { display: none; } }
 </style>

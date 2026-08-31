@@ -50,16 +50,6 @@ pub struct CodexConnection {
     reused: bool,
 }
 
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CodexMcpStatus {
-    installed: bool,
-    healthy: bool,
-    matches_bundled: bool,
-    command: Option<String>,
-    bundled_path: String,
-}
-
 impl Default for CodexState {
     fn default() -> Self {
         Self {
@@ -142,10 +132,7 @@ fn codex_executable() -> CommandResult<PathBuf> {
             return Ok(path);
         }
     }
-    Err(
-        "Codex is not installed. Install the Codex CLI, sign in once, then reopen this sidebar."
-            .into(),
-    )
+    Err("Codex is not installed. Install the Codex CLI, then reopen this sidebar.".into())
 }
 
 fn figmaboy_mcp_executable() -> CommandResult<PathBuf> {
@@ -181,153 +168,6 @@ fn figmaboy_mcp_executable() -> CommandResult<PathBuf> {
         return Ok(path);
     }
     Err("The bundled Figmaboy MCP server could not be found".into())
-}
-
-fn clean_cli_output(value: &[u8]) -> String {
-    String::from_utf8_lossy(value)
-        .lines()
-        .map(strip_ansi)
-        .filter(|line| !line.trim().is_empty() && !line.starts_with("WARNING: proceeding"))
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-fn command_is_available(command: &str) -> bool {
-    fn file_is_executable(path: &Path) -> bool {
-        if !path.is_file() {
-            return false;
-        }
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            fs::metadata(path)
-                .map(|metadata| metadata.permissions().mode() & 0o111 != 0)
-                .unwrap_or(false)
-        }
-        #[cfg(not(unix))]
-        true
-    }
-
-    let path = Path::new(command);
-    if path.is_absolute() || path.components().count() > 1 {
-        return file_is_executable(path);
-    }
-    executable_in_path(command).is_some_and(|path| file_is_executable(&path))
-}
-
-fn mcp_transport_is_healthy(value: &Value) -> bool {
-    if let Some(command) = value.pointer("/transport/command").and_then(Value::as_str) {
-        return command_is_available(command);
-    }
-    value
-        .pointer("/transport/url")
-        .and_then(Value::as_str)
-        .is_some_and(|url| !url.trim().is_empty())
-}
-
-fn paths_match(left: &str, right: &Path) -> bool {
-    let left = fs::canonicalize(left).unwrap_or_else(|_| PathBuf::from(left));
-    let right = fs::canonicalize(right).unwrap_or_else(|_| right.to_path_buf());
-    if cfg!(windows) {
-        left.to_string_lossy()
-            .eq_ignore_ascii_case(&right.to_string_lossy())
-    } else {
-        left == right
-    }
-}
-
-fn mcp_status(codex: &Path, bundled: &Path) -> CommandResult<CodexMcpStatus> {
-    let output = Command::new(codex)
-        .args(["mcp", "get", "figmaboy", "--json"])
-        .output()
-        .map_err(|error| format!("Could not inspect the Codex MCP configuration: {error}"))?;
-    let bundled_path = bundled.to_string_lossy().into_owned();
-    if !output.status.success() {
-        let message = clean_cli_output(&output.stderr);
-        if message.contains("No MCP server named 'figmaboy'") {
-            return Ok(CodexMcpStatus {
-                installed: false,
-                healthy: false,
-                matches_bundled: false,
-                command: None,
-                bundled_path,
-            });
-        }
-        return Err(if message.is_empty() {
-            "Codex could not read its MCP configuration".into()
-        } else {
-            message
-        });
-    }
-
-    let value: Value = serde_json::from_slice(&output.stdout)
-        .map_err(|error| format!("Codex returned an invalid MCP configuration: {error}"))?;
-    let command = value
-        .pointer("/transport/command")
-        .and_then(Value::as_str)
-        .map(str::to_owned);
-    let healthy = mcp_transport_is_healthy(&value);
-    let matches_bundled = command
-        .as_deref()
-        .is_some_and(|configured| paths_match(configured, bundled));
-    Ok(CodexMcpStatus {
-        installed: true,
-        healthy,
-        matches_bundled,
-        command,
-        bundled_path,
-    })
-}
-
-fn run_codex_mcp_command(codex: &Path, args: &[&str]) -> CommandResult<()> {
-    let output = Command::new(codex)
-        .args(args)
-        .output()
-        .map_err(|error| format!("Could not update the Codex MCP configuration: {error}"))?;
-    if output.status.success() {
-        return Ok(());
-    }
-    let stderr = clean_cli_output(&output.stderr);
-    let stdout = clean_cli_output(&output.stdout);
-    Err(if !stderr.is_empty() {
-        stderr
-    } else if !stdout.is_empty() {
-        stdout
-    } else {
-        "Codex could not update its MCP configuration".into()
-    })
-}
-
-#[tauri::command]
-pub fn codex_mcp_status() -> CommandResult<CodexMcpStatus> {
-    let codex = codex_executable()?;
-    let bundled = figmaboy_mcp_executable()?;
-    mcp_status(&codex, &bundled)
-}
-
-#[tauri::command]
-pub fn codex_mcp_install() -> CommandResult<CodexMcpStatus> {
-    let codex = codex_executable()?;
-    let bundled = figmaboy_mcp_executable()?;
-    let existing = mcp_status(&codex, &bundled)?;
-
-    // A healthy custom entry may carry arguments or environment variables that
-    // Figmaboy cannot safely reproduce. Leave it alone.
-    if existing.healthy {
-        return Ok(existing);
-    }
-    if existing.installed {
-        run_codex_mcp_command(&codex, &["mcp", "remove", "figmaboy"])?;
-    }
-
-    let bundled_argument = bundled.to_string_lossy().into_owned();
-    run_codex_mcp_command(&codex, &["mcp", "add", "figmaboy", "--", &bundled_argument])?;
-    let installed = mcp_status(&codex, &bundled)?;
-    if installed.healthy && installed.matches_bundled {
-        Ok(installed)
-    } else {
-        Err("Codex saved the Figmaboy MCP entry, but its executable is unavailable".into())
-    }
 }
 
 fn fail_pending(pending: &Arc<Mutex<HashMap<u64, PendingResponse>>>, message: &str) {
@@ -613,7 +453,7 @@ pub struct SavedCodexAttachment {
     name: String,
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn codex_attachment_save(
     app: AppHandle,
     workspace_id: String,
@@ -715,27 +555,6 @@ mod tests {
             strip_ansi("\u{1b}[2m2026-08-30T07:45:26Z\u{1b}[0m ERROR model refresh timed out"),
             "2026-08-30T07:45:26Z ERROR model refresh timed out"
         );
-    }
-
-    #[test]
-    fn command_availability_handles_paths() {
-        assert!(command_is_available(
-            std::env::current_exe().unwrap().to_str().unwrap()
-        ));
-        assert!(!command_is_available("/definitely/missing/figmaboy-mcp"));
-    }
-
-    #[test]
-    fn matching_paths_are_canonicalized() {
-        let current = std::env::current_exe().unwrap();
-        assert!(paths_match(current.to_str().unwrap(), &current));
-    }
-
-    #[test]
-    fn remote_mcp_transport_is_kept_as_a_healthy_custom_entry() {
-        assert!(mcp_transport_is_healthy(&json!({
-            "transport": { "type": "streamable_http", "url": "https://mcp.example.com" }
-        })));
     }
 
     #[test]

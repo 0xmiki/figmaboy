@@ -48,6 +48,32 @@ describe("DesignService", () => {
     expect(editor.document.nodes.card).toBeUndefined();
   });
 
+  it("coalesces accepted evolve checkpoints into one undo entry", () => {
+    const editor = session();
+    const service = new DesignService(editor);
+    service.transact({ label: "Baseline", source: { kind: "core", id: "test" }, operations: [{ kind: "create", node: { id: "card", type: "rectangle", x: 10 } }] });
+    service.preview({ label: "Evolve frame", source: { kind: "codex", id: "evolve:run-1" }, expectedChangeToken: 1, operations: [{ kind: "update", id: "card", patch: { x: 40 } }] });
+    service.commitPreview();
+    service.preview({ label: "Evolve frame", source: { kind: "codex", id: "evolve:run-1" }, expectedChangeToken: 2, operations: [{ kind: "update", id: "card", patch: { x: 90, y: 55 } }] });
+    service.commitPreview();
+    expect(editor.document.nodes.card.x).toBe(90);
+    expect(editor.document.nodes.card.y).toBe(55);
+    editor.undo();
+    expect(editor.document.nodes.card.x).toBe(10);
+    expect(editor.document.nodes.card.y).toBe(0);
+  });
+
+  it("discards a temporary candidate when the user changes pages", () => {
+    const editor = session();
+    const service = new DesignService(editor);
+    service.preview({ label: "Evolve frame", source: { kind: "codex", id: "evolve" }, operations: [{ kind: "create", node: { id: "candidate", type: "rectangle" } }] });
+    editor.setPage({ ...editor.page, id: "page-2", name: "Page 2" }, emptyDocument());
+    expect(editor.hasExternalPreview).toBe(false);
+    expect(editor.externalPreviewActive).toBe(false);
+    expect(editor.persistencePaused).toBe(false);
+    expect(editor.document.nodes.candidate).toBeUndefined();
+  });
+
   it("does not let extensions change locked layers", () => {
     const editor = session();
     const service = new DesignService(editor);

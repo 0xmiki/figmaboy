@@ -91,7 +91,7 @@ jobs:
           releaseBody: |
             Figmaboy 0.4 replaces the embedded Codex terminal with a native Codex app-server sidebar. Chats persist locally per design page, and the sidebar supports saved threads, streaming replies, tool activity, approvals, image attachments, steering, model controls, and context usage.
 
-            MCP setup is simpler. The app can install or repair the bundled Figmaboy MCP, and the documentation now leads with a prompt that lets Codex handle setup for the current platform.
+            The built-in Codex tab starts Figmaboy's bundled design tools automatically. It does not ask users to install or register an MCP server.
 
             Large documents now render fewer off-screen canvas nodes and virtualize the Layers panel. Sidebar resizing, autosave previews, snapping, and initial editor loading do less work. This release also adds Figma-style nested selection, fixes text editing typography and position changes, and moves the interface to Phosphor icons with shared typography tokens.
 

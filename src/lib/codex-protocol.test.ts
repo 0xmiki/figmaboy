@@ -112,6 +112,15 @@ describe("Codex app-server timeline", () => {
     expect(groups[0].summary).toBe("Inspected 1 design source · Applied 1 design change · Captured 1 preview");
   });
 
+  it("keeps app-server subagent activity in the visible tool timeline", () => {
+    const groups = groupToolItems([
+      { id: "critic", type: "collabAgentToolCall", tool: "spawnAgent", status: "completed", prompt: "evolve_critic", _turnId: "turn" },
+      { id: "fixer", type: "collabAgentToolCall", tool: "spawnAgent", status: "completed", prompt: "evolve_fixer", _turnId: "turn" },
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].summary).toBe("Ran 2 agents");
+  });
+
   it("folds every intermediate tool burst in a settled turn into one disclosure", () => {
     const timeline: CodexTimeline = {
       ...emptyTimeline(),

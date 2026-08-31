@@ -1,6 +1,7 @@
 import type { DesignNode, ImportedAsset, NodeType, PageDocument, Rect } from "$lib/domain";
 import { cloneDocument, defaultNode } from "$lib/domain";
 import type { EditorSession } from "$lib/editor/editor.svelte";
+import type { ExtensionDesignOperation } from "$lib/extensions/types";
 import { selectionBounds, transformPoint, worldBounds, worldMatrix, worldToNodeLocal } from "$lib/geometry";
 
 type JsonObject = Record<string, unknown>;
@@ -18,6 +19,51 @@ function strings(value: unknown, label: string): string[] {
 function checkChangeToken(session: EditorSession, params: JsonObject): void {
   if (typeof params.expectedChangeToken === "number" && params.expectedChangeToken !== session.changeToken) {
     throw new Error(`STALE_DOCUMENT: expected changeToken ${params.expectedChangeToken}, current value is ${session.changeToken}`);
+  }
+}
+
+function frameTreeIds(session: EditorSession, frameId: string): Set<string> {
+  const ids = new Set<string>();
+  const visit = (id: string) => {
+    const node = session.document.nodes[id];
+    if (!node || ids.has(id)) return;
+    ids.add(id);
+    if (node.type === "frame" || node.type === "group") node.childIds.forEach(visit);
+  };
+  visit(frameId);
+  return ids;
+}
+
+/** Host-enforced safety boundary for the bounded /evolve experiment. */
+export function validateEvolutionOperations(session: EditorSession, frameId: string, operations: unknown[]): asserts operations is ExtensionDesignOperation[] {
+  const frame = session.document.nodes[frameId];
+  if (frame?.type !== "frame") throw new Error("EVOLVE_NEEDS_FRAME: select exactly one frame before running /evolve");
+  if (session.selectedIds.length !== 1 || session.selectedIds[0] !== frameId) throw new Error("EVOLVE_SELECTION_CHANGED: keep the frame selected while /evolve runs");
+  const allowed = frameTreeIds(session, frameId);
+  for (const value of operations) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Each evolution operation must be an object");
+    const operation = value as Record<string, unknown>;
+    if (operation.kind === "create") {
+      if (typeof operation.parentId !== "string" || !allowed.has(operation.parentId)) throw new Error("Evolution can only create layers inside the selected frame");
+      const node = operation.node && typeof operation.node === "object" && !Array.isArray(operation.node) ? operation.node as Record<string, unknown> : {};
+      if (typeof node.id === "string") allowed.add(node.id);
+      continue;
+    }
+    if (operation.kind === "update") {
+      if (typeof operation.id !== "string" || !allowed.has(operation.id)) throw new Error("Evolution can only update the selected frame and its descendants");
+      if (session.document.nodes[operation.id]?.locked) throw new Error(`Evolution cannot change locked layer ${operation.id}`);
+      const patch = operation.patch && typeof operation.patch === "object" && !Array.isArray(operation.patch) ? operation.patch as Record<string, unknown> : {};
+      for (const key of ["text", "assetId", "crop", "locked"]) if (key in patch) throw new Error(`Evolution preserves existing content and cannot update ${key}`);
+      if (operation.id === frameId && ["x", "y", "width", "height", "rotation"].some((key) => key in patch)) throw new Error("Evolution cannot move or resize the selected frame");
+      continue;
+    }
+    if (operation.kind === "reorder") {
+      if (typeof operation.parentId !== "string" || !allowed.has(operation.parentId)) throw new Error("Evolution can only reorder layers inside the selected frame");
+      if (!Array.isArray(operation.ids) || operation.ids.some((id) => typeof id !== "string" || !allowed.has(id))) throw new Error("Evolution cannot reorder layers outside the selected frame");
+      continue;
+    }
+    if (operation.kind === "delete" || operation.kind === "reparent") throw new Error("Evolution preserves the existing layer tree and cannot delete or reparent layers");
+    throw new Error(`Unsupported evolution operation: ${String(operation.kind)}`);
   }
 }
 

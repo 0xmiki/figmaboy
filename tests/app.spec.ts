@@ -45,7 +45,6 @@ test("opens the Codex chat sidebar and returns to the design inspector", async (
         if (command === "plugin:event|listen") return callbackId++;
         if (command === "codex_ui_state_read") return null;
         if (command === "codex_connect") return { workspaceId: "file", cwd: "/tmp/figmaboy", reused: false };
-        if (command === "codex_mcp_status") return { installed: true, healthy: true, matchesBundled: true, command: "/tmp/figmaboy-mcp", bundledPath: "/tmp/figmaboy-mcp" };
         if (command !== "codex_request") return null;
         if (args?.method === "account/read") return { account: { type: "chatgpt" } };
         if (args?.method === "model/list") return { data: [

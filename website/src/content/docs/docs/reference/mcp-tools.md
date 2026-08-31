@@ -40,14 +40,6 @@ These tools require an open design.
 
 `operations_apply`, `nodes_center`, `nodes_set_border_radius`, and `image_place` accept an optional `expectedChangeToken` for optimistic concurrency.
 
-## Create reusable tools
-
-| Tool | Purpose |
-| --- | --- |
-| `extension_stage` | Validate and stage one declarative extension as an inert trial in the open editor. |
-
-Call `design_capabilities` first and read its `extensions` contract and example. `extension_stage` cannot run extension controls or Keep, Discard, enable, or approve an extension. Those decisions remain in the Extensions sidebar.
-
 ## Review, history, and persistence
 
 | Tool | Purpose |
