@@ -98,7 +98,8 @@ describe("editor commands", () => {
     session.document.viewport = { x: 120, y: -40, zoom: 1.75 };
     session.viewportChanged();
 
-    expect(session.changeToken).toBe(1);
+    expect(session.changeToken).toBe(0);
+    expect(session.persistenceToken).toBe(1);
     expect(session.saveStatus).toBe("dirty");
     expect(session.thumbnailChangeToken).toBe(0);
     expect(session.thumbnailDirty).toBe(false);

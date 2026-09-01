@@ -12,13 +12,14 @@
     ArrowClockwise as RefreshCw, FloppyDisk as Save, Trash as Trash2,
     ExcludeSquare as Ungroup, LockOpen as Unlock, X,
   } from "phosphor-svelte";
-  import type { DesignNode, PageMeta } from "$lib/domain";
+  import type { DesignNode, PageDocument, PageMeta } from "$lib/domain";
   import { cloneDocument, defaultNode } from "$lib/domain";
   import { screenToWorld, selectionBounds, unionRects, worldBounds } from "$lib/geometry";
   import { repository } from "$lib/repository";
   import { EditorSession } from "$lib/editor/editor.svelte";
   import { DesignService } from "$lib/editor/design-service";
   import EditorCanvas from "$lib/editor/EditorCanvas.svelte";
+  import CanvasNode from "$lib/editor/CanvasNode.svelte";
   import Inspector from "$lib/editor/Inspector.svelte";
   import FrameFullscreenPreview from "$lib/editor/FrameFullscreenPreview.svelte";
   import { stageExtensionManifest } from "$lib/extensions/staging";
@@ -26,6 +27,7 @@
   import PrototypePreview from "$lib/editor/PrototypePreview.svelte";
   import Toolbar from "$lib/editor/Toolbar.svelte";
   import { applyExternalOperations, centerNodes, nodeGeometry, placeImageNode, setBorderRadius, validateEvolutionOperations } from "$lib/editor/editor-rpc";
+  import { EvolveCandidateStore, type EvolveCandidate } from "$lib/editor/evolve-candidates";
 
   const repo = repository();
   let session = $state<EditorSession | null>(null);
@@ -48,6 +50,10 @@
   let thumbnailTimer: ReturnType<typeof setTimeout> | null = null;
   let noticeTimer: ReturnType<typeof setTimeout> | null = null;
   let nudgeTimer: ReturnType<typeof setTimeout> | null = null;
+  const evolveCandidates = new EvolveCandidateStore();
+  let candidateRender = $state<{ document: PageDocument; frameId: string; idPrefix: string } | null>(null);
+  let candidateRenderSvg = $state<SVGSVGElement>();
+  let candidateRenderQueue: Promise<void> = Promise.resolve();
   const codexVisible = $derived(codexOpen && panels.right && Boolean(CodexSidebarComponent));
   const contextFrame = $derived.by(() => {
     if (!session) return null;
@@ -159,7 +165,7 @@
   });
 
   $effect(() => {
-    const token = session?.changeToken ?? 0;
+    const token = session?.persistenceToken ?? 0;
     if (!session || token === 0 || session.saveStatus === "saving" || session.saveStatus === "conflict") return;
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(() => void saveNow(), 420);
@@ -216,6 +222,75 @@
     }
   }
 
+  type EvolveRenderResult = { imageBase64: string; mimeType: string; width: number; height: number; thumbnailBase64: string; thumbnailMimeType: string };
+
+  async function renderEvolveCandidate(candidate: EvolveCandidate): Promise<EvolveRenderResult> {
+    const frame = candidate.document.nodes[candidate.frameId];
+    if (frame?.type !== "frame") throw new Error("EVOLVE_NEEDS_FRAME: the evolution target is no longer available");
+    candidateRender = { document: candidate.document, frameId: candidate.frameId, idPrefix: `candidate-${candidate.runId}-${candidate.candidateId}` };
+    let svg: SVGSVGElement | undefined;
+    try {
+      await tick();
+      await document.fonts?.ready;
+      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      svg = candidateRenderSvg?.cloneNode(true) as SVGSVGElement | undefined;
+    } finally {
+      candidateRender = null;
+      candidateRenderSvg = undefined;
+    }
+    if (!svg) throw new Error("Could not mount the candidate renderer");
+    const scale = Math.min(1, 1600 / Math.max(1, frame.width, frame.height));
+    const width = Math.max(1, Math.ceil(frame.width * scale));
+    const height = Math.max(1, Math.ceil(frame.height * scale));
+    svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+    svg.setAttribute("width", String(width));
+    svg.setAttribute("height", String(height));
+    const source = URL.createObjectURL(new Blob([svg.outerHTML], { type: "image/svg+xml" }));
+    try {
+      const image = new Image();
+      image.decoding = "async";
+      await new Promise<void>((resolve, reject) => {
+        image.onload = () => resolve();
+        image.onerror = () => reject(new Error("Could not rasterize the evolution candidate"));
+        image.src = source;
+      });
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const context2d = canvas.getContext("2d");
+      if (!context2d) throw new Error("Could not create the candidate image canvas");
+      context2d.drawImage(image, 0, 0, width, height);
+      const dataUrl = canvas.toDataURL("image/jpeg", .86);
+      const thumbnailScale = Math.min(1, 240 / Math.max(width, height));
+      const thumbnail = document.createElement("canvas");
+      thumbnail.width = Math.max(1, Math.round(width * thumbnailScale));
+      thumbnail.height = Math.max(1, Math.round(height * thumbnailScale));
+      const thumbnailContext = thumbnail.getContext("2d");
+      if (!thumbnailContext) throw new Error("Could not create the candidate thumbnail canvas");
+      thumbnailContext.drawImage(canvas, 0, 0, thumbnail.width, thumbnail.height);
+      const thumbnailDataUrl = thumbnail.toDataURL("image/jpeg", .72);
+      return {
+        imageBase64: dataUrl.slice(dataUrl.indexOf(",") + 1), mimeType: "image/jpeg", width, height,
+        thumbnailBase64: thumbnailDataUrl.slice(thumbnailDataUrl.indexOf(",") + 1), thumbnailMimeType: "image/jpeg",
+      };
+    } finally {
+      URL.revokeObjectURL(source);
+    }
+  }
+
+  function queueEvolveCandidateRender(candidate: EvolveCandidate): Promise<EvolveRenderResult> {
+    const result = candidateRenderQueue.then(() => renderEvolveCandidate(candidate));
+    candidateRenderQueue = result.then(() => undefined, () => undefined);
+    return result;
+  }
+
+  async function waitForCommittedGesture(expectedPageEpoch: number): Promise<void> {
+    while (session?.hasActiveGesture) {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      if (!session || session.pageEpoch !== expectedPageEpoch) throw new Error("EVOLVE_PAGE_CHANGED: the evolution page is no longer active");
+    }
+  }
+
   async function thumbnailSvg(): Promise<string | null> {
     if (!session || !session.document.rootIds.length) return null;
     const bounds = unionRects(session.document.rootIds.map((id) => session!.document.nodes[id]).filter(Boolean).map((node) => worldBounds(session!.document, node)));
@@ -258,7 +333,7 @@
       return;
     }
     session.saveStatus = "saving";
-    const savingToken = session.changeToken;
+    const savingToken = session.persistenceToken;
     const pageId = session.page.id;
     const expectedRevision = session.page.revision;
     const snapshot = cloneDocument(session.document);
@@ -270,7 +345,7 @@
       const meta = session.pages.find((page) => page.id === pageId);
       if (meta) meta.revision = revision;
       if (refreshThumbnail) scheduleThumbnailRefresh(pageId, savingThumbnailToken);
-      session.saveStatus = session.changeToken === savingToken ? "saved" : "dirty";
+      session.saveStatus = session.persistenceToken === savingToken ? "saved" : "dirty";
       if (session.saveStatus === "dirty") {
         if (saveTimer) clearTimeout(saveTimer);
         saveTimer = setTimeout(() => void saveNow(), 120);
@@ -283,6 +358,8 @@
 
   onDestroy(() => {
     session?.cancelExternalPreview();
+    evolveCandidates.clear();
+    candidateRender = null;
     if (saveTimer) clearTimeout(saveTimer);
     if (thumbnailTimer) clearTimeout(thumbnailTimer);
     if (noticeTimer) clearTimeout(noticeTimer);
@@ -482,7 +559,7 @@
     }
   }
 
-  async function rasterizeNodes(ids: string[], requestedScale: number) {
+  async function rasterizeNodes(ids: string[], requestedScale: number, maxDimension = 4096) {
     if (!session || !ids.length) throw new Error("Nothing to render");
     const nodes = ids.map((id) => session!.document.nodes[id]).filter(Boolean);
     const bounds = unionRects(nodes.map((node) => worldBounds(session!.document, node)));
@@ -498,7 +575,8 @@
       if (id && !ids.includes(id) && !item.closest(selector)) item.remove();
     });
     const desiredScale = Math.max(.25, Math.min(4, Number(requestedScale) || 1));
-    const scale = Math.min(desiredScale, 4096 / Math.max(1, bounds.width), 4096 / Math.max(1, bounds.height));
+    const dimensionLimit = Math.max(640, Math.min(4096, Number(maxDimension) || 4096));
+    const scale = Math.min(desiredScale, dimensionLimit / Math.max(1, bounds.width), dimensionLimit / Math.max(1, bounds.height));
     const width = Math.max(1, Math.ceil(bounds.width * scale));
     const height = Math.max(1, Math.ceil(bounds.height * scale));
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${bounds.x} ${bounds.y} ${Math.max(1, bounds.width)} ${Math.max(1, bounds.height)}">${world.outerHTML}</svg>`;
@@ -537,13 +615,16 @@
 
   async function renderForRpc(paramsValue: unknown) {
     if (!session) throw new Error("NO_ACTIVE_EDITOR");
-    const params = (paramsValue && typeof paramsValue === "object" ? paramsValue : {}) as { scope?: string; ids?: string[]; scale?: number };
+    const params = (paramsValue && typeof paramsValue === "object" ? paramsValue : {}) as { scope?: string; ids?: string[]; scale?: number; maxDimension?: number; format?: string; quality?: number };
     const ids = params.scope === "selection"
       ? (params.ids?.length ? params.ids : session.selectedIds)
       : (params.ids?.length ? params.ids : session.document.rootIds);
-    const rendered = await rasterizeNodes(ids, Number(params.scale) || 1);
-    const dataUrl = rendered.canvas.toDataURL("image/png");
-    return { mimeType: "image/png", imageBase64: dataUrl.slice(dataUrl.indexOf(",") + 1), width: rendered.width, height: rendered.height, bounds: rendered.bounds, ids, scale: rendered.scale };
+    const rendered = await rasterizeNodes(ids, Number(params.scale) || 1, Number(params.maxDimension) || 4096);
+    const jpeg = params.format === "jpeg";
+    const mimeType = jpeg ? "image/jpeg" : "image/png";
+    const quality = Math.max(.65, Math.min(.95, Number(params.quality) || .86));
+    const dataUrl = rendered.canvas.toDataURL(mimeType, jpeg ? quality : undefined);
+    return { mimeType, imageBase64: dataUrl.slice(dataUrl.indexOf(",") + 1), width: rendered.width, height: rendered.height, bounds: rendered.bounds, ids, scale: rendered.scale };
   }
 
   function evolvePreviewOwner(): boolean {
@@ -556,12 +637,12 @@
     const canvas = document.querySelector<HTMLElement>("#design-canvas");
     const rect = canvas?.getBoundingClientRect() ?? { x: 0, y: 0, width: 0, height: 0 };
     if (request.method === "editor_status") return {
-      file: session.file, page: session.page, pages: session.pages, changeToken: session.changeToken,
+      file: session.file, page: session.page, pages: session.pages, changeToken: session.changeToken, pageEpoch: session.pageEpoch,
       selectedIds: session.selectedIds, activeTool: session.activeTool, saveStatus: session.saveStatus,
       viewport: session.document.viewport,
       canvas: { clientRect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height }, screenOrigin: { x: window.screenX + rect.x, y: window.screenY + rect.y }, devicePixelRatio: window.devicePixelRatio },
     };
-    if (request.method === "document_get") return { changeToken: session.changeToken, document: cloneDocument(session.document) };
+    if (request.method === "document_get") return { changeToken: session.changeToken, pageEpoch: session.pageEpoch, document: cloneDocument(session.document) };
     if (request.method === "nodes_get") {
       const ids = Array.isArray(params.ids) ? params.ids.filter((id): id is string => typeof id === "string") : Object.keys(session.document.nodes);
       const type = typeof params.type === "string" ? params.type : null;
@@ -573,6 +654,52 @@
       const ids = Array.isArray(params.ids) ? params.ids.filter((id): id is string => typeof id === "string") : session.selectedIds;
       const canvasClientRect = { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
       return { changeToken: session.changeToken, viewport: session.document.viewport, canvasClientRect, nodes: nodeGeometry(session, ids, canvasClientRect) };
+    }
+    if (request.method === "evolve_run_start") {
+      const runId = typeof params.runId === "string" ? params.runId : "";
+      const frameId = typeof params.frameId === "string" ? params.frameId : "";
+      if (!runId) throw new Error("EVOLVE_RUN_MISSING: runId is required");
+      if (typeof params.expectedChangeToken === "number" && params.expectedChangeToken !== session.changeToken) throw new Error(`STALE_DOCUMENT: expected changeToken ${params.expectedChangeToken}, current value is ${session.changeToken}`);
+      if (typeof params.pageEpoch === "number" && params.pageEpoch !== session.pageEpoch) throw new Error("EVOLVE_PAGE_CHANGED: the active page changed before evolution started");
+      const run = evolveCandidates.start({ runId, fileId: session.file.id, pageId: session.page.id, pageEpoch: session.pageEpoch, frameId, contentRevision: session.changeToken, document: session.document });
+      return { runId, frameId, pageId: run.pageId, pageEpoch: run.pageEpoch, changeToken: run.baseContentRevision };
+    }
+    if (request.method === "evolve_candidate_render") {
+      const runId = typeof params.runId === "string" ? params.runId : "";
+      const candidateId = typeof params.candidateId === "string" ? params.candidateId : "";
+      const run = evolveCandidates.run(runId);
+      if (run.fileId !== session.file.id || run.pageId !== session.page.id || run.pageEpoch !== session.pageEpoch) throw new Error("EVOLVE_PAGE_CHANGED: the evolution page is no longer active");
+      if (!candidateId) throw new Error("EVOLVE_CANDIDATE_MISSING: candidateId is required");
+      const operations = Array.isArray(params.operations) ? params.operations : [];
+      const candidate = evolveCandidates.materialize(runId, candidateId, operations);
+      return { ...(await queueEvolveCandidateRender(candidate)), runId, candidateId, frameId: run.frameId, baseChangeToken: run.baseContentRevision, renderedChangeToken: candidate.renderedContentRevision, document: candidate.document };
+    }
+    if (request.method === "evolve_candidate_commit") {
+      const runId = typeof params.runId === "string" ? params.runId : "";
+      const candidateId = typeof params.candidateId === "string" ? params.candidateId : "";
+      const run = evolveCandidates.run(runId);
+      if (run.fileId !== session.file.id || run.pageId !== session.page.id || run.pageEpoch !== session.pageEpoch) throw new Error("EVOLVE_PAGE_CHANGED: the evolution page is no longer active");
+      await waitForCommittedGesture(run.pageEpoch);
+      let candidate = evolveCandidates.candidate(runId, candidateId);
+      if (candidate.renderedContentRevision !== session.changeToken) {
+        const rebased = evolveCandidates.rebase(runId, candidateId, session.document, session.changeToken);
+        if (rebased.conflicts.length) throw new Error(`EVOLVE_REBASE_CONFLICT: ${rebased.conflicts.join(" | ")}`);
+        candidate = rebased.candidate;
+        return { ...(await queueEvolveCandidateRender(candidate)), committed: false, needsReview: true, runId, candidateId, frameId: run.frameId, renderedChangeToken: candidate.renderedContentRevision, document: candidate.document };
+      }
+      validateEvolutionOperations(session, run.frameId, candidate.operations);
+      const result = new DesignService(session).transact({
+        label: "Evolve frame",
+        source: { kind: "codex", id: `evolve:${runId}` },
+        expectedChangeToken: session.changeToken,
+        operations: candidate.operations as Parameters<DesignService["transact"]>[0]["operations"],
+      });
+      return { ...result, committed: true, needsReview: false, runId, candidateId, frameId: run.frameId };
+    }
+    if (request.method === "evolve_run_discard") {
+      const runId = typeof params.runId === "string" ? params.runId : "";
+      evolveCandidates.discard(runId);
+      return { runId, discarded: true };
     }
     if (request.method === "operations_preview") {
       const frameId = typeof params.frameId === "string" ? params.frameId : "";
@@ -880,6 +1007,17 @@
     <div class="editor-context small" role="menu" tabindex="-1" style:left={`${pageMenu.x}px`} style:top={`${pageMenu.y}px`} onclick={(event) => event.stopPropagation()} onkeydown={(event) => event.key === "Escape" && (pageMenu = null)}><button onclick={() => pageAction("rename")}>Rename</button><button onclick={() => pageAction("duplicate")}>Duplicate</button><hr /><button class="danger" onclick={() => pageAction("delete")}>Delete page</button></div>
   {/if}
 
+  {#if candidateRender}
+    {@const candidateFrame = candidateRender.document.nodes[candidateRender.frameId]}
+    {#if candidateFrame?.type === "frame"}
+      <div class="candidate-render-host" aria-hidden="true">
+        <svg bind:this={candidateRenderSvg} viewBox={`${candidateFrame.x} ${candidateFrame.y} ${Math.max(1, candidateFrame.width)} ${Math.max(1, candidateFrame.height)}`} preserveAspectRatio="xMidYMid meet">
+          <CanvasNode node={candidateFrame} document={candidateRender.document} selectedIds={[]} imageSources={session.imageSources} interactive={false} idPrefix={candidateRender.idPrefix} />
+        </svg>
+      </div>
+    {/if}
+  {/if}
+
   {#if preview}<PrototypePreview {session} onClose={() => (preview = false)} />{/if}
   {#if fullscreenFrameId}<FrameFullscreenPreview {session} frameId={fullscreenFrameId} onClose={() => (fullscreenFrameId = null)} />{/if}
 {/if}
@@ -896,5 +1034,7 @@
   .editor-context { position: fixed; z-index: 100; width: 225px; padding: 6px; border: 1px solid #444; border-radius: 7px; background: #202020; box-shadow: 0 15px 45px #0009; }.editor-context.small { width: 165px; }.editor-context button { width: 100%; min-height: 31px; border: 0; border-radius: 4px; background: transparent; color: #eee; padding: 0 8px; display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: var(--text-control); }.editor-context button:hover { background: #373737; }.editor-context kbd,.editor-context button > span { margin-left: auto; color: #888; font: inherit; }.editor-context hr { height: 1px; border: 0; background: #3d3d3d; margin: 5px -6px; }.editor-context .danger { color: #fca5a5; }
   .save-error { position: fixed; z-index: 80; left: 50%; top: 13px; transform: translateX(-50%); min-width: 380px; min-height: 48px; background: #3a2020; border: 1px solid #7f3737; border-radius: 8px; box-shadow: 0 8px 30px #0007; display: flex; align-items: center; gap: 10px; padding: 8px 9px 8px 13px; }.save-error > div { flex: 1; display: flex; flex-direction: column; }.save-error strong { font-size: var(--text-control); }.save-error span { color: #d4a1a1; font-size: var(--text-caption); margin-top: 3px; }.save-error button { height: 28px; border: 0; border-radius: 5px; background: #693333; color: #fff; display: flex; align-items: center; gap: 5px; padding: 0 9px; cursor: pointer; font-size: var(--text-small); }.save-error .dismiss { width: 28px; padding: 0; justify-content: center; background: transparent; }
   .copy-notice { position: fixed; z-index: 90; left: 50%; bottom: 24px; transform: translateX(-50%); min-height: 34px; display: flex; align-items: center; gap: 7px; padding: 0 13px; border: 1px solid #4a4a4a; border-radius: 7px; background: #252525; color: #f4f4f5; box-shadow: 0 8px 28px #0008; font-size: var(--text-small); }
+  .candidate-render-host { position: fixed; left: -100000px; top: -100000px; width: 2048px; height: 2048px; overflow: hidden; pointer-events: none; }
+  .candidate-render-host svg { display: block; width: 100%; height: 100%; }
   @media (max-width: 1050px) { .canvas-region { left: 56px; }.editor-shell :global(.left-shell) { width: 56px; grid-template-columns: 56px 0; }.editor-shell :global(.left-shell .panel) { display: none; }.panel-resizer.left { display: none; } }
 </style>

@@ -99,7 +99,12 @@ export class EditorSession {
   inspectorTab = $state<"design" | "prototype">("design");
   saveStatus = $state<"saved" | "dirty" | "saving" | "error" | "conflict">("saved");
   errorMessage = $state("");
+  /** Changes only when committed design content changes. Used by editor transactions. */
   changeToken = $state(0);
+  /** Changes whenever persisted page state changes, including the viewport. */
+  persistenceToken = $state(0);
+  /** Changes whenever this session replaces its active page document. */
+  pageEpoch = $state(0);
   thumbnailChangeToken = $state(0);
   thumbnailDirty = $state(false);
   renderAllNodes = $state(false);
@@ -123,6 +128,7 @@ export class EditorSession {
     normalizeTextSizes(this.document);
     if (sanitized.recovered) {
       this.changeToken = 1;
+      this.persistenceToken = 1;
       this.thumbnailChangeToken = 1;
       this.thumbnailDirty = true;
       this.saveStatus = "dirty";
@@ -160,8 +166,9 @@ export class EditorSession {
   }
 
   private changed(refreshThumbnail = true): void {
-    this.changeToken += 1;
+    this.persistenceToken += 1;
     if (refreshThumbnail) {
+      this.changeToken += 1;
       this.thumbnailChangeToken += 1;
       this.thumbnailDirty = true;
     }
@@ -243,7 +250,8 @@ export class EditorSession {
     }
   }
 
-  gestureChanged(): void { this.changed(); }
+  /** Notify Svelte during an in-flight gesture without advancing committed revisions. */
+  gestureChanged(): void { /* deep $state mutations are already reactive */ }
 
   viewportChanged(): void { this.changed(false); }
 
@@ -725,6 +733,8 @@ export class EditorSession {
     this.externalPreviewActive = false;
     this.guides = { x: null, y: null };
     this.page = page;
+    this.pageEpoch += 1;
+    this.changeToken += 1;
     const sanitized = sanitizeDocument(document);
     this.document = sanitized.document;
     normalizeTextSizes(this.document);
@@ -734,7 +744,7 @@ export class EditorSession {
     this.saveStatus = sanitized.recovered ? "dirty" : "saved";
     this.thumbnailDirty = sanitized.recovered;
     if (sanitized.recovered) {
-      this.changeToken += 1;
+      this.persistenceToken += 1;
       this.thumbnailChangeToken += 1;
     }
   }

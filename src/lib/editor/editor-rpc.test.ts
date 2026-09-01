@@ -40,11 +40,12 @@ describe("editor RPC operations", () => {
     expect(editor.document.rootIds).toEqual([]);
   });
 
-  it("keeps evolution operations inside one selected frame and preserves content", () => {
+  it("lets evolution freely change content and hierarchy inside one target frame", () => {
     const editor = session();
     applyExternalOperations(editor, { operations: [
       { kind: "create", node: { id: "screen", type: "frame", width: 1440, height: 810 } },
       { kind: "create", parentId: "screen", node: { id: "headline", type: "text", text: "Keep this", fontSize: 64 } },
+      { kind: "create", parentId: "screen", node: { id: "content", type: "group", width: 400, height: 300 } },
       { kind: "create", node: { id: "outside", type: "rectangle" } },
     ] });
     editor.setSelection(["screen"]);
@@ -52,10 +53,12 @@ describe("editor RPC operations", () => {
       { kind: "update", id: "headline", patch: { fontSize: 72, x: 80 } },
       { kind: "create", parentId: "screen", node: { id: "accent", type: "rectangle" } },
     ])).not.toThrow();
-    expect(() => validateEvolutionOperations(editor, "screen", [{ kind: "update", id: "headline", patch: { text: "Rewrite this" } }])).toThrow("preserves existing content");
+    expect(() => validateEvolutionOperations(editor, "screen", [{ kind: "update", id: "headline", patch: { text: "Rewrite this" } }])).not.toThrow();
     expect(() => validateEvolutionOperations(editor, "screen", [{ kind: "update", id: "outside", patch: { x: 20 } }])).toThrow("selected frame");
-    expect(() => validateEvolutionOperations(editor, "screen", [{ kind: "delete", ids: ["headline"] }])).toThrow("cannot delete");
-    expect(() => validateEvolutionOperations(editor, "screen", [{ kind: "update", id: "screen", patch: { width: 1200 } }])).toThrow("cannot move or resize");
+    expect(() => validateEvolutionOperations(editor, "screen", [{ kind: "delete", ids: ["headline"] }])).not.toThrow();
+    expect(() => validateEvolutionOperations(editor, "screen", [{ kind: "reparent", ids: ["headline"], parentId: "content" }])).not.toThrow();
+    expect(() => validateEvolutionOperations(editor, "screen", [{ kind: "update", id: "screen", patch: { width: 1200 } }])).not.toThrow();
+    expect(() => validateEvolutionOperations(editor, "screen", [{ kind: "delete", ids: ["screen"] }])).toThrow("keep the target frame");
   });
 
   it("accepts rich native styling inside a semantic component tree", () => {

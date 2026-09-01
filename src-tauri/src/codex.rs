@@ -358,6 +358,8 @@ pub async fn codex_connect(
                 "app-server",
                 "--stdio",
                 "-c",
+                "mcp_servers={}",
+                "-c",
                 &command_config,
                 "-c",
                 &bridge_config,

@@ -221,6 +221,36 @@ struct PreviewParams {
 
 #[derive(Debug, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct EvolveRunStartParams {
+    run_id: String,
+    frame_id: String,
+    expected_change_token: u64,
+    page_epoch: u64,
+}
+
+#[derive(Debug, Deserialize, JsonSchema, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EvolveCandidateRenderParams {
+    run_id: String,
+    candidate_id: String,
+    operations: Vec<EditOperation>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EvolveCandidateParams {
+    run_id: String,
+    candidate_id: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EvolveRunParams {
+    run_id: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct CenterParams {
     /// Node IDs to center. One node centers in its parent by default; multiple nodes center to their selection bounds.
     ids: Vec<String>,
@@ -498,9 +528,9 @@ impl FigmaboyMcp {
             "containers": { "childIds": "managed by operations", "clipContent": "frame-only clipping toggle" },
             "review": { "tool": "frame_screenshot", "rule": "Capture each completed frame and visually review it before finishing." },
             "evolution": {
-                "tools": ["operations_preview", "operations_preview_commit", "operations_preview_discard"],
-                "scope": "One selected frame. Existing text, image assets, crops, locked layers, and the frame bounds are preserved by the host.",
-                "previewRule": "Preview each candidate on the canvas. Commit every accepted pass as a checkpoint or discard the candidate. Checkpoints from one run coalesce into one undo entry."
+                "tools": ["evolve_run_start", "evolve_candidate_render", "evolve_candidate_commit", "evolve_run_discard"],
+                "scope": "One selected frame. Candidates may change its content, styling, geometry, and descendant hierarchy, but must keep the target frame present and cannot touch nodes outside it.",
+                "previewRule": "Candidates render against an immutable run snapshot without changing the live canvas. Commit only a visually accepted winner."
             },
             "typescriptContract": { "tool": "types_get", "path": "mcp/types.ts" },
             "extensions": extension_authoring_contract(),
@@ -559,7 +589,7 @@ impl FigmaboyMcp {
     }
 
     #[tool(
-        description = "Preview a bounded /evolve candidate inside one selected frame without saving it or adding history. Existing text and image content, locked layers, deletions, reparenting, and changes outside the selected frame are rejected. Each call replaces the current uncommitted evolve preview."
+        description = "Preview a bounded /evolve candidate inside one selected frame without saving it or adding history. Content and hierarchy may change inside the frame; changes outside it and deletion or reparenting of the target frame are rejected. Each call replaces the current uncommitted evolve preview."
     )]
     async fn operations_preview(
         &self,
@@ -580,6 +610,44 @@ impl FigmaboyMcp {
     )]
     async fn operations_preview_discard(&self) -> CallToolResult {
         self.call("operations_preview_discard", json!({})).await
+    }
+
+    #[tool(
+        description = "Capture one immutable evolution base from the active page. Internal Figmaboy evolve orchestration uses this before parallel designers start."
+    )]
+    async fn evolve_run_start(
+        &self,
+        Parameters(params): Parameters<EvolveRunStartParams>,
+    ) -> CallToolResult {
+        self.call("evolve_run_start", params).await
+    }
+
+    #[tool(
+        description = "Validate and render one isolated evolution candidate without changing the live canvas, selection, undo history, or autosave state."
+    )]
+    async fn evolve_candidate_render(
+        &self,
+        Parameters(params): Parameters<EvolveCandidateRenderParams>,
+    ) -> CallToolResult {
+        self.call("evolve_candidate_render", params).await
+    }
+
+    #[tool(
+        description = "Commit a previously rendered evolution candidate, or return a rebased image for fresh review when committed design content changed."
+    )]
+    async fn evolve_candidate_commit(
+        &self,
+        Parameters(params): Parameters<EvolveCandidateParams>,
+    ) -> CallToolResult {
+        self.call("evolve_candidate_commit", params).await
+    }
+
+    #[tool(description = "Discard every isolated candidate owned by one evolution run.")]
+    async fn evolve_run_discard(
+        &self,
+        Parameters(params): Parameters<EvolveRunParams>,
+    ) -> CallToolResult {
+        self.call("evolve_run_discard", params).await
     }
 
     #[tool(

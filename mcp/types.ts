@@ -132,6 +132,26 @@ export interface OperationsPreviewParams extends OperationsApplyParams {
   label?: string;
 }
 
+export interface EvolveRunStartParams {
+  runId: string;
+  frameId: Id;
+  expectedChangeToken: number;
+  pageEpoch: number;
+}
+
+export interface EvolveCandidateRenderParams {
+  runId: string;
+  candidateId: string;
+  operations: EditOperation[];
+}
+
+export interface EvolveCandidateCommitParams {
+  runId: string;
+  candidateId: string;
+}
+
+export interface EvolveRunDiscardParams { runId: string }
+
 /**
  * Figma-compatible centering behavior:
  * - auto + one node: center it in its parent frame/group.
@@ -232,6 +252,10 @@ export interface FigmaBoyTools {
   operations_preview(params: OperationsPreviewParams): Promise<ToolResult>;
   operations_preview_commit(params?: Record<string, never>): Promise<ToolResult>;
   operations_preview_discard(params?: Record<string, never>): Promise<ToolResult>;
+  evolve_run_start(params: EvolveRunStartParams): Promise<ToolResult>;
+  evolve_candidate_render(params: EvolveCandidateRenderParams): Promise<ToolResult>;
+  evolve_candidate_commit(params: EvolveCandidateCommitParams): Promise<ToolResult>;
+  evolve_run_discard(params: EvolveRunDiscardParams): Promise<ToolResult>;
   nodes_center(params: NodesCenterParams): Promise<ToolResult>;
   nodes_set_border_radius(params: NodesSetBorderRadiusParams): Promise<ToolResult>;
   image_place(params: ImagePlaceParams): Promise<ToolResult>;

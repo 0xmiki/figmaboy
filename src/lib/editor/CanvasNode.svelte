@@ -6,7 +6,7 @@
   import CanvasNode from "$lib/editor/CanvasNode.svelte";
 
   let {
-    node, document, selectedIds, imageSources, interactive = true, preview = false, renderedNodeIds = null, unclippedFrameIds = new Set<string>(),
+    node, document, selectedIds, imageSources, interactive = true, preview = false, renderedNodeIds = null, unclippedFrameIds = new Set<string>(), idPrefix = "canvas",
     onNodePointerDown, onNodeDoubleClick, onNodeContextMenu, onPrototypeClick,
   }: {
     node: DesignNode;
@@ -17,13 +17,15 @@
     preview?: boolean;
     renderedNodeIds?: ReadonlySet<string> | null;
     unclippedFrameIds?: ReadonlySet<string>;
+    idPrefix?: string;
     onNodePointerDown?: (event: PointerEvent, id: string) => void;
     onNodeDoubleClick?: (event: MouseEvent, id: string) => void;
     onNodeContextMenu?: (event: MouseEvent, id: string) => void;
     onPrototypeClick?: (id: string) => void;
   } = $props();
 
-  const fillValue = $derived(node.fill ? node.fill.type === "solid" ? node.fill.color : `url(#fill-${node.id})` : "none");
+  const resourceId = (kind: string) => `${kind}-${idPrefix}-${node.id}`;
+  const fillValue = $derived(node.fill ? node.fill.type === "solid" ? node.fill.color : `url(#${resourceId("fill")})` : "none");
   const fillOpacity = $derived(node.fill?.type === "solid" ? node.fill.opacity : 1);
   const strokeValue = $derived(node.stroke?.color ?? "none");
   const icon = $derived(node.type === "icon" ? iconData(node.iconName, $iconCatalog) : null);
@@ -132,19 +134,19 @@
         {@const y1 = 50 - Math.sin(radians) * 50}
         {@const x2 = 50 + Math.cos(radians) * 50}
         {@const y2 = 50 + Math.sin(radians) * 50}
-        <linearGradient id={`fill-${node.id}`} x1={`${x1}%`} y1={`${y1}%`} x2={`${x2}%`} y2={`${y2}%`}>
+        <linearGradient id={resourceId("fill")} x1={`${x1}%`} y1={`${y1}%`} x2={`${x2}%`} y2={`${y2}%`}>
           {#each node.fill.stops as stop}<stop offset={`${stop.offset * 100}%`} stop-color={stop.color} stop-opacity={stop.opacity} />{/each}
         </linearGradient>
       {/if}
       {#if node.fill?.type === "radial-gradient"}
-        <radialGradient id={`fill-${node.id}`} cx={`${node.fill.centerX * 100}%`} cy={`${node.fill.centerY * 100}%`} r={`${node.fill.radius * 100}%`}>
+        <radialGradient id={resourceId("fill")} cx={`${node.fill.centerX * 100}%`} cy={`${node.fill.centerY * 100}%`} r={`${node.fill.radius * 100}%`}>
           {#each node.fill.stops as stop}<stop offset={`${stop.offset * 100}%`} stop-color={stop.color} stop-opacity={stop.opacity} />{/each}
         </radialGradient>
       {/if}
-      {#if node.type === "frame" && node.clipContent}<clipPath id={`clip-${node.id}`}><path d={cornerPath} /></clipPath>{/if}
-      {#if node.type === "image"}<clipPath id={`image-clip-${node.id}`}><path d={cornerPath} /></clipPath>{/if}
+      {#if node.type === "frame" && node.clipContent}<clipPath id={resourceId("clip")}><path d={cornerPath} /></clipPath>{/if}
+      {#if node.type === "image"}<clipPath id={resourceId("image-clip")}><path d={cornerPath} /></clipPath>{/if}
       {#if node.type === "arrow"}
-        <marker id={`arrow-${node.id}`} markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L8,4 L0,8 z" fill={strokeValue} /></marker>
+        <marker id={resourceId("arrow")} markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L8,4 L0,8 z" fill={strokeValue} /></marker>
       {/if}
       </defs>
     {/if}
@@ -158,7 +160,7 @@
         <ellipse cx={node.width / 2} cy={node.height / 2} rx={Math.abs(node.width / 2)} ry={Math.abs(node.height / 2)} fill={fillValue} fill-opacity={fillOpacity} stroke={strokeValue} stroke-opacity={node.stroke?.opacity ?? 1} stroke-width={node.stroke?.width ?? 0} stroke-dasharray={node.stroke?.dash?.join(" ")} />
       {:else if node.type === "line" || node.type === "arrow"}
         <line x1="0" y1="0" x2={node.width} y2={node.height} fill="none" stroke="transparent" stroke-width={Math.max(12, (node.stroke?.width ?? 2) + 8)} pointer-events="stroke" />
-        <line x1="0" y1="0" x2={node.width} y2={node.height} fill="none" stroke={strokeValue} stroke-opacity={node.stroke?.opacity ?? 1} stroke-width={node.stroke?.width ?? 2} stroke-dasharray={node.stroke?.dash?.join(" ")} stroke-linecap={node.stroke?.cap ?? "round"} marker-end={node.type === "arrow" ? `url(#arrow-${node.id})` : undefined} />
+        <line x1="0" y1="0" x2={node.width} y2={node.height} fill="none" stroke={strokeValue} stroke-opacity={node.stroke?.opacity ?? 1} stroke-width={node.stroke?.width ?? 2} stroke-dasharray={node.stroke?.dash?.join(" ")} stroke-linecap={node.stroke?.cap ?? "round"} marker-end={node.type === "arrow" ? `url(#${resourceId("arrow")})` : undefined} />
       {:else if node.type === "polygon"}
         <polygon points={polygonPoints(node.width, node.height, node.points ?? 6)} fill={fillValue} fill-opacity={fillOpacity} stroke={strokeValue} stroke-width={node.stroke?.width ?? 0} />
       {:else if node.type === "star"}
@@ -171,7 +173,7 @@
       {:else if node.type === "image"}
         <path d={cornerPath} fill="#333" />
         {#if imageSources[node.assetId]}
-          <image href={imageSources[node.assetId]} width={node.width} height={node.height} preserveAspectRatio={node.fit === "fill" ? "none" : node.fit === "contain" ? "xMidYMid meet" : "xMidYMid slice"} clip-path={`url(#image-clip-${node.id})`} />
+          <image href={imageSources[node.assetId]} width={node.width} height={node.height} preserveAspectRatio={node.fit === "fill" ? "none" : node.fit === "contain" ? "xMidYMid meet" : "xMidYMid slice"} clip-path={`url(#${resourceId("image-clip")})`} />
         {/if}
         {#if node.stroke}<path d={cornerPath} fill="none" stroke={node.stroke.color} stroke-opacity={node.stroke.opacity} stroke-width={node.stroke.width} stroke-dasharray={node.stroke.dash?.join(" ")} />{/if}
       {:else if node.type === "icon" && icon}
@@ -180,10 +182,10 @@
     </g>
 
     {#if node.type === "frame" || node.type === "group"}
-      <g clip-path={node.type === "frame" && node.clipContent && !unclippedFrameIds.has(node.id) ? `url(#clip-${node.id})` : undefined}>
+      <g clip-path={node.type === "frame" && node.clipContent && !unclippedFrameIds.has(node.id) ? `url(#${resourceId("clip")})` : undefined}>
         {#each node.childIds as childId}
           {#if document.nodes[childId] && (!renderedNodeIds || renderedNodeIds.has(childId))}
-            <CanvasNode node={document.nodes[childId]} {document} {selectedIds} {imageSources} {interactive} {preview} {renderedNodeIds} {unclippedFrameIds} {onNodePointerDown} {onNodeDoubleClick} {onNodeContextMenu} {onPrototypeClick} />
+            <CanvasNode node={document.nodes[childId]} {document} {selectedIds} {imageSources} {interactive} {preview} {renderedNodeIds} {unclippedFrameIds} {idPrefix} {onNodePointerDown} {onNodeDoubleClick} {onNodeContextMenu} {onPrototypeClick} />
           {/if}
         {/each}
       </g>
