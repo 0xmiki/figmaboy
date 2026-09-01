@@ -5,17 +5,36 @@ import { identity, invert, multiply, selectionBounds, transformPoint, worldBound
 import { syncTextSize } from "$lib/text-layout";
 import type { Matrix } from "$lib/geometry";
 
-interface HistoryEntry {
+type HistorySource = { kind: "extension" | "codex" | "core"; id: string; version?: string };
+
+interface SnapshotHistoryEntry {
+  kind: "snapshot";
   before: PageDocument;
   after: PageDocument;
   label?: string;
-  source?: { kind: "extension" | "codex" | "core"; id: string; version?: string };
+  source?: HistorySource;
 }
+
+interface NodeHistoryState {
+  nodes: Record<string, DesignNode>;
+  rootIds?: string[];
+  childIds: Record<string, string[]>;
+}
+
+interface NodeHistoryEntry {
+  kind: "nodes";
+  before: NodeHistoryState;
+  after: NodeHistoryState;
+  label?: string;
+  source?: HistorySource;
+}
+
+type HistoryEntry = SnapshotHistoryEntry | NodeHistoryEntry;
 
 interface ExternalPreview {
   before: PageDocument;
   label: string;
-  source: NonNullable<HistoryEntry["source"]>;
+  source: HistorySource;
 }
 
 interface ClipboardPayload {
@@ -116,6 +135,7 @@ export class EditorSession {
   private undoStack: HistoryEntry[] = [];
   private redoStack: HistoryEntry[] = [];
   private gestureBefore: PageDocument | null = null;
+  private transientGestureActive = $state(false);
   private externalPreview: ExternalPreview | null = null;
   private pasteCount = 0;
 
@@ -165,6 +185,34 @@ export class EditorSession {
     this.document.viewport = viewport;
   }
 
+  private captureNodeHistory(nodeIds: Iterable<string>, parentIds: Iterable<string | null>): NodeHistoryState {
+    const nodes: Record<string, DesignNode> = {};
+    for (const id of nodeIds) {
+      const node = this.document.nodes[id];
+      if (node) nodes[id] = JSON.parse(JSON.stringify(node)) as DesignNode;
+    }
+    const childIds: Record<string, string[]> = {};
+    let rootIds: string[] | undefined;
+    for (const parentId of new Set(parentIds)) {
+      if (!parentId) {
+        rootIds = [...this.document.rootIds];
+        continue;
+      }
+      const parent = this.document.nodes[parentId];
+      if (parent?.type === "frame" || parent?.type === "group") childIds[parentId] = [...parent.childIds];
+    }
+    return { nodes, ...(rootIds ? { rootIds } : {}), childIds };
+  }
+
+  private restoreNodeHistory(state: NodeHistoryState): void {
+    for (const [id, node] of Object.entries(state.nodes)) this.document.nodes[id] = JSON.parse(JSON.stringify(node)) as DesignNode;
+    if (state.rootIds) this.document.rootIds = [...state.rootIds];
+    for (const [parentId, ids] of Object.entries(state.childIds)) {
+      const parent = this.document.nodes[parentId];
+      if (parent?.type === "frame" || parent?.type === "group") parent.childIds = [...ids];
+    }
+  }
+
   private changed(refreshThumbnail = true): void {
     this.persistenceToken += 1;
     if (refreshThumbnail) {
@@ -175,20 +223,20 @@ export class EditorSession {
     this.saveStatus = "dirty";
   }
 
-  replaceDocumentFromExternal(next: PageDocument, transaction?: Pick<HistoryEntry, "label" | "source">): void {
+  replaceDocumentFromExternal(next: PageDocument, transaction?: Pick<SnapshotHistoryEntry, "label" | "source">): void {
     if (this.externalPreview) this.cancelExternalPreview();
     this.cancelGesture();
     const before = this.snapshot();
     this.document = sanitizeDocument(next).document;
     normalizeTextSizes(this.document);
-    this.undoStack.push({ before, after: this.snapshot(), ...transaction });
+    this.undoStack.push({ kind: "snapshot", before, after: this.snapshot(), ...transaction });
     if (this.undoStack.length > 100) this.undoStack.shift();
     this.redoStack = [];
     this.selectedIds = this.selectedIds.filter((id) => Boolean(this.document.nodes[id]));
     this.changed();
   }
 
-  previewDocumentFromExternal(next: PageDocument, label: string, source: NonNullable<HistoryEntry["source"]>): void {
+  previewDocumentFromExternal(next: PageDocument, label: string, source: HistorySource): void {
     if (this.externalPreview) this.cancelExternalPreview();
     this.cancelGesture();
     this.externalPreview = { before: this.snapshot(), label, source };
@@ -208,9 +256,9 @@ export class EditorSession {
     this.externalPreviewActive = false;
     if (JSON.stringify(preview.before) === JSON.stringify(after)) return;
     const previous = this.undoStack.at(-1);
-    const coalesce = preview.source.kind === "codex" && preview.source.id.startsWith("evolve:") && previous?.source?.kind === "codex" && previous.source.id === preview.source.id;
-    if (coalesce && previous) this.undoStack[this.undoStack.length - 1] = { ...previous, after, label: preview.label };
-    else this.undoStack.push({ before: preview.before, after, label: preview.label, source: preview.source });
+    const coalesce = preview.source.kind === "codex" && preview.source.id.startsWith("evolve:") && previous?.kind === "snapshot" && previous.source?.kind === "codex" && previous.source.id === preview.source.id;
+    if (coalesce && previous?.kind === "snapshot") this.undoStack[this.undoStack.length - 1] = { ...previous, after, label: preview.label };
+    else this.undoStack.push({ kind: "snapshot", before: preview.before, after, label: preview.label, source: preview.source });
     if (this.undoStack.length > 100) this.undoStack.shift();
     this.redoStack = [];
     this.changed();
@@ -226,7 +274,7 @@ export class EditorSession {
   }
 
   get hasExternalPreview(): boolean { return this.externalPreview !== null; }
-  get externalPreviewSource(): HistoryEntry["source"] | null { return this.externalPreview?.source ?? null; }
+  get externalPreviewSource(): HistorySource | null { return this.externalPreview?.source ?? null; }
 
   mutate(mutator: (document: PageDocument) => void, record = true): void {
     if (record && this.gestureBefore) this.cancelGesture();
@@ -236,7 +284,7 @@ export class EditorSession {
     if (record && before) {
       const after = this.snapshot();
       if (JSON.stringify(before) === JSON.stringify(after)) return;
-      this.undoStack.push({ before, after });
+      this.undoStack.push({ kind: "snapshot", before, after });
       if (this.undoStack.length > 100) this.undoStack.shift();
       this.redoStack = [];
     }
@@ -246,8 +294,21 @@ export class EditorSession {
   beginGesture(): void {
     if (!this.gestureBefore) {
       this.gestureBefore = this.snapshot();
+      this.transientGestureActive = false;
       this.gestureVersion += 1;
     }
+  }
+
+  beginTransientGesture(): void {
+    if (this.gestureBefore || this.transientGestureActive) return;
+    this.transientGestureActive = true;
+    this.gestureVersion += 1;
+  }
+
+  endTransientGesture(): void {
+    if (!this.transientGestureActive) return;
+    this.transientGestureActive = false;
+    this.gestureVersion += 1;
   }
 
   /** Notify Svelte during an in-flight gesture without advancing committed revisions. */
@@ -262,7 +323,7 @@ export class EditorSession {
     if (!this.gestureBefore) return;
     const after = this.snapshot();
     if (JSON.stringify(this.gestureBefore) !== JSON.stringify(after)) {
-      this.undoStack.push({ before: this.gestureBefore, after });
+      this.undoStack.push({ kind: "snapshot", before: this.gestureBefore, after });
       if (this.undoStack.length > 100) this.undoStack.shift();
       this.redoStack = [];
       this.changed();
@@ -272,24 +333,28 @@ export class EditorSession {
   }
 
   cancelGesture(): void {
-    if (!this.gestureBefore) return;
-    this.document = this.gestureBefore;
-    this.gestureBefore = null;
-    this.gestureVersion += 1;
+    if (this.gestureBefore) {
+      this.document = this.gestureBefore;
+      this.gestureBefore = null;
+      this.transientGestureActive = false;
+      this.gestureVersion += 1;
+    } else this.endTransientGesture();
   }
 
   discardGesture(): void {
-    if (this.gestureBefore) this.gestureVersion += 1;
+    if (this.gestureBefore || this.transientGestureActive) this.gestureVersion += 1;
     this.gestureBefore = null;
+    this.transientGestureActive = false;
   }
 
-  get hasActiveGesture(): boolean { return this.gestureBefore !== null; }
+  get hasActiveGesture(): boolean { return this.gestureBefore !== null || this.transientGestureActive; }
 
   undo(): void {
     this.cancelGesture();
     const entry = this.undoStack.pop();
     if (!entry) return;
-    this.restoreHistorySnapshot(entry.before);
+    if (entry.kind === "snapshot") this.restoreHistorySnapshot(entry.before);
+    else this.restoreNodeHistory(entry.before);
     this.redoStack.push(entry);
     this.selectedIds = this.selectedIds.filter((id) => Boolean(this.document.nodes[id]));
     this.changed();
@@ -299,7 +364,8 @@ export class EditorSession {
     this.cancelGesture();
     const entry = this.redoStack.pop();
     if (!entry) return;
-    this.restoreHistorySnapshot(entry.after);
+    if (entry.kind === "snapshot") this.restoreHistorySnapshot(entry.after);
+    else this.restoreNodeHistory(entry.after);
     this.undoStack.push(entry);
     this.selectedIds = this.selectedIds.filter((id) => Boolean(this.document.nodes[id]));
     this.changed();
@@ -542,6 +608,56 @@ export class EditorSession {
     }, record);
   }
 
+  /** Commit an imperatively previewed move and any resulting reparent as one history entry. */
+  commitPositionedSelection(positions: ReadonlyMap<string, { x: number; y: number }>, parentId: string | null | undefined): void {
+    if (!positions.size) return;
+    const roots = this.selectionRoots();
+    const nodeIds = new Set([...positions.keys(), ...roots.map((node) => node.id)]);
+    const changesParent = parentId !== undefined && roots.some((node) => node.parentId !== parentId);
+    const parentIds = new Set<string | null>(changesParent ? roots.map((node) => node.parentId) : []);
+    if (changesParent) parentIds.add(parentId ?? null);
+    const before = this.captureNodeHistory(nodeIds, parentIds);
+
+    for (const [id, position] of positions) {
+      const node = this.document.nodes[id];
+      if (!node || node.locked) continue;
+      node.x = position.x;
+      node.y = position.y;
+    }
+
+    if (changesParent && roots.length) {
+      let ancestorId = parentId;
+      let valid = true;
+      while (ancestorId) {
+        if (roots.some((node) => node.id === ancestorId)) { valid = false; break; }
+        ancestorId = this.document.nodes[ancestorId]?.parentId ?? null;
+      }
+      if (valid) {
+        const worldMatrices = new Map(roots.map((node) => [node.id, worldMatrix(this.document, node)]));
+        const parentWorld = parentId && this.document.nodes[parentId] ? worldMatrix(this.document, this.document.nodes[parentId]) : identity;
+        for (const node of roots) {
+          const matrix = worldMatrices.get(node.id);
+          if (!matrix) continue;
+          removeFromParent(this.document, node);
+          node.parentId = parentId;
+          applyLocalMatrix(node, multiply(invert(parentWorld), matrix));
+          if (parentId) {
+            const parent = this.document.nodes[parentId];
+            if (parent?.type === "frame" || parent?.type === "group") parent.childIds.push(node.id);
+            else this.document.rootIds.push(node.id);
+          } else this.document.rootIds.push(node.id);
+        }
+      }
+    }
+
+    const after = this.captureNodeHistory(nodeIds, parentIds);
+    if (JSON.stringify(before) === JSON.stringify(after)) return;
+    this.undoStack.push({ kind: "nodes", before, after });
+    if (this.undoStack.length > 100) this.undoStack.shift();
+    this.redoStack = [];
+    this.changed();
+  }
+
   moveNode(id: string, parentId: string | null, index: number): void {
     const node = this.document.nodes[id];
     const parent = parentId ? this.document.nodes[parentId] : null;
@@ -728,6 +844,7 @@ export class EditorSession {
     if (this.externalPreview) this.cancelExternalPreview();
     if (this.gestureBefore) this.gestureVersion += 1;
     this.gestureBefore = null;
+    this.transientGestureActive = false;
     this.editingTextId = null;
     this.persistencePaused = false;
     this.externalPreviewActive = false;

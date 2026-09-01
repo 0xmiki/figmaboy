@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { createRenderBounds, shouldRefreshRenderBounds, visibleWorldRect } from "$lib/editor/canvas-culling";
+import { createLiveBounds, createRenderBounds, shouldRefreshRenderBounds, visibleWorldRect } from "$lib/editor/canvas-culling";
 
 describe("canvas culling window", () => {
   const size = { width: 1000, height: 800 };
 
   it("keeps one viewport of retained content around the live view", () => {
     expect(createRenderBounds({ x: 0, y: 0, zoom: 1 }, size)).toEqual({ x: -1000, y: -800, width: 3000, height: 2400 });
+    expect(createLiveBounds({ x: 0, y: 0, zoom: 1 }, size)).toEqual({ x: -500, y: -400, width: 2000, height: 1600 });
     expect(visibleWorldRect({ x: -3000, y: -1600, zoom: 2 }, size)).toEqual({ x: 1500, y: 800, width: 500, height: 400 });
+  });
+
+  it("biases the retained window toward travel without shrinking it", () => {
+    expect(createRenderBounds({ x: 0, y: 0, zoom: 1 }, size, { x: 1, y: 0 })).toEqual({ x: -500, y: -800, width: 3000, height: 2400 });
+    expect(createRenderBounds({ x: 0, y: 0, zoom: 1 }, size, { x: -1, y: 1 })).toEqual({ x: -1500, y: -400, width: 3000, height: 2400 });
   });
 
   it("uses hysteresis but refreshes before a fast pan outruns mounted nodes", () => {

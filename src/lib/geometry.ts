@@ -116,7 +116,7 @@ export function drawingParentFrame(document: PageDocument, hitId: string | null)
   return null;
 }
 
-export function frameAtPoint(document: PageDocument, point: Point, excludedIds: string[] = []): string | null {
+export function frameAtPoint(document: PageDocument, point: Point, excludedIds: string[] = [], candidateIds?: ReadonlySet<string>): string | null {
   const excluded = new Set(excludedIds);
   let candidate: string | null = null;
 
@@ -132,7 +132,7 @@ export function frameAtPoint(document: PageDocument, point: Point, excludedIds: 
   const visit = (ids: string[]) => {
     for (const id of ids) {
       const node = document.nodes[id];
-      if (!node || !node.visible) continue;
+      if (!node || !node.visible || (candidateIds && !candidateIds.has(id))) continue;
       if (node.type === "frame" && !node.locked && !isExcluded(node)) {
         const local = transformPoint(invert(worldMatrix(document, node)), point);
         if (local.x >= 0 && local.y >= 0 && local.x <= node.width && local.y <= node.height) candidate = node.id;

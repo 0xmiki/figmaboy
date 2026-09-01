@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, tick } from "svelte";
+  import { onMount, untrack } from "svelte";
   import type { DesignNode, Rect, TextNode, Tool } from "$lib/domain";
   import { defaultNode } from "$lib/domain";
   import { containsRect, drawingParentFrame, frameAtPoint, intersects, nodeMatrix, normalizeRect, rectContainsPoint, screenToWorld, selectionBounds, transformPoint, worldBounds, worldMatrix, worldToNodeLocal } from "$lib/geometry";
@@ -8,9 +8,11 @@
   import type { EditorSession } from "$lib/editor/editor.svelte";
   import CanvasNode from "$lib/editor/CanvasNode.svelte";
   import { canvasSelectionTarget, isCanvasNodeSelectable } from "$lib/editor/canvas-selection";
-  import { createRenderBounds, shouldRefreshRenderBounds } from "$lib/editor/canvas-culling";
+  import { createLiveBounds, createRenderBounds, shouldRefreshRenderBounds, visibleWorldRect } from "$lib/editor/canvas-culling";
+  import { buildCanvasSceneIndex, queryCanvasScene, type CanvasSceneIndex } from "$lib/editor/canvas-scene";
 
   let { session, onContextMenu }: { session: EditorSession; onContextMenu: (event: MouseEvent, world: Point, hitId?: string) => void } = $props();
+  type FrameRaster = { url: string; changeToken: number; width: number; height: number };
   let host = $state<HTMLDivElement>();
   let hostSize = $state({ width: 0, height: 0 });
   let viewportElement = $state<SVGSVGElement>();
@@ -39,6 +41,11 @@
   let moveStarted = false;
   let snapXCandidates: number[] = [];
   let snapYCandidates: number[] = [];
+  let snapExcludedIds = new Set<string>();
+  let movePreviewElements = new Map<string, { element: SVGGElement; originalTransform: string }>();
+  let movePreviewPositions = new Map<string, { x: number; y: number }>();
+  let movePreviewWorldDelta = { x: 0, y: 0 };
+  let selectionOverlayElement = $state<SVGGElement>();
   let startViewport = { x: 0, y: 0 };
   let moveFrame = 0;
   let wheelFrame = 0;
@@ -49,8 +56,9 @@
   let renderBounds = $state<Rect | null>(null);
   let previousRenderBounds = $state<Rect | null>(null);
   let renderBoundsZoom = 1;
-  let renderPruneFrame = 0;
+  let renderPruneTimer: ReturnType<typeof setTimeout> | undefined;
   let renderWindowGeneration = 0;
+  let lastRenderCenter: Point | null = null;
   let gestureStartZoom = 1;
   let activePointerId: number | null = null;
   let activeGestureVersion = 0;
@@ -72,42 +80,60 @@
   // properties instead of scheduling a Svelte update for the whole canvas.
   const liveViewport = { x: 0, y: 0, zoom: 1 };
   let observedViewportKey = `${viewport.x}:${viewport.y}:${viewport.zoom}`;
+  const initialSceneState = untrack(() => ({ document: session.document, changeToken: session.changeToken, pageEpoch: session.pageEpoch }));
+  let indexedDocument = initialSceneState.document;
+  let indexedChangeToken = initialSceneState.changeToken;
+  let indexedPageEpoch = initialSceneState.pageEpoch;
+  let sceneBuildGeneration = 0;
+  let cancelScheduledSceneBuild: (() => void) | undefined;
+  let sceneIndex = $state.raw(buildCanvasSceneIndex(initialSceneState.document));
+  let frameRasters = $state.raw(new Map<string, FrameRaster>());
+  let scheduledFrameRasterId = "";
+  let cancelScheduledFrameRaster: (() => void) | undefined;
+  const rasterizingFrameIds = new Set<string>();
+  const failedFrameRasterTokens = new Set<string>();
+  let indexedImageSourceKey = untrack(() => Object.entries(session.imageSources).map(([id, source]) => `${id}:${source.length}`).toSorted().join("\0"));
+  let canvasMounted = $state(false);
   const renderedNodeIds = $derived.by(() => {
-    const rootIds = session.document.rootIds;
-    const nodes = session.document.nodes;
-    if (session.renderAllNodes || Object.keys(nodes).length < 160 || hostSize.width === 0 || hostSize.height === 0) return null;
+    if (session.renderAllNodes || sceneIndex.count < 160 || hostSize.width === 0 || hostSize.height === 0) return null;
     const currentBounds = renderBounds ?? createRenderBounds(viewport, hostSize);
-    const retainedBounds = previousRenderBounds;
-    const requiredIds = new Set<string>();
+    const rendered = queryCanvasScene(sceneIndex, currentBounds);
+    if (previousRenderBounds) queryCanvasScene(sceneIndex, previousRenderBounds, rendered);
+    const nodes = session.document.nodes;
     for (const selectedId of session.selectedIds) {
       let id: string | null = selectedId;
       while (id) {
-        requiredIds.add(id);
+        rendered.add(id);
         id = nodes[id]?.parentId ?? null;
       }
     }
-    const rendered = new Set<string>();
-    const visit = (id: string): boolean => {
-      const node = nodes[id];
-      if (!node || !node.visible) return false;
-      const bounds = worldBounds(session.document, node);
-      const intersectsViewport = intersects(currentBounds, bounds) || Boolean(retainedBounds && intersects(retainedBounds, bounds));
-      let keep = intersectsViewport || requiredIds.has(id);
-      if (node.type === "frame" || node.type === "group") {
-        const canShowChildren = node.type === "group" || !node.clipContent || keep;
-        if (canShowChildren) {
-          for (const childId of node.childIds) {
-            if (visit(childId)) keep = true;
-          }
-        }
-      }
-      if (keep) rendered.add(id);
-      return keep;
-    };
-    rootIds.forEach(visit);
     return rendered;
   });
   const renderedRootIds = $derived(session.document.rootIds.filter((id) => !renderedNodeIds || renderedNodeIds.has(id)));
+  const liveRenderBounds = $derived(hostSize.width > 0 && hostSize.height > 0 ? createLiveBounds(viewport, hostSize) : null);
+  const pinnedFrameIds = $derived.by(() => {
+    const result = new Set<string>();
+    for (const selectedId of session.selectedIds) {
+      let id: string | null = selectedId;
+      while (id) {
+        if (session.document.nodes[id]?.type === "frame") result.add(id);
+        id = session.document.nodes[id]?.parentId ?? null;
+      }
+    }
+    return result;
+  });
+  const rasterizedFrameIds = $derived.by(() => {
+    const result = new Set<string>();
+    if (!liveRenderBounds || !renderedNodeIds) return result;
+    for (const id of session.document.rootIds) {
+      const cached = frameRasters.get(id);
+      const entry = sceneIndex.entries.get(id);
+      if (!cached || cached.changeToken !== session.changeToken || !entry || !renderedNodeIds.has(id) || pinnedFrameIds.has(id)) continue;
+      if (!intersects(liveRenderBounds, entry.bounds)) result.add(id);
+    }
+    return result;
+  });
+  const frameRasterUrls = $derived.by(() => new Map([...frameRasters].map(([id, raster]) => [id, raster.url])));
   const selectedBounds = $derived(selectionBounds(session.document, session.selectedIds));
   const unclippedFrameIds = $derived.by(() => {
     const ids = new Set<string>();
@@ -177,6 +203,27 @@
   });
 
   $effect(() => {
+    const key = Object.entries(session.imageSources).map(([id, source]) => `${id}:${source.length}`).toSorted().join("\0");
+    if (key === indexedImageSourceKey) return;
+    indexedImageSourceKey = key;
+    frameRasters = new Map();
+    failedFrameRasterTokens.clear();
+  });
+
+  $effect(() => {
+    const mounted = canvasMounted;
+    const token = session.changeToken;
+    const liveBounds = liveRenderBounds;
+    const warmBounds = renderBounds;
+    const rendered = renderedNodeIds;
+    const roots = session.document.rootIds;
+    const index = sceneIndex;
+    const idle = mode === "idle";
+    if (!mounted || !idle || !liveBounds || !warmBounds || !rendered) return;
+    scheduleFrameRasterCapture(roots, index, rendered, liveBounds, warmBounds, token);
+  });
+
+  $effect(() => {
     const token = session.cancelInteractionToken;
     if (token === handledCancelInteractionToken) return;
     handledCancelInteractionToken = token;
@@ -208,6 +255,33 @@
     queueMicrotask(applyViewportPreview);
   });
 
+  // Rebuild committed scene geometry only when the document identity or its
+  // committed revision changes. Deep pointer-preview mutations are deliberately
+  // absent from this dependency list, so a drag cannot trigger a full scene scan.
+  $effect(() => {
+    const documentValue = session.document;
+    const changeToken = session.changeToken;
+    const pageEpoch = session.pageEpoch;
+    if (documentValue === indexedDocument && changeToken === indexedChangeToken && pageEpoch === indexedPageEpoch) return;
+    if (changeToken !== indexedChangeToken) failedFrameRasterTokens.clear();
+    indexedDocument = documentValue;
+    indexedChangeToken = changeToken;
+    indexedPageEpoch = pageEpoch;
+    const generation = ++sceneBuildGeneration;
+    cancelScheduledSceneBuild?.();
+    const rebuild = () => {
+      cancelScheduledSceneBuild = undefined;
+      if (generation === sceneBuildGeneration) sceneIndex = buildCanvasSceneIndex(documentValue);
+    };
+    if (typeof window.requestIdleCallback === "function") {
+      const id = window.requestIdleCallback(rebuild, { timeout: 240 });
+      cancelScheduledSceneBuild = () => window.cancelIdleCallback(id);
+    } else {
+      const id = window.setTimeout(rebuild, 32);
+      cancelScheduledSceneBuild = () => window.clearTimeout(id);
+    }
+  });
+
   $effect(() => {
     const key = session.selectedIds.join("\u0000");
     if (!["move", "resize", "rotate"].includes(mode) || key === interactionSelectionKey) return;
@@ -227,6 +301,7 @@
   });
 
   onMount(() => {
+    canvasMounted = true;
     if (!session.document.rootIds.length && host) {
       liveViewport.x = host.clientWidth / 2;
       liveViewport.y = host.clientHeight / 2;
@@ -289,9 +364,12 @@
     }
     return () => {
       disposed = true;
+      canvasMounted = false;
       renderWindowGeneration += 1;
+      cancelScheduledSceneBuild?.();
+      cancelScheduledFrameRaster?.();
       cancelAnimationFrame(wheelFrame);
-      cancelAnimationFrame(renderPruneFrame);
+      if (renderPruneTimer) clearTimeout(renderPruneTimer);
       if (mode !== "idle") cancelInteraction();
       if (viewportCommitTimer) {
         clearTimeout(viewportCommitTimer);
@@ -330,7 +408,87 @@
     try { host?.releasePointerCapture(pointerId); } catch { /* capture may already be lost */ }
   }
 
+  function scheduleFrameRasterCapture(
+    rootIds: string[],
+    index: CanvasSceneIndex,
+    rendered: ReadonlySet<string>,
+    liveBounds: Rect,
+    warmBounds: Rect,
+    changeToken: number,
+  ) {
+    const candidateId = rootIds.find((id) => {
+      const node = session.document.nodes[id];
+      const entry = index.entries.get(id);
+      if (node?.type !== "frame" || !node.clipContent || !entry || entry.subtreeSize < 80 || !rendered.has(id) || pinnedFrameIds.has(id)) return false;
+      if (!intersects(liveBounds, entry.bounds) || !containsRect(warmBounds, entry.bounds)) return false;
+      if (frameRasters.get(id)?.changeToken === changeToken || rasterizingFrameIds.has(id)) return false;
+      return !failedFrameRasterTokens.has(`${changeToken}:${id}`);
+    }) ?? "";
+    if (candidateId === scheduledFrameRasterId) return;
+    cancelScheduledFrameRaster?.();
+    cancelScheduledFrameRaster = undefined;
+    scheduledFrameRasterId = candidateId;
+    if (!candidateId) return;
+    const capture = () => {
+      cancelScheduledFrameRaster = undefined;
+      scheduledFrameRasterId = "";
+      if (mode === "idle" && session.changeToken === changeToken) void captureFrameRaster(candidateId, changeToken);
+    };
+    if (typeof window.requestIdleCallback === "function") {
+      const id = window.requestIdleCallback(capture, { timeout: 600 });
+      cancelScheduledFrameRaster = () => window.cancelIdleCallback(id);
+    } else {
+      const id = window.setTimeout(capture, 180);
+      cancelScheduledFrameRaster = () => window.clearTimeout(id);
+    }
+  }
+
+  async function captureFrameRaster(frameId: string, changeToken: number) {
+    if (rasterizingFrameIds.has(frameId)) return;
+    const frame = session.document.nodes[frameId];
+    if (frame?.type !== "frame" || frame.width <= 0 || frame.height <= 0) return;
+    const element = [...(viewportElement?.querySelectorAll<SVGGElement>("[data-node-id]") ?? [])].find((candidate) => candidate.dataset.nodeId === frameId);
+    if (!element) return;
+    rasterizingFrameIds.add(frameId);
+    const source = element.cloneNode(true) as SVGGElement;
+    source.removeAttribute("transform");
+    source.removeAttribute("opacity");
+    source.removeAttribute("style");
+    const scale = Math.min(1, 768 / Math.max(frame.width, frame.height));
+    const width = Math.max(1, Math.round(frame.width * scale));
+    const height = Math.max(1, Math.round(frame.height * scale));
+    const markup = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${frame.width} ${frame.height}">${new XMLSerializer().serializeToString(source)}</svg>`;
+    const objectUrl = URL.createObjectURL(new Blob([markup], { type: "image/svg+xml" }));
+    try {
+      const image = new Image();
+      image.decoding = "async";
+      await new Promise<void>((resolve, reject) => {
+        image.onload = () => resolve();
+        image.onerror = () => reject(new Error("Could not cache frame preview"));
+        image.src = objectUrl;
+      });
+      if (session.changeToken !== changeToken) return;
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext("2d");
+      if (!context) return;
+      context.drawImage(image, 0, 0, width, height);
+      const next = new Map(frameRasters);
+      next.delete(frameId);
+      next.set(frameId, { url: canvas.toDataURL("image/webp", .8), changeToken, width, height });
+      while (next.size > 8) next.delete(next.keys().next().value as string);
+      frameRasters = next;
+    } catch {
+      failedFrameRasterTokens.add(`${changeToken}:${frameId}`);
+    } finally {
+      rasterizingFrameIds.delete(frameId);
+      URL.revokeObjectURL(objectUrl);
+    }
+  }
+
   function resetInteractionState() {
+    clearMovePreview(true);
     cancelAnimationFrame(moveFrame);
     moveFrame = 0;
     marquee = null;
@@ -342,6 +500,7 @@
     moveStarted = false;
     snapXCandidates = [];
     snapYCandidates = [];
+    snapExcludedIds.clear();
     session.guides = { x: null, y: null };
     mode = "idle";
     releasePointer();
@@ -458,11 +617,64 @@
       }
     };
     session.selectedIds.forEach(excludeDescendants);
-    const bounds = Object.values(session.document.nodes)
-      .filter((node) => !excludedIds.has(node.id) && node.visible)
-      .map((node) => worldBounds(session.document, node));
-    snapXCandidates = bounds.flatMap((rect) => [rect.x, rect.x + rect.width / 2, rect.x + rect.width]);
-    snapYCandidates = bounds.flatMap((rect) => [rect.y, rect.y + rect.height / 2, rect.y + rect.height]);
+    snapExcludedIds = excludedIds;
+    snapXCandidates = [];
+    snapYCandidates = [];
+  }
+
+  function refreshSnapCandidates(dx: number, dy: number, threshold: number) {
+    if (!startBounds || !sceneIndex.root) return;
+    const moved = { x: startBounds.x + dx, y: startBounds.y + dy, width: startBounds.width, height: startBounds.height };
+    const scene = sceneIndex.root.bounds;
+    const xIds = queryCanvasScene(sceneIndex, { x: moved.x - threshold, y: scene.y, width: moved.width + threshold * 2, height: scene.height });
+    const yIds = queryCanvasScene(sceneIndex, { x: scene.x, y: moved.y - threshold, width: scene.width, height: moved.height + threshold * 2 });
+    const xBounds = [...xIds].filter((id) => !snapExcludedIds.has(id)).flatMap((id) => {
+      const entry = sceneIndex.entries.get(id);
+      return entry ? [entry.bounds] : [];
+    });
+    const yBounds = [...yIds].filter((id) => !snapExcludedIds.has(id)).flatMap((id) => {
+      const entry = sceneIndex.entries.get(id);
+      return entry ? [entry.bounds] : [];
+    });
+    snapXCandidates = xBounds.flatMap((rect) => [rect.x, rect.x + rect.width / 2, rect.x + rect.width]);
+    snapYCandidates = yBounds.flatMap((rect) => [rect.y, rect.y + rect.height / 2, rect.y + rect.height]);
+  }
+
+  function nodeTransform(node: DesignNode, x = node.x, y = node.y): string {
+    return `translate(${x} ${y}) rotate(${node.rotation} ${node.width / 2} ${node.height / 2})`;
+  }
+
+  function prepareMovePreview() {
+    movePreviewElements.clear();
+    movePreviewPositions.clear();
+    const selected = new Set(startNodes.keys());
+    viewportElement?.querySelectorAll<SVGGElement>("[data-node-id]").forEach((element) => {
+      const id = element.dataset.nodeId;
+      if (!id || !selected.has(id)) return;
+      movePreviewElements.set(id, { element, originalTransform: element.getAttribute("transform") ?? "" });
+    });
+  }
+
+  function clearMovePreview(restoreElements: boolean) {
+    if (restoreElements) {
+      for (const { element, originalTransform } of movePreviewElements.values()) element.setAttribute("transform", originalTransform);
+    }
+    movePreviewElements.clear();
+    movePreviewPositions.clear();
+    movePreviewWorldDelta = { x: 0, y: 0 };
+    selectionOverlayElement?.removeAttribute("transform");
+  }
+
+  function previewMovePosition(id: string, original: DesignNode, x: number, y: number) {
+    movePreviewPositions.set(id, { x, y });
+    movePreviewElements.get(id)?.element.setAttribute("transform", nodeTransform(original, x, y));
+  }
+
+  function takeMovePreviewPositions(): Map<string, { x: number; y: number }> {
+    const positions = new Map(movePreviewPositions);
+    movePreviewPositions.clear();
+    movePreviewElements.clear();
+    return positions;
   }
 
   function nodePointerDown(event: PointerEvent, id: string) {
@@ -534,13 +746,14 @@
     else if (session.selectedIds.includes(targetId) && session.selectedIds.length > 1) pendingClickSelection = targetId;
     else session.select(targetId);
     if (!session.selectedIds.includes(interactionId)) return;
-    session.beginGesture();
+    session.beginTransientGesture();
     activeGestureVersion = session.gestureVersion;
     startNodes = new Map(session.selectedIds.map((selectedId) => [selectedId, JSON.parse(JSON.stringify(session.document.nodes[selectedId])) as DesignNode]));
     startNodeBounds = new Map([...startNodes].map(([id, node]) => [id, worldBounds(session.document, node)]));
     dragSourceNodes = new Map(startNodes);
     startBounds = selectionBounds(session.document, session.selectedIds);
     prepareSnapCandidates();
+    prepareMovePreview();
     interactionSelectionKey = session.selectedIds.join("\u0000");
     dragDuplicated = false;
     moveStarted = false;
@@ -624,7 +837,7 @@
     if (mode === "text" || mode === "edit-text") {
       return;
     }
-    if (!session.hasActiveGesture) {
+    if (!session.hasActiveGesture && mode !== "move") {
       cancelInteraction();
       return;
     }
@@ -665,6 +878,9 @@
 
   function duplicateDragSelection() {
     if (dragDuplicated) return;
+    clearMovePreview(true);
+    session.beginGesture();
+    activeGestureVersion = session.gestureVersion;
     for (const [id, original] of dragSourceNodes) {
       const node = session.document.nodes[id];
       if (node) { node.x = original.x; node.y = original.y; }
@@ -686,6 +902,7 @@
     session.guides = { x: null, y: null };
     if (startBounds) {
       const threshold = 5 / liveViewport.zoom;
+      refreshSnapCandidates(dx, dy, threshold);
       const nearest = (anchors: number[], candidates: number[], offset: number) => {
         let result = { distance: Infinity, delta: 0, guide: null as number | null };
         for (const anchor of anchors) for (const candidate of candidates) {
@@ -704,10 +921,18 @@
       if (!node || node.locked) continue;
       const localStart = worldToNodeLocal(session.document, original.parentId, startWorld);
       const localEnd = worldToNodeLocal(session.document, original.parentId, { x: startWorld.x + dx, y: startWorld.y + dy });
-      node.x = original.x + localEnd.x - localStart.x;
-      node.y = original.y + localEnd.y - localStart.y;
+      const x = original.x + localEnd.x - localStart.x;
+      const y = original.y + localEnd.y - localStart.y;
+      if (dragDuplicated) {
+        node.x = x;
+        node.y = y;
+      } else previewMovePosition(id, original, x, y);
     }
-    session.previewGesture();
+    if (dragDuplicated) session.previewGesture();
+    else {
+      movePreviewWorldDelta = { x: dx, y: dy };
+      selectionOverlayElement?.setAttribute("transform", `translate(${dx} ${dy})`);
+    }
   }
 
   function resizeSelection(world: Point, constrain: boolean, fromCenter: boolean) {
@@ -943,7 +1168,8 @@
       if (dragged) {
         const fullyContained = endScreen.x >= startScreen.x;
         const tolerance = 2 / liveViewport.zoom;
-        const ids = Object.values(session.document.nodes).filter((node) => {
+        const candidateIds = queryCanvasScene(sceneIndex, marquee);
+        const ids = [...candidateIds].flatMap((id) => session.document.nodes[id] ? [session.document.nodes[id]] : []).filter((node) => {
           if (!isCanvasNodeSelectable(session.document, node.id)) return false;
           const bounds = worldBounds(session.document, node);
           if ((node.type === "frame" || node.type === "group") && rectContainsPoint(bounds, startWorld)) return false;
@@ -998,15 +1224,23 @@
       draftParentId = null;
     } else if (mode === "move" || mode === "resize" || mode === "rotate") {
       if (mode === "move" && !dragged) {
-        session.discardGesture();
+        if (session.hasActiveGesture) session.discardGesture();
         if (pendingClickSelection) session.select(pendingClickSelection);
-      } else if (mode === "move" && !spacePressed) {
-        let targetFrameId = frameAtPoint(session.document, endWorld, session.selectedIds);
-        const movedBounds = selectionBounds(session.document, session.selectedIds);
+      } else if (mode === "move") {
+        const movedBounds = dragDuplicated
+          ? selectionBounds(session.document, session.selectedIds)
+          : startBounds ? { ...startBounds, x: startBounds.x + movePreviewWorldDelta.x, y: startBounds.y + movePreviewWorldDelta.y } : null;
+        let targetFrameId: string | null | undefined = undefined;
+        if (!spacePressed) {
+          const hitSlop = 1 / liveViewport.zoom;
+          const dropCandidates = queryCanvasScene(sceneIndex, { x: endWorld.x - hitSlop, y: endWorld.y - hitSlop, width: hitSlop * 2, height: hitSlop * 2 });
+          targetFrameId = frameAtPoint(session.document, endWorld, session.selectedIds, dropCandidates);
+        }
         const parentIds = new Set(session.selectedNodes.map((node) => node.parentId));
         const currentParentId = parentIds.size === 1 ? [...parentIds][0] : null;
         const currentParent = currentParentId ? session.document.nodes[currentParentId] : null;
         if (
+          targetFrameId !== undefined &&
           movedBounds &&
           currentParent?.type === "frame" &&
           targetFrameId !== currentParent.id &&
@@ -1018,8 +1252,14 @@
           const targetBounds = worldBounds(session.document, session.document.nodes[targetFrameId]);
           if (movedBounds.width > targetBounds.width || movedBounds.height > targetBounds.height) targetFrameId = null;
         }
-        session.reparentSelection(targetFrameId, false);
-        session.commitGesture();
+        if (dragDuplicated) {
+          if (targetFrameId !== undefined) session.reparentSelection(targetFrameId, false);
+          session.commitGesture();
+        } else {
+          session.commitPositionedSelection(takeMovePreviewPositions(), targetFrameId);
+          session.endTransientGesture();
+          queueMicrotask(() => selectionOverlayElement?.removeAttribute("transform"));
+        }
       } else {
         session.commitGesture();
       }
@@ -1100,19 +1340,22 @@
   function refreshRenderWindow(force = false) {
     if (hostSize.width <= 0 || hostSize.height <= 0) return;
     if (!force && !shouldRefreshRenderBounds(renderBounds, renderBoundsZoom, liveViewport, hostSize)) return;
-    const nextBounds = createRenderBounds(liveViewport, hostSize);
+    const visible = visibleWorldRect(liveViewport, hostSize);
+    const center = { x: visible.x + visible.width / 2, y: visible.y + visible.height / 2 };
+    const direction = lastRenderCenter
+      ? { x: (center.x - lastRenderCenter.x) / Math.max(1, visible.width), y: (center.y - lastRenderCenter.y) / Math.max(1, visible.height) }
+      : { x: 0, y: 0 };
+    const nextBounds = createRenderBounds(liveViewport, hostSize, direction);
+    lastRenderCenter = center;
     const generation = ++renderWindowGeneration;
     previousRenderBounds = renderBounds;
     renderBounds = nextBounds;
     renderBoundsZoom = liveViewport.zoom;
-    if (renderPruneFrame) cancelAnimationFrame(renderPruneFrame);
-    void tick().then(() => {
-      if (generation !== renderWindowGeneration) return;
-      renderPruneFrame = requestAnimationFrame(() => {
-        if (generation === renderWindowGeneration) previousRenderBounds = null;
-        renderPruneFrame = 0;
-      });
-    });
+    if (renderPruneTimer) clearTimeout(renderPruneTimer);
+    renderPruneTimer = setTimeout(() => {
+      if (generation === renderWindowGeneration) previousRenderBounds = null;
+      renderPruneTimer = undefined;
+    }, 320);
   }
 
   function scheduleViewportCommit() {
@@ -1241,7 +1484,7 @@
     <g class="world">
       {#each renderedRootIds as id}
         {#if session.document.nodes[id]}
-          <CanvasNode node={session.document.nodes[id]} document={session.document} selectedIds={session.selectedIds} imageSources={session.imageSources} {renderedNodeIds} {unclippedFrameIds} onNodePointerDown={nodePointerDown} onNodeDoubleClick={nodeDoubleClick} onNodeContextMenu={nodeContextMenu} />
+          <CanvasNode node={session.document.nodes[id]} document={session.document} selectedIds={session.selectedIds} imageSources={session.imageSources} {renderedNodeIds} {unclippedFrameIds} frameRasters={frameRasterUrls} {rasterizedFrameIds} onNodePointerDown={nodePointerDown} onNodeDoubleClick={nodeDoubleClick} onNodeContextMenu={nodeContextMenu} />
         {/if}
       {/each}
     </g>
@@ -1252,7 +1495,7 @@
 
       {#if selectedBounds && !session.editingTextId}
         {@const size = 8 / viewport.zoom}
-        <g class="selection-ui">
+        <g bind:this={selectionOverlayElement} class="selection-ui">
           {#if orientedSelection}<polygon points={orientedSelection.outline} fill="none" stroke="#0d99ff" stroke-width={1 / viewport.zoom} />{:else}<rect x={selectedBounds.x} y={selectedBounds.y} width={Math.max(selectedBounds.width, 1 / viewport.zoom)} height={Math.max(selectedBounds.height, 1 / viewport.zoom)} fill="none" stroke="#0d99ff" stroke-width={1 / viewport.zoom} />{/if}
           {#if lineEndpoints}
             <circle role="button" aria-label="Resize line start" tabindex="-1" class="line-handle" cx={lineEndpoints.start.x} cy={lineEndpoints.start.y} r={5 / viewport.zoom} fill="white" stroke="#0d99ff" stroke-width={1 / viewport.zoom} onpointerdown={(event) => startHandle(event, "line-start")} />

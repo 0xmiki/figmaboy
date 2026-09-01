@@ -12,11 +12,23 @@ export function visibleWorldRect(viewport: CanvasViewport, size: CanvasSize): Re
   };
 }
 
-export function createRenderBounds(viewport: CanvasViewport, size: CanvasSize): Rect {
+export function createLiveBounds(viewport: CanvasViewport, size: CanvasSize): Rect {
   const visible = visibleWorldRect(viewport, size);
   return {
-    x: visible.x - visible.width,
-    y: visible.y - visible.height,
+    x: visible.x - visible.width * .5,
+    y: visible.y - visible.height * .5,
+    width: visible.width * 2,
+    height: visible.height * 2,
+  };
+}
+
+export function createRenderBounds(viewport: CanvasViewport, size: CanvasSize, direction: { x: number; y: number } = { x: 0, y: 0 }): Rect {
+  const visible = visibleWorldRect(viewport, size);
+  const biasX = Math.max(-1, Math.min(1, direction.x)) * visible.width * .5;
+  const biasY = Math.max(-1, Math.min(1, direction.y)) * visible.height * .5;
+  return {
+    x: visible.x - visible.width + biasX,
+    y: visible.y - visible.height + biasY,
     width: visible.width * 3,
     height: visible.height * 3,
   };

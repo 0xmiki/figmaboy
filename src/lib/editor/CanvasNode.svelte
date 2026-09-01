@@ -7,6 +7,7 @@
 
   let {
     node, document, selectedIds, imageSources, interactive = true, preview = false, renderedNodeIds = null, unclippedFrameIds = new Set<string>(), idPrefix = "canvas",
+    frameRasters = new Map<string, string>(), rasterizedFrameIds = new Set<string>(),
     onNodePointerDown, onNodeDoubleClick, onNodeContextMenu, onPrototypeClick,
   }: {
     node: DesignNode;
@@ -17,6 +18,8 @@
     preview?: boolean;
     renderedNodeIds?: ReadonlySet<string> | null;
     unclippedFrameIds?: ReadonlySet<string>;
+    frameRasters?: ReadonlyMap<string, string>;
+    rasterizedFrameIds?: ReadonlySet<string>;
     idPrefix?: string;
     onNodePointerDown?: (event: PointerEvent, id: string) => void;
     onNodeDoubleClick?: (event: MouseEvent, id: string) => void;
@@ -32,6 +35,7 @@
   $effect(() => { if (node.type === "icon" && !$iconCatalog) void ensureIconCatalog(); });
   const textLayout = $derived(node.type === "text" ? layoutText(node) : null);
   const cornerPath = $derived(roundedRectPath(node.width, node.height, node.cornerRadii, node.radius));
+  const frameRaster = $derived(node.type === "frame" && rasterizedFrameIds.has(node.id) ? frameRasters.get(node.id) : undefined);
   const effectFilter = $derived.by(() => {
     const filters: string[] = [];
     if (node.shadow) filters.push(dropShadow(node.shadow));
@@ -126,6 +130,9 @@
     style:cursor={preview && node.interaction ? "pointer" : node.locked ? "default" : selectedIds.includes(node.id) ? "move" : "default"}
     style:mix-blend-mode={node.blendMode ?? "normal"}
   >
+    {#if frameRaster}
+      <image href={frameRaster} width={node.width} height={node.height} preserveAspectRatio="none" />
+    {:else}
     {#if node.fill?.type === "linear-gradient" || node.fill?.type === "radial-gradient" || (node.type === "frame" && node.clipContent) || node.type === "image" || node.type === "arrow"}
       <defs>
       {#if node.fill?.type === "linear-gradient"}
@@ -185,10 +192,11 @@
       <g clip-path={node.type === "frame" && node.clipContent && !unclippedFrameIds.has(node.id) ? `url(#${resourceId("clip")})` : undefined}>
         {#each node.childIds as childId}
           {#if document.nodes[childId] && (!renderedNodeIds || renderedNodeIds.has(childId))}
-            <CanvasNode node={document.nodes[childId]} {document} {selectedIds} {imageSources} {interactive} {preview} {renderedNodeIds} {unclippedFrameIds} {idPrefix} {onNodePointerDown} {onNodeDoubleClick} {onNodeContextMenu} {onPrototypeClick} />
+            <CanvasNode node={document.nodes[childId]} {document} {selectedIds} {imageSources} {interactive} {preview} {renderedNodeIds} {unclippedFrameIds} {frameRasters} {rasterizedFrameIds} {idPrefix} {onNodePointerDown} {onNodeDoubleClick} {onNodeContextMenu} {onPrototypeClick} />
           {/if}
         {/each}
       </g>
+    {/if}
     {/if}
   </g>
 {/if}

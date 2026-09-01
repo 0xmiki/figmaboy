@@ -31,6 +31,40 @@ describe("editor commands", () => {
     expect(session.document.nodes[node.id]).toBeUndefined();
   });
 
+  it("commits a previewed move as one undoable change", () => {
+    const session = new EditorSession(opened());
+    const node = defaultNode("rectangle", 10, 20);
+    session.addNode(node);
+    session.commitPositionedSelection(new Map([[node.id, { x: 140, y: 180 }]]), undefined);
+    expect(session.document.nodes[node.id]).toMatchObject({ x: 140, y: 180 });
+    session.undo();
+    expect(session.document.nodes[node.id]).toMatchObject({ x: 10, y: 20 });
+    session.redo();
+    expect(session.document.nodes[node.id]).toMatchObject({ x: 140, y: 180 });
+  });
+
+  it("undoes a previewed move and reparent together", () => {
+    const session = new EditorSession(opened());
+    const frame = defaultNode("frame", 100, 100, { width: 400, height: 300 });
+    const node = defaultNode("rectangle", 20, 30, { width: 80, height: 60 });
+    const frameChildren = () => {
+      const current = session.document.nodes[frame.id];
+      return current.type === "frame" || current.type === "group" ? current.childIds : [];
+    };
+    session.addNode(frame);
+    session.addNode(node);
+    session.commitPositionedSelection(new Map([[node.id, { x: 160, y: 170 }]]), frame.id);
+    expect(session.document.nodes[node.id].parentId).toBe(frame.id);
+    expect(session.document.rootIds).not.toContain(node.id);
+    session.undo();
+    expect(session.document.nodes[node.id]).toMatchObject({ parentId: null, x: 20, y: 30 });
+    expect(session.document.rootIds).toContain(node.id);
+    expect(frameChildren()).not.toContain(node.id);
+    session.redo();
+    expect(session.document.nodes[node.id].parentId).toBe(frame.id);
+    expect(frameChildren()).toContain(node.id);
+  });
+
   it("groups and ungroups while preserving visual positions", () => {
     const session = new EditorSession(opened());
     const first = defaultNode("rectangle", 10, 20, { width: 20, height: 30 });
