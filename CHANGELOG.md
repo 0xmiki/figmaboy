@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.5.2, 2026-09-01
+
+### Added
+
+- `/evolve` now runs three isolated design hypotheses per generation, renders each proposal in a separate candidate document, and visually compares them before applying the strongest result to the live canvas.
+- The Codex sidebar keeps a compact generation journal with each mandate, hypothesis, rendered preview, comparison, and winner.
+
+### Changed
+
+- Evolve designers may rewrite text, restructure descendants, create or delete layers, reparent content, and resize the selected frame. They cannot remove the target frame or edit nodes outside it.
+- Large documents use a cached scene index for viewport culling, snapping, marquee selection, and drop targeting. Normal moves stay outside the reactive document until pointer release and store compact node-level undo history.
+- The canvas retains content in the direction of travel, delays pruning after fast movement, and uses a bounded cache of frame previews outside the live editing zone.
+
+### Fixed
+
+- Evolve specialists no longer inherit unrelated MCP or app providers, leak ephemeral threads, or retry the same shared configuration and output-schema failures as if they were rejected designs.
+- Large canvases avoid repeated full-tree geometry scans during drags and no longer expose blank regions while destination content mounts.
+
 ## 0.5.1, 2026-09-01
 
 ### Changed

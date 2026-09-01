@@ -89,9 +89,11 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: Figmaboy ${{ github.ref_name }}
           releaseBody: |
-            Figmaboy 0.5.1 makes `/evolve` proposals far more reliable. Designer agents fetch the complete native type contract through one read-only tool, and Figmaboy returns exact parser or canvas errors to the same designer for correction.
+            Figmaboy 0.5.2 turns `/evolve` into a parallel design search. Each generation gives three isolated designers different mandates, renders their proposals in separate candidate documents, compares the results visually, and applies the strongest one to the live canvas. The sidebar preserves a compact generation journal after the run.
 
-            Large canvases now retain the previous render window until layers in the destination viewport mount. This prevents blank regions during fast panning and scrolling without disabling canvas culling.
+            Large documents now use indexed geometry for culling, snapping, marquee selection, and drop targeting. Normal drags move through a temporary interaction layer and commit once on release. Directional retention and bounded frame previews keep nearby content visible without leaving every SVG layer mounted.
+
+            Evolve specialists now start with only the tools they need, clean up their ephemeral threads, and stop on shared system errors instead of repeating an impossible correction loop.
 
             Download the installer for your platform below. This release also includes standalone `figmaboy-mcp` binaries and a `SHA256SUMS` file.
 

@@ -32,14 +32,14 @@ Figmaboy supplies its bundled MCP to the built-in chat automatically. Open the C
 
 [Create your first design](https://0xmiki.github.io/figmaboy/docs/getting-started/quickstart/)
 
-## What is new in 0.5
+## What is new in 0.5.2
 
-- `/evolve [direction]` runs repeated design passes on one selected frame and shows accepted candidates on the canvas.
-- The Codex composer supports inline skills, Markdown, pasted or dropped image references, and prompt copying.
-- Frames open in a focused fullscreen preview from the canvas or Layers context menu.
-- Design and Codex share one right sidebar, with quieter navigation and faster page transitions.
+- `/evolve [direction]` runs three isolated design hypotheses per generation, compares their rendered results, and applies the strongest candidate.
+- The Codex sidebar preserves a compact generation journal with mandates, hypotheses, previews, comparisons, and winners.
+- Large documents use indexed geometry, transient drag rendering, compact move history, directional retention, and bounded cached frame previews.
+- Evolve specialists use only the required tools and stop on shared system errors instead of repeating impossible corrections.
 
-[Read the 0.5 release notes](https://0xmiki.github.io/figmaboy/docs/reference/release-notes/)
+[Read the 0.5.2 release notes](https://0xmiki.github.io/figmaboy/docs/reference/release-notes/)
 
 ## Projects and designs
 
@@ -116,7 +116,7 @@ Codex stores chat history in a separate local working directory for each design.
 
 The composer recognizes `@selection`, `@current-frame`, `@page`, and `@design`. Type `$` to invoke an installed Codex skill or `/` for Figmaboy chat actions such as `/review`, `/evolve`, `/save`, `/compact`, and `/undo`.
 
-Select one frame and run `/evolve [direction]` when you want repeated design passes. Accepted candidates stay on the canvas, rejected candidates restore the current best, and one undo returns to the design from before the run.
+Select one frame and run `/evolve [direction]` when you want repeated design passes. Each generation compares three isolated proposals, applies the strongest result, and records the decision in the conversation. One undo returns to the design from before the run.
 
 ### Use Figmaboy from another Codex client
 

@@ -9,25 +9,27 @@ Select one frame, then give `/evolve` a visual direction:
 /evolve Strengthen the hierarchy and make the primary action easier to find
 ```
 
-Figmaboy reviews the frame, applies a candidate on the canvas, compares it with the current best, and continues from the stronger result.
+Figmaboy freezes the requested direction, gives three isolated designers different ways to pursue it, renders each proposal away from the live document, and compares them with the current best. The strongest candidate becomes the starting point for the next generation.
 
 ## What happens during a pass
 
-1. Figmaboy captures the selected frame and its native layers.
-2. A design review identifies the next useful change.
-3. A candidate is applied directly on the canvas.
-4. A fresh comparison keeps or rejects the candidate.
-5. Accepted changes remain visible while the next pass begins.
+1. Figmaboy captures the selected frame and freezes clear criteria from your direction.
+2. A design director creates three distinct search mandates for the generation.
+3. Three designers independently form and implement their own hypotheses.
+4. Figmaboy renders every proposal in an isolated candidate document.
+5. Fresh visual comparisons select the strongest challenger.
+6. The winner appears on the live canvas and becomes the base for the next generation.
 
 The loop finishes when two independent reviews agree that the requested direction has been reached. It has no fixed pass count. Select **Stop** whenever you want to keep the accepted progress and finish early.
 
 ## What stays safe
 
-- Rejected candidates restore the current best version.
+- Candidate documents are isolated, so designers cannot overwrite one another or the live canvas while they work.
+- Rejected candidates never modify the accepted design.
 - A temporary network failure retries the current stage instead of restarting the run.
 - If a proposal contains invalid native properties, Figmaboy sends the exact validation error and node contract back to the same designer for correction. The failed implementation does not count as a discarded visual candidate.
 - Accepted passes form one undoable Figmaboy change. Press <kbd>Ctrl/Cmd</kbd> + <kbd>Z</kbd> once to return to the design from before `/evolve`.
-- Text, image assets, crops, locked layers, and the selected frame bounds remain protected.
+- Designers may rewrite text, resize or restyle the target frame, create and delete descendants, and reparent content inside it. They cannot delete the target frame or touch nodes outside it.
 
 ## Give a direction, not a score
 
@@ -49,6 +51,6 @@ Avoid prompts such as `make it better`. Name the character, hierarchy, density, 
 
 ## During the run
 
-The Codex tab shows the active stage, the current target, and whether each candidate was kept or discarded. Canvas changes are live, so you can judge progress without opening logs.
+The Codex tab shows each generation's mandates, hypotheses, render status, comparisons, and winner. The journal remains in the conversation after the run, while large screenshots are released from memory.
 
-Do not edit the selected frame while a candidate is being compared. If the document changes, Figmaboy rejects the stale candidate and inspects the current frame again.
+You may keep navigating the canvas while evolution runs. If you commit a design edit to the target frame, Figmaboy makes that version the next generation's base. A conflicting candidate must still win a fresh visual comparison before it can replace your edit.

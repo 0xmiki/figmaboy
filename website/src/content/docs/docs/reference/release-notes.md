@@ -3,6 +3,24 @@ title: Release notes
 description: What changed in the current Figmaboy release.
 ---
 
+## Figmaboy 0.5.2
+
+Released September 1, 2026.
+
+### Parallel design evolution
+
+Each `/evolve` generation now gives three isolated designers different search mandates. Figmaboy renders their proposals in separate candidate documents, compares the results visually, and applies the strongest one to the open canvas. The Codex sidebar preserves a compact journal of the mandates, hypotheses, previews, comparisons, and winners.
+
+Designers may rewrite text and restructure anything inside the selected frame. The target frame remains present, and nodes outside it remain untouched.
+
+### Faster large documents
+
+The canvas uses indexed geometry instead of scanning every layer for culling, snapping, marquee selection, and drop targeting. Normal drags move through a temporary interaction layer and update the document once on release. Nearby complex frames may use bounded cached previews, while selected and edited content remains live.
+
+### Safer specialist runs
+
+Evolve threads start with only the tools they need and are deleted after use. Shared configuration or output-schema failures stop with the actual error instead of sending every designer through the same correction loop.
+
 ## Figmaboy 0.5.1
 
 Released September 1, 2026.

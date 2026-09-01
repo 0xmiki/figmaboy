@@ -44,6 +44,7 @@
   let snapExcludedIds = new Set<string>();
   let movePreviewElements = new Map<string, { element: SVGGElement; originalTransform: string }>();
   let movePreviewPositions = new Map<string, { x: number; y: number }>();
+  let movePreviewClipElements = new Map<string, { element: SVGGElement; originalClip: string }>();
   let movePreviewWorldDelta = { x: 0, y: 0 };
   let selectionOverlayElement = $state<SVGGElement>();
   let startViewport = { x: 0, y: 0 };
@@ -647,11 +648,27 @@
   function prepareMovePreview() {
     movePreviewElements.clear();
     movePreviewPositions.clear();
+    movePreviewClipElements.clear();
     const selected = new Set(startNodes.keys());
+    const ancestorFrames = new Set<string>();
+    for (const node of startNodes.values()) {
+      let parentId = node.parentId;
+      while (parentId) {
+        const parent = session.document.nodes[parentId];
+        if (!parent) break;
+        if (parent.type === "frame" && parent.clipContent) ancestorFrames.add(parentId);
+        parentId = parent.parentId;
+      }
+    }
     viewportElement?.querySelectorAll<SVGGElement>("[data-node-id]").forEach((element) => {
       const id = element.dataset.nodeId;
-      if (!id || !selected.has(id)) return;
-      movePreviewElements.set(id, { element, originalTransform: element.getAttribute("transform") ?? "" });
+      if (!id) return;
+      if (selected.has(id)) movePreviewElements.set(id, { element, originalTransform: element.getAttribute("transform") ?? "" });
+      if (ancestorFrames.has(id)) {
+        const clip = element.querySelector<SVGGElement>(":scope > g[clip-path]");
+        const originalClip = clip?.getAttribute("clip-path");
+        if (clip && originalClip) movePreviewClipElements.set(id, { element: clip, originalClip });
+      }
     });
   }
 
@@ -659,8 +676,10 @@
     if (restoreElements) {
       for (const { element, originalTransform } of movePreviewElements.values()) element.setAttribute("transform", originalTransform);
     }
+    for (const { element, originalClip } of movePreviewClipElements.values()) element.setAttribute("clip-path", originalClip);
     movePreviewElements.clear();
     movePreviewPositions.clear();
+    movePreviewClipElements.clear();
     movePreviewWorldDelta = { x: 0, y: 0 };
     selectionOverlayElement?.removeAttribute("transform");
   }
@@ -668,6 +687,17 @@
   function previewMovePosition(id: string, original: DesignNode, x: number, y: number) {
     movePreviewPositions.set(id, { x, y });
     movePreviewElements.get(id)?.element.setAttribute("transform", nodeTransform(original, x, y));
+  }
+
+  function previewMoveClipping(dx: number, dy: number) {
+    if (!startBounds) return;
+    const movedBounds = { ...startBounds, x: startBounds.x + dx, y: startBounds.y + dy };
+    for (const [frameId, { element, originalClip }] of movePreviewClipElements) {
+      const frame = session.document.nodes[frameId];
+      if (!frame) continue;
+      if (intersects(movedBounds, worldBounds(session.document, frame))) element.setAttribute("clip-path", originalClip);
+      else element.removeAttribute("clip-path");
+    }
   }
 
   function takeMovePreviewPositions(): Map<string, { x: number; y: number }> {
@@ -932,6 +962,7 @@
     else {
       movePreviewWorldDelta = { x: dx, y: dy };
       selectionOverlayElement?.setAttribute("transform", `translate(${dx} ${dy})`);
+      previewMoveClipping(dx, dy);
     }
   }
 
