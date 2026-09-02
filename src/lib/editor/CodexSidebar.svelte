@@ -42,28 +42,11 @@
   type EvolveStage = "idle" | "capture" | "review" | "design" | "preview" | "compare" | "verify" | "commit";
   type EvolveCriterion = { id: string; requirement: string; status: "met" | "partial" | "unmet"; evidence: string };
   type EvolveRegion = { criterionId: string; x: number; y: number; width: number; height: number; priority: number; note: string; desiredOutcome: string };
-  type EvolveSearchMandate = {
-    id: "A" | "B" | "C";
-    intent: "exploit" | "orthogonal" | "challenge";
+  type EvolveObjective = {
     criterionIds: string[];
-    unresolvedPressure: string;
-    mutationStrength: "focused" | "moderate" | "broad";
-    requiredDifference: string;
-    forbiddenRecentMechanisms: string[];
-    mustPreserve: string[];
-    archiveSources: string[];
-  };
-  type EvolveLineage = {
-    title: string;
-    hypothesis: string;
-    mechanism: string;
-    criterionIds: string[];
-    strengths: string[];
-    outcome: "winner" | "lost" | "duplicate";
-    reason: string;
-    fingerprint: string;
-    generation: number;
-    quality: number;
+    instruction: string;
+    completionSignal: string;
+    preserve: string[];
   };
   type EvolveAssessment = {
     verdict: "revise" | "satisfied";
@@ -74,14 +57,7 @@
     successes: Array<{ criterionId: string; note: string }>;
     regressions: Array<{ severity: "minor" | "major" | "blocking"; note: string }>;
     summary: string;
-    mandates: EvolveSearchMandate[];
-  };
-  type EvolveOperationState = {
-    creates: Map<string, JsonObject>;
-    updates: Map<string, JsonObject>;
-    reorders: Map<string, JsonObject>;
-    deletes: Map<string, JsonObject>;
-    reparents: Map<string, JsonObject>;
+    nextObjective: EvolveObjective | null;
   };
   type EvolveJournalCandidate = {
     id: string;
@@ -92,17 +68,14 @@
     outcome: "accepted" | "rejected" | "duplicate" | "failed" | "superseded" | "pending";
     reason: string;
   };
-  type EvolveJournalGeneration = { generation: number; mandates: EvolveSearchMandate[]; candidates: EvolveJournalCandidate[]; winner: string | null };
+  type EvolveJournalGeneration = { generation: number; objective: EvolveObjective; candidate: EvolveJournalCandidate };
   type EvolveRunOutcome = "running" | "complete" | "stopped" | "error" | null;
   type EvolveProposal = {
-    state: EvolveOperationState;
     operations: JsonObject[];
     summary: string;
-    threadId: string;
     rawText: string;
     baseInput: JsonObject[];
     candidateId: string;
-    mandate: EvolveSearchMandate;
     title: string;
     hypothesis: string;
     mechanism: string;
@@ -116,17 +89,8 @@
     comparison?: EvolveAssessment;
   };
   type EvolveActivity = { id: string; pass: number; title: string; detail: string; notes: string[]; image?: string; status: "working" | "complete" | "kept" | "discarded" | "recovering" };
+  type EvolveExecResponse = { execId: string; text: string; exitCode: number };
   type PromptSegment = { type: "text" | "skill"; value: string; name?: string };
-  type HiddenTurnWaiter = {
-    turnId: string | null;
-    text: string;
-    resolve: (text: string) => void;
-    reject: (cause: Error) => void;
-    timer: ReturnType<typeof setTimeout>;
-    inactivityMs: number;
-    expiring: boolean;
-  };
-
   let { workspaceId, pageId, fileName, visible, embedded = false, onAttentionChange, onClose, onEditorRpc }: {
     workspaceId: string;
     pageId: string;
@@ -177,7 +141,6 @@
   let evolveJournal = $state<EvolveJournalGeneration[]>([]);
   let evolveJournalPersisted = false;
   let evolveParentThreadId = "";
-  let evolveControlThreadId: string | null = null;
   let evolveRunId = "";
   let evolveWorkflowEpoch = 0;
   let evolveCancelled = false;
@@ -198,9 +161,7 @@
   let composer: HTMLTextAreaElement;
   let attachmentInput: HTMLInputElement;
   let removeListeners: (() => void)[] = [];
-  const hiddenTurnWaiters = new Map<string, HiddenTurnWaiter>();
-  const hiddenThreadIds = new Set<string>();
-  const specialistThreadIds = new Set<string>();
+  const evolveExecActivities = new Map<string, string>();
 
   const working = $derived(Boolean(timeline.activeTurnId));
   const activeModel = $derived(models.find((model) => model.model === selection.model));
@@ -220,11 +181,11 @@
   const evolveStageLabel = $derived({
     capture: "Capturing the selected frame",
     review: "Director is reviewing the direction",
-    design: `Generating three candidates · generation ${Math.max(1, evolvePass)}`,
+    design: `Building reconstruction pass ${Math.max(1, evolvePass)}`,
     preview: "Rendering isolated candidate canvases",
     compare: "Selecting the strongest challenger",
     verify: "Verifying that the direction is satisfied",
-    commit: "Applying the generation winner",
+    commit: "Finishing the reconstruction",
     idle: "Preparing evolution",
   }[evolveStage]);
   const evolveCardLabel = $derived(evolveRunOutcome === "complete" ? "Evolution complete" : evolveRunOutcome === "stopped" ? "Evolution stopped" : evolveRunOutcome === "error" ? "Evolution ended with an error" : evolveStageLabel);
@@ -354,6 +315,7 @@
     let disposed = false;
     void Promise.all([
       listen<CodexEvent>("codex-event", ({ payload }) => handleEvent(payload)),
+      listen<{ execId?: string; runId?: string; event?: unknown }>("codex-evolve-event", ({ payload }) => handleEvolveExecEvent(payload)),
       listen("codex-disconnected", () => {
         if (!disposed) {
           if (evolveRunning) void cancelEvolveWorkflow();
@@ -452,57 +414,26 @@
     attention = next;
   }
 
-  function settleHiddenTurn(threadId: string, cause?: Error) {
-    const waiter = hiddenTurnWaiters.get(threadId);
-    if (!waiter) return;
-    clearTimeout(waiter.timer);
-    hiddenTurnWaiters.delete(threadId);
-    hiddenThreadIds.delete(threadId);
-    if (cause) waiter.reject(cause);
-    else waiter.resolve(waiter.text);
-  }
-
-  function resetHiddenTurnWatchdog(threadId: string) {
-    const waiter = hiddenTurnWaiters.get(threadId);
-    if (!waiter || waiter.expiring) return;
-    clearTimeout(waiter.timer);
-    waiter.timer = setTimeout(() => void expireHiddenTurn(threadId), waiter.inactivityMs);
-  }
-
-  async function expireHiddenTurn(threadId: string) {
-    const waiter = hiddenTurnWaiters.get(threadId);
-    if (!waiter || waiter.expiring) return;
-    waiter.expiring = true;
-    if (waiter.turnId) await request("turn/interrupt", { threadId, turnId: waiter.turnId }).catch(() => undefined);
-    settleHiddenTurn(threadId, new Error("Specialist agent became unresponsive"));
-  }
-
-  function handleHiddenTurnEvent(event: CodexEvent, params: JsonObject): boolean {
-    const threadId = typeof params.threadId === "string" ? params.threadId : "";
-    if (!threadId || !hiddenThreadIds.has(threadId)) return false;
-    const waiter = hiddenTurnWaiters.get(threadId);
-    if (!waiter) return true;
-    resetHiddenTurnWatchdog(threadId);
-    if (event.method === "item/agentMessage/delta" && typeof params.delta === "string") waiter.text += params.delta;
-    if ((event.method === "item/started" || event.method === "item/completed") && object(params.item).type === "agentMessage" && typeof object(params.item).text === "string") waiter.text = String(object(params.item).text);
-    if (event.method === "turn/completed") {
-      const turn = object(params.turn);
-      const error = object(turn.error);
-      const failed = turn.status === "failed" || turn.status === "interrupted";
-      settleHiddenTurn(threadId, failed ? new Error(typeof error.message === "string" ? error.message : "Specialist agent did not finish") : undefined);
-    }
-    if (event.method === "error") settleHiddenTurn(threadId, new Error(String(object(params.error).message ?? "Specialist agent failed")));
-    return true;
+  function handleEvolveExecEvent(payload: { execId?: string; runId?: string; event?: unknown }) {
+    if (!evolveRunning || payload.runId !== evolveRunId || !payload.execId) return;
+    const activityId = evolveExecActivities.get(payload.execId);
+    if (!activityId) return;
+    const event = object(payload.event);
+    if (event.type !== "item.started" && event.type !== "item.completed") return;
+    const item = object(event.item);
+    const itemType = String(item.type ?? "");
+    let detail = "";
+    if (itemType === "mcp_tool_call") {
+      const tool = String(item.tool ?? item.name ?? "");
+      detail = tool.includes("types_get") ? "A designer is reading the native layer contract" : tool.includes("evolve_candidate_validate") ? "A designer is validating its candidate" : "A designer is checking its work";
+    } else if (itemType === "agent_message") detail = "Collecting the construction proposal";
+    else if (itemType.includes("collab") || itemType.includes("agent")) detail = "Designers are working independently";
+    if (detail) updateEvolveActivity(activityId, { detail });
   }
 
   function handleEvent(event: CodexEvent) {
     const params = object(event.params);
-    const hiddenThreadId = typeof params.threadId === "string" && hiddenThreadIds.has(params.threadId) ? params.threadId : "";
     if ((typeof event.id === "number" || typeof event.id === "string") && event.method) {
-      if (hiddenThreadId) {
-        void invoke("codex_respond", { id: event.id, result: null, error: "Evolve specialists cannot request interactive actions" });
-        return;
-      }
       const supported = ["item/commandExecution/requestApproval", "item/fileChange/requestApproval", "item/permissions/requestApproval", "item/tool/requestUserInput", "mcpServer/elicitation/request"];
       if (!supported.includes(event.method)) {
         void invoke("codex_respond", { id: event.id, result: null, error: `Figmaboy does not implement ${event.method}` });
@@ -513,7 +444,6 @@
       setAttention(event.method === "item/tool/requestUserInput" ? "input" : "approval");
       return;
     }
-    if (handleHiddenTurnEvent(event, params)) return;
     if (event.method === "serverRequest/resolved") {
       const requestId = params.requestId;
       pendingRequests = pendingRequests.filter((request) => request.id !== requestId);
@@ -645,23 +575,6 @@
     return `You are embedded in Figmaboy with the design file "${fileName}" open. Use the figmaboy MCP server to inspect and edit the open design. Resolve @selection, @current-frame, @page, and @design by inspecting the live editor. Read current state before changing it, make native editable layers, and visually inspect the result before finishing. When the user asks for a reusable tool or extension, read design_capabilities.extensions and call extension_stage with a declarative manifest. You may stage a trial, but only the user may run, Keep, or Discard it. Keep chat updates concise and describe completed design changes in plain language.`;
   }
 
-  function mcpError(response: JsonObject): string {
-    const text = Array.isArray(response.content)
-      ? response.content.map((part) => object(part)).filter((part) => part.type === "text").map((part) => String(part.text ?? "")).find(Boolean)
-      : "";
-    return text || "Figmaboy tool call failed";
-  }
-
-  async function callFigmaboy(threadId: string, tool: string, args: JsonObject = {}): Promise<JsonObject> {
-    const response = await request<JsonObject>("mcpServer/tool/call", { threadId, server: "figmaboy", tool, arguments: args });
-    if (response.isError === true || object(response.structuredContent).ok === false) throw new Error(mcpError(response));
-    return response;
-  }
-
-  function structured(response: JsonObject): JsonObject {
-    return object(response.structuredContent);
-  }
-
   function screenshotDataUrl(response: JsonObject): string {
     if (typeof response.imageBase64 === "string") return `data:${typeof response.mimeType === "string" ? response.mimeType : "image/png"};base64,${response.imageBase64}`;
     if (!Array.isArray(response.content)) throw new Error("Figmaboy did not return a frame image");
@@ -686,10 +599,8 @@
   }
 
   async function callEditor(tool: string, args: JsonObject = {}): Promise<JsonObject> {
-    if (onEditorRpc) return object(await onEditorRpc(tool, args));
-    if (!evolveControlThreadId) throw new Error("Evolution editor bridge is unavailable");
-    const response = await callFigmaboy(evolveControlThreadId, tool, args);
-    return tool === "frame_screenshot" ? response : structured(response);
+    if (!onEditorRpc) throw new Error("Evolution editor bridge is unavailable");
+    return object(await onEditorRpc(tool, args));
   }
 
   function frameContext(documentValue: unknown, frameId: string): JsonObject {
@@ -707,53 +618,6 @@
     return { frameId, nodes: selected };
   }
 
-  async function startEvolveThread(role: "control" | "director" | "designer"): Promise<string> {
-    const figmaboy = role === "director"
-      ? { enabled: false }
-      : role === "designer"
-        ? { enabled: true, enabled_tools: ["types_get"] }
-        : { enabled: true };
-    const specialistConfig = {
-      features: { apps: false },
-      mcp_servers: { figmaboy },
-    };
-    const specialistInstructions = role === "director"
-      ? "You are a visual design director. Judge how strongly the rendered frame satisfies the frozen user direction, retain visible successes, identify only material opportunities, and prefer the stronger image in comparisons. You have no tools and must return only the requested structured result."
-      : "You are an isolated native designer. Before your first proposal, call the Figmaboy types_get tool and treat its TypeScript contract as authoritative. Move the current accepted design toward the frozen user direction. You may freely change content and structure inside the target frame, but must leave the target frame present and never touch nodes outside it. Return only the requested structured result. types_get is your only available tool. Call it once per thread unless you need to recover missing contract details.";
-    const params = approvalParams({
-      cwd,
-      model: selection.model,
-      serviceTier: evolveFastTier(),
-      serviceName: `figmaboy-evolve-${role}`,
-      ephemeral: true,
-      config: specialistConfig,
-      developerInstructions: role === "control"
-        ? "This ephemeral thread exists only so Figmaboy can call its own MCP tools. Do not start a turn."
-        : specialistInstructions,
-    });
-    params.sandbox = role === "control" ? "workspace-write" : "read-only";
-    const response = await request<{ thread: CodexThread }>("thread/start", params);
-    specialistThreadIds.add(response.thread.id);
-    hiddenThreadIds.add(response.thread.id);
-    return response.thread.id;
-  }
-
-  async function disposeSpecialistThread(threadId: string): Promise<void> {
-    if (!threadId || !specialistThreadIds.has(threadId)) return;
-    specialistThreadIds.delete(threadId);
-    hiddenThreadIds.delete(threadId);
-    const waiter = hiddenTurnWaiters.get(threadId);
-    if (waiter) {
-      clearTimeout(waiter.timer);
-      hiddenTurnWaiters.delete(threadId);
-    }
-    await request("thread/delete", { threadId }).catch(() => request("thread/archive", { threadId }).catch(() => request("thread/unsubscribe", { threadId }).catch(() => undefined)));
-  }
-
-  async function disposeAllSpecialistThreads(): Promise<void> {
-    await Promise.all([...specialistThreadIds].map((threadId) => disposeSpecialistThread(threadId)));
-  }
-
   function evolveEffort(): string {
     const supported = activeModel?.supportedReasoningEfforts.map((option) => option.reasoningEffort) ?? [];
     if (supported.includes(selection.effort)) return selection.effort;
@@ -765,45 +629,6 @@
     return catalogTier ?? activeModel?.additionalSpeedTiers?.find((tier) => tier === "fast" || tier === "priority") ?? "default";
   }
 
-  async function runHiddenTurn(threadId: string, input: JsonObject[], outputSchema: JsonObject, inactivityMs: number, effort: string): Promise<string> {
-    let resolve!: (text: string) => void;
-    let reject!: (cause: Error) => void;
-    const completed = new Promise<string>((accept, decline) => { resolve = accept; reject = decline; });
-    const waiter: HiddenTurnWaiter = {
-      turnId: null,
-      text: "",
-      resolve,
-      reject,
-      timer: setTimeout(() => void expireHiddenTurn(threadId), inactivityMs),
-      inactivityMs,
-      expiring: false,
-    };
-    hiddenThreadIds.add(threadId);
-    hiddenTurnWaiters.set(threadId, waiter);
-    try {
-      const response = await request<{ turn?: { id?: string } }>("turn/start", {
-        threadId,
-        input,
-        model: selection.model,
-        ...(effort ? { effort } : {}),
-        serviceTier: evolveFastTier(),
-        outputSchema,
-        approvalsReviewer: "auto_review",
-      });
-      waiter.turnId = response.turn?.id ?? null;
-      resetHiddenTurnWatchdog(threadId);
-      return await completed;
-    } catch (cause) {
-      const current = hiddenTurnWaiters.get(threadId);
-      if (current) {
-        clearTimeout(current.timer);
-        hiddenTurnWaiters.delete(threadId);
-      }
-      hiddenThreadIds.delete(threadId);
-      throw cause;
-    }
-  }
-
   function parseAgentJson(text: string): JsonObject {
     const clean = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
     const value = JSON.parse(clean);
@@ -811,52 +636,10 @@
     return value as JsonObject;
   }
 
-  function directorSchema(): JsonObject {
-    return {
-      type: "object", additionalProperties: false,
-      required: ["verdict", "preference", "confidence", "criteria", "regions", "successes", "regressions", "summary", "mandates"],
-      properties: {
-        verdict: { type: "string", enum: ["revise", "satisfied"] },
-        preference: { type: "string", enum: ["image_1", "image_2", "tie", "not_applicable"] },
-        confidence: { type: "number", minimum: 0, maximum: 1 },
-        criteria: { type: "array", minItems: 2, maxItems: 6, items: {
-          type: "object", additionalProperties: false, required: ["id", "requirement", "status", "evidence"],
-          properties: { id: { type: "string" }, requirement: { type: "string" }, status: { type: "string", enum: ["met", "partial", "unmet"] }, evidence: { type: "string" } },
-        } },
-        regions: { type: "array", minItems: 0, maxItems: 3, items: {
-          type: "object", additionalProperties: false, required: ["criterionId", "x", "y", "width", "height", "priority", "note", "desiredOutcome"],
-          properties: { criterionId: { type: "string" }, x: { type: "number" }, y: { type: "number" }, width: { type: "number" }, height: { type: "number" }, priority: { type: "integer", minimum: 1, maximum: 3 }, note: { type: "string" }, desiredOutcome: { type: "string" } },
-        } },
-        successes: { type: "array", minItems: 0, maxItems: 6, items: {
-          type: "object", additionalProperties: false, required: ["criterionId", "note"], properties: { criterionId: { type: "string" }, note: { type: "string" } },
-        } },
-        regressions: { type: "array", minItems: 0, maxItems: 6, items: {
-          type: "object", additionalProperties: false, required: ["severity", "note"], properties: { severity: { type: "string", enum: ["minor", "major", "blocking"] }, note: { type: "string" } },
-        } },
-        summary: { type: "string" },
-        mandates: { type: "array", minItems: 0, maxItems: 3, items: {
-          type: "object", additionalProperties: false,
-          required: ["id", "intent", "criterionIds", "unresolvedPressure", "mutationStrength", "requiredDifference", "forbiddenRecentMechanisms", "mustPreserve", "archiveSources"],
-          properties: {
-            id: { type: "string", enum: ["A", "B", "C"] },
-            intent: { type: "string", enum: ["exploit", "orthogonal", "challenge"] },
-            criterionIds: { type: "array", minItems: 1, maxItems: 6, items: { type: "string" } },
-            unresolvedPressure: { type: "string" },
-            mutationStrength: { type: "string", enum: ["focused", "moderate", "broad"] },
-            requiredDifference: { type: "string" },
-            forbiddenRecentMechanisms: { type: "array", maxItems: 6, items: { type: "string" } },
-            mustPreserve: { type: "array", maxItems: 8, items: { type: "string" } },
-            archiveSources: { type: "array", maxItems: 3, items: { type: "string" } },
-          },
-        } },
-      },
-    };
-  }
-
   function designerSchema(): JsonObject {
     return {
       type: "object", additionalProperties: false,
-      required: ["updates", "creates", "reorders", "deletes", "reparents", "removeCreatedIds", "summary", "title", "hypothesis", "mechanism", "intendedTradeoff"],
+      required: ["updates", "creates", "reorders", "deletes", "reparents", "summary", "title", "hypothesis", "mechanism", "intendedTradeoff"],
       properties: {
         title: { type: "string" },
         hypothesis: { type: "string" },
@@ -865,22 +648,34 @@
         updates: { type: "array", minItems: 0, maxItems: 100, items: {
           type: "object", additionalProperties: false, required: ["id", "patchJson"], properties: { id: { type: "string" }, patchJson: { type: "string" } },
         } },
-        creates: { type: "array", minItems: 0, maxItems: 50, items: {
+        creates: { type: "array", minItems: 0, maxItems: 100, items: {
           type: "object", additionalProperties: false, required: ["parentId", "nodeJson", "index"], properties: { parentId: { type: "string" }, nodeJson: { type: "string" }, index: { type: "integer", minimum: -1 } },
         } },
-        reorders: { type: "array", minItems: 0, maxItems: 20, items: {
+        reorders: { type: "array", minItems: 0, maxItems: 30, items: {
           type: "object", additionalProperties: false, required: ["parentId", "ids"], properties: { parentId: { type: "string" }, ids: { type: "array", items: { type: "string" } } },
         } },
-        deletes: { type: "array", minItems: 0, maxItems: 50, items: {
+        deletes: { type: "array", minItems: 0, maxItems: 100, items: {
           type: "object", additionalProperties: false, required: ["ids"], properties: { ids: { type: "array", minItems: 1, items: { type: "string" } } },
         } },
-        reparents: { type: "array", minItems: 0, maxItems: 50, items: {
+        reparents: { type: "array", minItems: 0, maxItems: 100, items: {
           type: "object", additionalProperties: false, required: ["ids", "parentId", "index"], properties: { ids: { type: "array", minItems: 1, items: { type: "string" } }, parentId: { type: "string" }, index: { type: "integer", minimum: -1 } },
         } },
-        removeCreatedIds: { type: "array", minItems: 0, maxItems: 50, items: { type: "string" } },
         summary: { type: "string" },
       },
     };
+  }
+
+  async function runEvolveExec(role: "designer" | "director" | "correction", promptText: string, images: Array<{ name: string; dataUrl: string }>, outputSchema: JsonObject, activityId?: string): Promise<string> {
+    const execId = crypto.randomUUID();
+    if (activityId) evolveExecActivities.set(execId, activityId);
+    try {
+      const response = await invoke<EvolveExecResponse>("codex_evolve_exec", {
+        request: { execId, runId: evolveRunId, workspaceId, role, prompt: promptText, images, outputSchema, model: selection.model, effort: evolveEffort(), serviceTier: evolveFastTier() },
+      });
+      return response.text;
+    } finally {
+      evolveExecActivities.delete(execId);
+    }
   }
 
   function cleanNote(value: unknown, label: string): string {
@@ -893,22 +688,43 @@
     return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string").map((item) => item.replace(/\s+/g, " ").trim().slice(0, 180)).filter(Boolean).slice(0, limit) : [];
   }
 
-  function fallbackMandates(criteria: EvolveCriterion[], regions: EvolveRegion[], successes: Array<{ criterionId: string; note: string }>, archive: EvolveLineage[], stagnation: number): EvolveSearchMandate[] {
-    const unresolved = criteria.filter((criterion) => criterion.status !== "met").map((criterion) => criterion.id);
-    const targetIds = unresolved.length ? unresolved : criteria.map((criterion) => criterion.id);
-    const pressure = regions[0]?.desiredOutcome ?? "Resolve the largest remaining gap in the requested direction";
-    const recentFailures = stagnation ? archive.filter((lineage) => lineage.outcome !== "winner").slice(-3).map((lineage) => lineage.mechanism) : [];
-    const archiveSources = stagnation >= 2 ? archive.filter((lineage) => lineage.quality >= .65 && lineage.strengths.length > 0).toSorted((a, b) => b.quality - a.quality).slice(0, 2).map((lineage) => lineage.title) : [];
-    const mustPreserve = successes.slice(0, 4).map((success) => success.note);
-    const strength: EvolveSearchMandate["mutationStrength"] = stagnation >= 2 ? "broad" : unresolved.length <= 1 ? "focused" : "moderate";
-    return [
-      { id: "A", intent: "exploit", criterionIds: targetIds.slice(0, 2), unresolvedPressure: pressure, mutationStrength: strength === "broad" ? "moderate" : strength, requiredDifference: "Use the highest-confidence mechanism for the most important unresolved criterion", forbiddenRecentMechanisms: recentFailures, mustPreserve, archiveSources: [] },
-      { id: "B", intent: "orthogonal", criterionIds: targetIds.slice(0, 3), unresolvedPressure: pressure, mutationStrength: strength, requiredDifference: "Use a visibly different causal mechanism and composition from candidate A", forbiddenRecentMechanisms: recentFailures, mustPreserve, archiveSources },
-      { id: "C", intent: "challenge", criterionIds: targetIds, unresolvedPressure: pressure, mutationStrength: stagnation ? "broad" : strength, requiredDifference: "Challenge one assumption shared by the incumbent and recent candidates without sacrificing protected successes", forbiddenRecentMechanisms: recentFailures, mustPreserve, archiveSources },
-    ];
+  function directorSchema(): JsonObject {
+    return {
+      type: "object", additionalProperties: false,
+      required: ["verdict", "preference", "confidence", "criteria", "regions", "successes", "regressions", "summary", "nextObjective"],
+      properties: {
+        verdict: { type: "string", enum: ["revise", "satisfied"] },
+        preference: { type: "string", enum: ["image_1", "image_2", "tie", "not_applicable"] },
+        confidence: { type: "number", minimum: 0, maximum: 1 },
+        criteria: { type: "array", minItems: 2, maxItems: 6, items: {
+          type: "object", additionalProperties: false, required: ["id", "requirement", "status", "evidence"],
+          properties: { id: { type: "string" }, requirement: { type: "string" }, status: { type: "string", enum: ["met", "partial", "unmet"] }, evidence: { type: "string" } },
+        } },
+        regions: { type: "array", minItems: 0, maxItems: 3, items: {
+          type: "object", additionalProperties: false, required: ["criterionId", "x", "y", "width", "height", "priority", "note", "desiredOutcome"],
+          properties: { criterionId: { type: "string" }, x: { type: "number" }, y: { type: "number" }, width: { type: "number" }, height: { type: "number" }, priority: { type: "integer", minimum: 1, maximum: 3 }, note: { type: "string" }, desiredOutcome: { type: "string" } },
+        } },
+        successes: { type: "array", minItems: 0, maxItems: 8, items: {
+          type: "object", additionalProperties: false, required: ["criterionId", "note"], properties: { criterionId: { type: "string" }, note: { type: "string" } },
+        } },
+        regressions: { type: "array", minItems: 0, maxItems: 6, items: {
+          type: "object", additionalProperties: false, required: ["severity", "note"], properties: { severity: { type: "string", enum: ["minor", "major", "blocking"] }, note: { type: "string" } },
+        } },
+        summary: { type: "string" },
+        nextObjective: {
+          type: "object", additionalProperties: false, required: ["criterionIds", "instruction", "completionSignal", "preserve"],
+          properties: {
+            criterionIds: { type: "array", minItems: 0, maxItems: 6, items: { type: "string" } },
+            instruction: { type: "string" },
+            completionSignal: { type: "string" },
+            preserve: { type: "array", minItems: 0, maxItems: 8, items: { type: "string" } },
+          },
+        },
+      },
+    };
   }
 
-  function validatedAssessment(value: JsonObject, frame: JsonObject, frozen: EvolveCriterion[] | null, archive: EvolveLineage[] = [], stagnation = 0): EvolveAssessment {
+  function validatedAssessment(value: JsonObject, frame: JsonObject, frozen: EvolveCriterion[] | null): EvolveAssessment {
     if (!Array.isArray(value.criteria) || !Array.isArray(value.regions) || !Array.isArray(value.successes) || !Array.isArray(value.regressions)) throw new Error("Director returned an incomplete assessment");
     const rawCriteria = value.criteria.map((criterionValue) => object(criterionValue));
     if (!frozen && rawCriteria.length < 2) throw new Error("Director did not establish enough direction criteria");
@@ -937,50 +753,25 @@
     });
     const confidence = Math.max(0, Math.min(1, Number(value.confidence) || 0));
     const preference = value.preference === "image_1" || value.preference === "image_2" || value.preference === "tie" ? value.preference : "not_applicable";
-    const genuinelySatisfied = value.verdict === "satisfied" && regions.length === 0 && criteria.every((criterion) => criterion.status === "met") && !regressions.some((regression) => regression.severity !== "minor");
-    const fallback = fallbackMandates(criteria, regions, successes, archive, stagnation);
-    const rawMandates = Array.isArray(value.mandates) ? value.mandates.map(object) : [];
-    const intents: EvolveSearchMandate["intent"][] = ["exploit", "orthogonal", "challenge"];
-    const rawIntentSet = new Set(rawMandates.map((raw) => raw.intent));
-    const distinctions = new Set(rawMandates.map((raw) => String(raw.requiredDifference ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()).filter(Boolean));
-    const hasDistinctMandates = rawMandates.length === 3 && intents.every((intent) => rawIntentSet.has(intent)) && distinctions.size === 3;
-    const mandates = genuinelySatisfied || !regions.length ? [] : hasDistinctMandates ? intents.map((intent, index): EvolveSearchMandate => {
-      const raw = rawMandates.find((candidate) => candidate.intent === intent) ?? rawMandates[index];
-      const criterionIds = cleanStringList(raw.criterionIds, 6).filter((id) => criteria.some((criterion) => criterion.id === id));
-      return {
-        id: (["A", "B", "C"] as const)[index],
-        intent,
-        criterionIds: criterionIds.length ? criterionIds : fallback[index].criterionIds,
-        unresolvedPressure: cleanNote(raw.unresolvedPressure, "Search pressure"),
-        mutationStrength: raw.mutationStrength === "focused" || raw.mutationStrength === "broad" ? raw.mutationStrength : "moderate",
-        requiredDifference: cleanNote(raw.requiredDifference, "Candidate distinction"),
-        forbiddenRecentMechanisms: cleanStringList(raw.forbiddenRecentMechanisms, 6),
-        mustPreserve: cleanStringList(raw.mustPreserve, 8),
-        archiveSources: cleanStringList(raw.archiveSources, 3),
+    const satisfied = value.verdict === "satisfied" && regions.length === 0 && criteria.every((criterion) => criterion.status === "met") && !regressions.some((regression) => regression.severity !== "minor");
+    let nextObjective: EvolveObjective | null = null;
+    if (!satisfied) {
+      const raw = object(value.nextObjective);
+      const selected = cleanStringList(raw.criterionIds, 6).filter((id) => criterionIds.has(id));
+      nextObjective = {
+        criterionIds: selected.length ? selected : criteria.filter((criterion) => criterion.status !== "met").slice(0, 2).map((criterion) => criterion.id),
+        instruction: cleanNote(raw.instruction, "Next construction objective"),
+        completionSignal: cleanNote(raw.completionSignal, "Objective completion signal"),
+        preserve: cleanStringList(raw.preserve, 8),
       };
-    }) : fallback;
-    return { verdict: genuinelySatisfied ? "satisfied" : "revise", preference, confidence, criteria, regions, successes, regressions, summary: cleanNote(value.summary, "Director summary"), mandates };
-  }
-
-  function emptyOperationState(): EvolveOperationState {
-    return { creates: new Map(), updates: new Map(), reorders: new Map(), deletes: new Map(), reparents: new Map() };
-  }
-
-  function cloneOperationState(value: EvolveOperationState): EvolveOperationState {
-    return { creates: new Map(value.creates), updates: new Map([...value.updates].map(([id, patch]) => [id, { ...patch }])), reorders: new Map(value.reorders), deletes: new Map(value.deletes), reparents: new Map(value.reparents) };
-  }
-
-  function operationsFromState(value: EvolveOperationState): JsonObject[] {
-    return [...value.creates.values(), ...[...value.updates].map(([id, patch]) => ({ kind: "update", id, patch })), ...value.reparents.values(), ...value.deletes.values(), ...value.reorders.values()];
-  }
-
-  function designerCandidate(value: JsonObject, accepted: EvolveOperationState): { state: EvolveOperationState; operations: JsonObject[]; summary: string; title: string; hypothesis: string; mechanism: string; intendedTradeoff: string } {
-    if (!Array.isArray(value.updates) || !Array.isArray(value.creates) || !Array.isArray(value.reorders) || !Array.isArray(value.removeCreatedIds)) throw new Error("Designer returned an incomplete change set");
-    const state = cloneOperationState(accepted);
-    for (const id of value.removeCreatedIds.filter((item): item is string => typeof item === "string")) {
-      if (!state.creates.has(id)) throw new Error(`Designer can only remove evolve-created layer ${id}`);
-      state.creates.delete(id); state.updates.delete(id);
     }
+    return { verdict: satisfied ? "satisfied" : "revise", preference, confidence, criteria, regions, successes, regressions, summary: cleanNote(value.summary, "Director summary"), nextObjective };
+  }
+
+  function designerCandidate(value: JsonObject): { operations: JsonObject[]; summary: string; title: string; hypothesis: string; mechanism: string; intendedTradeoff: string } {
+    if (!Array.isArray(value.updates) || !Array.isArray(value.creates) || !Array.isArray(value.reorders) || !Array.isArray(value.deletes) || !Array.isArray(value.reparents)) throw new Error("Designer returned an incomplete change set");
+    const operations: JsonObject[] = [];
+    const createdIds = new Set<string>();
     for (const [index, createValue] of value.creates.entries()) {
       const create = object(createValue);
       if (typeof create.parentId !== "string" || typeof create.nodeJson !== "string") throw new Error("Designer returned an invalid create operation");
@@ -988,8 +779,9 @@
       try { node = JSON.parse(create.nodeJson); }
       catch (cause) { throw new Error(`creates[${index}].nodeJson is not valid JSON: ${errorMessage(cause)}`); }
       const nodeObject = object(node);
-      if (typeof nodeObject.id !== "string") throw new Error("Every created layer needs a stable ID");
-      state.creates.set(nodeObject.id, { kind: "create", parentId: create.parentId, node: nodeObject, ...(Number(create.index) >= 0 ? { index: Number(create.index) } : {}) });
+      if (typeof nodeObject.id !== "string" || createdIds.has(nodeObject.id)) throw new Error("Every created layer needs a unique stable ID");
+      createdIds.add(nodeObject.id);
+      operations.push({ kind: "create", parentId: create.parentId, node: nodeObject, ...(Number(create.index) >= 0 ? { index: Number(create.index) } : {}) });
     }
     for (const [index, updateValue] of value.updates.entries()) {
       const update = object(updateValue);
@@ -998,35 +790,31 @@
       try { patch = JSON.parse(update.patchJson); }
       catch (cause) { throw new Error(`updates[${index}].patchJson is not valid JSON: ${errorMessage(cause)}`); }
       if (!patch || typeof patch !== "object" || Array.isArray(patch)) throw new Error("Designer returned an invalid layer patch");
-      state.updates.set(update.id, { ...(state.updates.get(update.id) ?? {}), ...patch as JsonObject });
+      operations.push({ kind: "update", id: update.id, patch: patch as JsonObject });
     }
     for (const reorderValue of value.reorders) {
       const reorder = object(reorderValue);
       if (typeof reorder.parentId !== "string" || !Array.isArray(reorder.ids) || reorder.ids.some((id) => typeof id !== "string")) throw new Error("Designer returned an invalid reorder operation");
-      state.reorders.set(reorder.parentId, { kind: "reorder", parentId: reorder.parentId, ids: reorder.ids });
+      operations.push({ kind: "reorder", parentId: reorder.parentId, ids: reorder.ids });
     }
-    for (const deleteValue of Array.isArray(value.deletes) ? value.deletes : []) {
+    for (const deleteValue of value.deletes) {
       const deletion = object(deleteValue);
       if (!Array.isArray(deletion.ids) || deletion.ids.some((id) => typeof id !== "string")) throw new Error("Designer returned an invalid delete operation");
-      const ids = deletion.ids as string[];
-      state.deletes.set(ids.toSorted().join("|"), { kind: "delete", ids });
+      operations.push({ kind: "delete", ids: deletion.ids });
     }
-    for (const reparentValue of Array.isArray(value.reparents) ? value.reparents : []) {
+    for (const reparentValue of value.reparents) {
       const reparent = object(reparentValue);
       if (!Array.isArray(reparent.ids) || reparent.ids.some((id) => typeof id !== "string") || typeof reparent.parentId !== "string") throw new Error("Designer returned an invalid reparent operation");
-      const ids = reparent.ids as string[];
-      state.reparents.set(ids.toSorted().join("|"), { kind: "reparent", ids, parentId: reparent.parentId, ...(Number(reparent.index) >= 0 ? { index: Number(reparent.index) } : {}) });
+      operations.push({ kind: "reparent", ids: reparent.ids, parentId: reparent.parentId, ...(Number(reparent.index) >= 0 ? { index: Number(reparent.index) } : {}) });
     }
-    const operations = operationsFromState(state);
     if (!operations.length) throw new Error("Designer returned no changes");
     return {
-      state,
       operations,
       summary: cleanNote(value.summary, "Designer summary"),
-      title: cleanNote(value.title, "Candidate title").slice(0, 72),
-      hypothesis: cleanNote(value.hypothesis, "Candidate hypothesis"),
-      mechanism: cleanNote(value.mechanism, "Candidate mechanism").slice(0, 120),
-      intendedTradeoff: cleanNote(value.intendedTradeoff, "Candidate tradeoff"),
+      title: cleanNote(value.title, "Pass title").slice(0, 72),
+      hypothesis: cleanNote(value.hypothesis, "Pass hypothesis"),
+      mechanism: cleanNote(value.mechanism, "Pass mechanism").slice(0, 120),
+      intendedTradeoff: cleanNote(value.intendedTradeoff, "Pass tradeoff"),
     };
   }
 
@@ -1074,149 +862,174 @@
     if (evolveCancelled) throw new Error("Evolution stopped");
   }
 
-  function designerCorrectionText(cause: unknown, previousText: string): string {
-    const failure = errorMessage(cause).replace(/\s+/g, " ").trim().slice(0, 1_200);
-    const rejected = previousText.trim().slice(0, 16_000);
-    return `Your previous proposal was rejected before visual review. Correct that same proposal instead of starting a different design direction. Preserve its title, hypothesis, mechanism, intended tradeoff, and requested outcome. You may change any content or structure inside the target frame, but the target frame must remain present and nothing outside it may change. Use the authoritative Figmaboy contract you fetched with types_get. Return a complete replacement response in the required structured format. Do not repeat the invalid value. patchJson and nodeJson must each contain exactly one valid JSON object.\n\nEXACT FIGMABOY VALIDATION ERROR\n${failure}\n\nREJECTED RESPONSE\n${rejected || "The previous turn failed before returning a complete response."}`;
-  }
-
   async function runDirector(args: {
     direction: string;
     frame: JsonObject;
-    context: JsonObject;
-    baselineImage: string;
+    sourceContext: JsonObject;
+    draftContext: JsonObject;
+    referenceImage: string;
     currentImage: string;
     frozen: EvolveCriterion[] | null;
-    previousImage?: string;
     candidateImage?: string;
-    candidateLabel?: "image_1" | "image_2";
+    objective?: EvolveObjective;
     verification?: boolean;
-    archive?: EvolveLineage[];
-    stagnation?: number;
   }): Promise<EvolveAssessment> {
-    const title = args.previousImage && args.candidateImage ? `Comparing generation ${evolvePass} candidates` : args.verification ? "Checking the direction one more time" : "Reviewing the current design";
-    // The baseline and current image are identical before the first generation.
-    // Sending both doubles a large multimodal request and makes transport failures
-    // much more likely without giving the director any additional evidence.
-    const includeBaseline = args.baselineImage !== args.currentImage && (!args.frozen || args.verification || evolvePass % 5 === 0);
-    const criteria = args.frozen ? `Frozen direction criteria: ${JSON.stringify(args.frozen.map(({ id, requirement }) => ({ id, requirement })))}` : "Create 2 to 6 concise direction criteria from the user prompt and keep their IDs stable.";
-    const comparison = args.previousImage && args.candidateImage
-      ? `Compare IMAGE 1 and IMAGE 2. Return the stronger direction match in preference. The candidate is ${args.candidateLabel}. Judge remaining regions on the preferred image.${includeBaseline ? " Use the baseline only as a drift anchor." : ""}`
-      : "Review CURRENT against the frozen direction. Set preference to not_applicable.";
-    const planning = !args.previousImage && !args.candidateImage && !args.verification;
-    const archive = (args.archive ?? []).slice(-8).map(({ title, mechanism, criterionIds, strengths, outcome, reason, generation }) => ({ title, mechanism, criterionIds, strengths, outcome, reason, generation }));
-    const mandateInstruction = planning ? `Define three search mandates in mandates. Mandates state selection pressure and diversity boundaries, not a finished visual solution. A is exploit, B is orthogonal, and C challenges an incumbent assumption. Each must target unmet criteria, name a different requiredDifference, state what recent mechanisms to avoid, preserve accepted successes, and choose focused, moderate, or broad mutation strength. Stagnation count is ${args.stagnation ?? 0}. When stagnation is at least 2, broaden B and C and revive a promising archive source without copying it. Near satisfaction, keep all mandates focused.\nRecent evolutionary archive: ${JSON.stringify(archive)}` : "Return mandates as an empty array because this turn only judges rendered outcomes.";
-    const input: JsonObject[] = [textInput(`Act as a design director, not a defect scanner. Decide what meaningful visual opportunity would most increase this frame's fit to the user's direction. Ignore unrelated polish unless it blocks the direction or creates a serious regression. Preserve visible successes. verdict=satisfied is valid only when every frozen criterion is visibly met and no material opportunity remains. regions may be empty.\n\nUser direction: ${args.direction}\n${criteria}\n${comparison}\n${mandateInstruction}\n${args.verification ? "This is an independent finish verification. Be willing to reopen the loop if any material criterion remains partial." : ""}\nFrame layers: ${JSON.stringify(args.context)}`)];
-    if (includeBaseline) input.push(textInput("BASELINE"), imageInput(args.baselineImage));
-    if (args.previousImage && args.candidateImage) {
-      const image1 = args.candidateLabel === "image_1" ? args.candidateImage : args.previousImage;
-      const image2 = args.candidateLabel === "image_2" ? args.candidateImage : args.previousImage;
-      input.push(textInput("IMAGE 1"), imageInput(image1), textInput("IMAGE 2"), imageInput(image2));
-    } else input.push(textInput("CURRENT"), imageInput(args.currentImage));
-    let attempt = 0;
+    const comparing = Boolean(args.candidateImage && args.objective);
+    const title = comparing ? `Judging construction pass ${evolvePass}` : args.verification ? "Checking the reconstruction one more time" : "Planning the next construction pass";
+    const criteria = args.frozen
+      ? `Frozen direction criteria: ${JSON.stringify(args.frozen.map(({ id, requirement }) => ({ id, requirement })))}`
+      : "Create 2 to 6 stable criteria from the user's direction. Include preservation of required source content as a criterion.";
+    const images = [
+      { name: "reference", dataUrl: args.referenceImage },
+      { name: "current-draft", dataUrl: args.currentImage },
+      ...(args.candidateImage ? [{ name: "candidate", dataUrl: args.candidateImage }] : []),
+    ];
+    const comparison = comparing
+      ? `The second attached image is the current reconstruction. The third is the proposed next pass. In the preference field, image_1 means keep the current reconstruction and image_2 means accept the candidate. Choose image_2 only when the candidate materially advances this pass objective without breaking completed work. A partial reconstruction does not need to match the finished reference yet. Pass objective: ${JSON.stringify(args.objective)}`
+      : "Review the current reconstruction against the frozen criteria. Set preference to not_applicable. If work remains, choose the smallest coherent visible nextObjective. It must cover one region, component, or design decision and include an observable completionSignal. Do not ask for a complete screen, several sections, or broad polish in one pass. The first objective for an empty draft should establish only the outer shell or one primary structural region.";
+    const promptText = `Act as the construction director for a first-principles redesign. Treat the reconstruction like a painting built layer by layer. Choose what this pass should add, let that layer stand on its own, inspect it, then leave the next layer for the next pass. The reference frame is frozen and must not be edited. It supplies exact content, assets, dimensions, and product intent. The reconstruction may use a different composition and visual system to satisfy the user's direction. Do not reward pixel imitation. Do not reject an early pass merely because later detail is unfinished. Judge progress at the scale of the stated objective. verdict=satisfied is valid only when every frozen criterion is visibly met and no material work remains. Return only the required structured result.
+
+Attached images are REFERENCE, CURRENT DRAFT${args.candidateImage ? ", and CANDIDATE" : ""}, in that order.
+User direction: ${args.direction}
+${criteria}
+${comparison}
+${args.verification ? "This is an independent finish check. Reopen construction if any material criterion remains partial." : ""}
+Frozen reference layers: ${JSON.stringify(args.sourceContext)}
+Current reconstruction layers: ${JSON.stringify(args.draftContext)}`;
     const activityId = beginEvolveActivity(title);
-    while (!evolveCancelled) {
+    for (let attempt = 0; attempt < 2 && !evolveCancelled; attempt += 1) {
       if (attempt) updateEvolveActivity(activityId, { status: "working", detail: "Trying again with a fresh director" });
-      let threadId = "";
       try {
-        threadId = await startEvolveThread("director");
-        const text = await runHiddenTurn(threadId, input, directorSchema(), 180_000, evolveEffort());
-        const assessment = validatedAssessment(parseAgentJson(text), args.frame, args.frozen, args.archive, args.stagnation);
-        finishEvolveActivity(activityId, "complete", assessment.summary, assessment.regions.map((region) => `${region.note} → ${region.desiredOutcome}`));
+        const text = await runEvolveExec("director", promptText, images, directorSchema(), activityId);
+        const assessment = validatedAssessment(parseAgentJson(text), args.frame, args.frozen);
+        const notes = [
+          ...assessment.regions.map((region) => `${region.note} → ${region.desiredOutcome}`),
+          ...(assessment.nextObjective ? [`Next: ${assessment.nextObjective.instruction}`, `Done when: ${assessment.nextObjective.completionSignal}`] : []),
+        ];
+        finishEvolveActivity(activityId, "complete", assessment.summary, notes);
         return assessment;
       } catch (cause) {
-        if (!retryableEvolveError(cause) || evolveCancelled) { finishEvolveActivity(activityId, "discarded", errorMessage(cause)); throw cause; }
-        attempt += 1;
-        finishEvolveActivity(activityId, "recovering", evolveRecoveryDetail("director", cause), evolveRecoveryNotes(cause, attempt));
-        await waitForRetry(attempt);
-      } finally {
-        await disposeSpecialistThread(threadId);
-      }
-    }
-    throw new Error("Evolution stopped");
-  }
-
-  async function runDesigner(args: { direction: string; frameId: string; context: JsonObject; image: string; assessment: EvolveAssessment; accepted: EvolveOperationState; candidateId: string; mandate: EvolveSearchMandate }): Promise<EvolveProposal> {
-    const baseInput = [
-        textInput(`Act as one isolated designer in a parallel evolution generation. Fetch the authoritative native node and style contract with types_get before proposing changes. The director supplied selection pressure and diversity boundaries, not a solution. Form your own concrete design hypothesis and implement it. Return a short title, the causal hypothesis, its primary visual mechanism, and the intended tradeoff alongside the operations. Do not optimize for novelty alone; the complete user direction and frozen criteria determine quality. Honor the required difference and do not reuse forbidden recent mechanisms under a new name. You have full creative control inside the target frame. You may rewrite text, restyle or resize any descendant, change fills and image treatments, create or delete layers, reparent descendants, reorder siblings, and resize or restyle the target frame. Keep the target frame itself present and do not touch nodes outside it. Visible successes are evidence to consider, not immutable content. Use deletes and reparents when the hypothesis requires structural change. removeCreatedIds is only for correcting your own newly created layers. patchJson and nodeJson must each contain one valid JSON object that follows the fetched Figmaboy contract. Return absolute property values for the current accepted frame, not relative deltas.\n\nSEARCH MANDATE\n${JSON.stringify(args.mandate)}\n\nUser direction: ${args.direction}\nFrame ID: ${args.frameId}\nDirection criteria: ${JSON.stringify(args.assessment.criteria.map(({ id, requirement }) => ({ id, requirement })))}\nOpportunities: ${JSON.stringify(args.assessment.regions)}\nExisting successes: ${JSON.stringify(args.assessment.successes)}\nCurrent frame layers: ${JSON.stringify(args.context)}`),
-        imageInput(args.image),
-      ];
-    let input = baseInput;
-    let attempt = 0;
-    let threadId = "";
-    let previousText = "";
-    const target = args.assessment.regions[0]?.desiredOutcome ?? args.assessment.summary;
-    const activityId = beginEvolveActivity(`${args.candidateId} · Forming hypothesis`, target);
-    while (!evolveCancelled) {
-      if (attempt) updateEvolveActivity(activityId, { status: "working", detail: threadId ? "Correcting the rejected proposal" : "Trying again with a fresh designer" });
-      try {
-        if (!threadId) threadId = await startEvolveThread("designer");
-        previousText = await runHiddenTurn(threadId, input, designerSchema(), 180_000, evolveEffort());
-        const candidate = designerCandidate(parseAgentJson(previousText), args.accepted);
-        updateEvolveActivity(activityId, { title: `${args.candidateId} · ${candidate.title}`, detail: candidate.hypothesis });
-        finishEvolveActivity(activityId, "complete", candidate.summary, [`Hypothesis: ${candidate.hypothesis}`, `Mechanism: ${candidate.mechanism}`, `Tradeoff: ${candidate.intendedTradeoff}`, `Search pressure: ${args.mandate.unresolvedPressure}`]);
-        return { ...candidate, threadId, rawText: previousText, baseInput, candidateId: args.candidateId, mandate: args.mandate };
-      } catch (cause) {
-        if (evolveCancelled) { finishEvolveActivity(activityId, "discarded", "Evolution stopped"); await disposeSpecialistThread(threadId); throw cause; }
-        attempt += 1;
-        if (retryableEvolveError(cause)) {
-          finishEvolveActivity(activityId, "recovering", evolveRecoveryDetail("designer", cause), evolveRecoveryNotes(cause, attempt));
-          await disposeSpecialistThread(threadId);
-          await waitForRetry(attempt);
-          threadId = "";
-          input = baseInput;
-        } else {
-          if (!threadId || !previousText.trim()) {
-            finishEvolveActivity(activityId, "discarded", `Designer did not produce a proposal: ${errorMessage(cause)}`);
-            await disposeSpecialistThread(threadId);
-            throw cause;
-          }
-          finishEvolveActivity(activityId, "recovering", `Correcting proposal: ${errorMessage(cause)}`);
-          input = [textInput(designerCorrectionText(cause, previousText))];
+        if (!retryableEvolveError(cause) || evolveCancelled || attempt >= 1) {
+          finishEvolveActivity(activityId, "discarded", errorMessage(cause));
+          throw cause;
         }
+        finishEvolveActivity(activityId, "recovering", evolveRecoveryDetail("director", cause), evolveRecoveryNotes(cause, attempt + 1));
+        await waitForRetry(attempt + 1);
       }
     }
-    await disposeSpecialistThread(threadId);
     throw new Error("Evolution stopped");
   }
 
-  async function correctDesignerProposal(proposal: EvolveProposal, cause: unknown, accepted: EvolveOperationState): Promise<EvolveProposal> {
-    let threadId = proposal.threadId;
+  function designerBrief(args: {
+    direction: string;
+    sourceFrameId: string;
+    draftFrameId: string;
+    sourceContext: JsonObject;
+    draftContext: JsonObject;
+    assessment: EvolveAssessment;
+    objective: EvolveObjective;
+    candidateId: string;
+  }): string {
+    return `Candidate ID: ${args.candidateId}
+User direction: ${args.direction}
+Frozen reference frame ID: ${args.sourceFrameId}
+Writable reconstruction frame ID: ${args.draftFrameId}
+Pass objective: ${JSON.stringify(args.objective)}
+Direction criteria: ${JSON.stringify(args.assessment.criteria.map(({ id, requirement, status }) => ({ id, requirement, status })))}
+Visible opportunities: ${JSON.stringify(args.assessment.regions)}
+Completed work to preserve: ${JSON.stringify(args.assessment.successes)}
+Frozen reference layers and exact content: ${JSON.stringify(args.sourceContext)}
+Current reconstruction layers: ${JSON.stringify(args.draftContext)}`;
+  }
+
+  async function runDesigner(args: {
+    direction: string;
+    sourceFrameId: string;
+    draftFrameId: string;
+    sourceContext: JsonObject;
+    draftContext: JsonObject;
+    referenceImage: string;
+    currentImage: string;
+    assessment: EvolveAssessment;
+    objective: EvolveObjective;
+  }): Promise<EvolveProposal> {
+    const candidateId = `P${evolvePass}`;
+    const brief = designerBrief({ ...args, candidateId });
+    const promptText = `Act as the sole designer advancing a first-principles reconstruction. Work like a painter applying one layer at a time. This pass adds one deliberate layer of the design. Do not paint the whole picture at once. Let the user see the composition emerge through separate accepted passes. Do not spawn subagents. Call types_get before editing. The reference is read-only evidence for exact text, assets, dimensions, and product intent. Do not copy its coordinates or styling unless that choice independently fits the user direction.
+
+Make one small, coherent construction pass that fulfills only the supplied objective and its completion signal. You may create, rewrite, restyle, resize, reorder, reparent, or delete anything inside the writable reconstruction frame. Keep that frame present and never touch the reference or any layer outside the reconstruction. Use at most five operations and create at most four layers. Do not complete another region early. Leave later work visibly unfinished for later passes. Return absolute values for the current reconstruction. At least one operation array must contain a change. Never return an empty pass.
+
+Return the operations in the required structured format. Figmaboy will decode and validate them before rendering. Convert updates to {kind:"update",id,patch:JSON.parse(patchJson)}, creates to {kind:"create",parentId,node:JSON.parse(nodeJson),index when non-negative}, reorders to {kind:"reorder",parentId,ids}, deletes to {kind:"delete",ids}, and reparents to {kind:"reparent",parentId,ids,index when non-negative}.
+
+${brief}`;
+    const baseInput = [textInput(brief), imageInput(args.referenceImage), imageInput(args.currentImage)];
+    const activityId = beginEvolveActivity(`Construction pass ${evolvePass}`, args.objective.instruction);
+    for (let attempt = 0; attempt < 2 && !evolveCancelled; attempt += 1) {
+      try {
+        const text = await runEvolveExec("designer", promptText, [
+          { name: "reference", dataUrl: args.referenceImage },
+          { name: "current-draft", dataUrl: args.currentImage },
+        ], designerSchema(), activityId);
+        let candidate: ReturnType<typeof designerCandidate>;
+        try {
+          candidate = designerCandidate(parseAgentJson(text));
+        } catch (cause) {
+          if (evolveCancelled) throw cause;
+          finishEvolveActivity(activityId, "recovering", `The initial proposal needs correction: ${errorMessage(cause)}`);
+          const corrected = await correctDesignerProposal({ candidateId, rawText: text, baseInput }, cause);
+          finishEvolveActivity(activityId, "complete", "The designer corrected its initial proposal");
+          return corrected;
+        }
+        finishEvolveActivity(activityId, "complete", candidate.summary, [`Hypothesis: ${candidate.hypothesis}`, `Mechanism: ${candidate.mechanism}`, `Tradeoff: ${candidate.intendedTradeoff}`]);
+        return { ...candidate, rawText: text, baseInput, candidateId };
+      } catch (cause) {
+        if (!retryableEvolveError(cause) || evolveCancelled || attempt >= 1) {
+          finishEvolveActivity(activityId, "discarded", errorMessage(cause));
+          throw cause;
+        }
+        finishEvolveActivity(activityId, "recovering", evolveRecoveryDetail("designer", cause), evolveRecoveryNotes(cause, attempt + 1));
+        await waitForRetry(attempt + 1);
+      }
+    }
+    throw new Error("Evolution stopped");
+  }
+
+  async function correctDesignerProposal(proposal: Pick<EvolveProposal, "candidateId" | "rawText" | "baseInput">, cause: unknown): Promise<EvolveProposal> {
     let previousText = proposal.rawText;
     let failure = cause;
-    let attempt = 0;
-    let freshThread = false;
-    const activityId = beginEvolveActivity(`Correcting ${proposal.candidateId}`, errorMessage(cause));
-    while (!evolveCancelled) {
+    const activityId = beginEvolveActivity(`Correcting pass ${evolvePass}`, errorMessage(cause));
+    const images = proposal.baseInput.map(object).filter((item) => item.type === "image" && typeof item.url === "string").map((item, index) => ({ name: index ? "current-draft" : "reference", dataUrl: String(item.url) }));
+    const brief = String(proposal.baseInput.map(object).find((item) => item.type === "text")?.text ?? "");
+    for (let attempt = 1; attempt <= 2 && !evolveCancelled; attempt += 1) {
       try {
-        if (!threadId) { threadId = await startEvolveThread("designer"); freshThread = true; }
-        const correction = textInput(designerCorrectionText(failure, previousText));
-        const input = freshThread ? [...proposal.baseInput, correction] : [correction];
-        freshThread = false;
-        previousText = await runHiddenTurn(threadId, input, designerSchema(), 180_000, evolveEffort());
-        const candidate = designerCandidate(parseAgentJson(previousText), accepted);
-        finishEvolveActivity(activityId, "complete", `Corrected proposal: ${candidate.summary}`, [`Hypothesis: ${candidate.hypothesis}`, `Mechanism: ${candidate.mechanism}`, `Tradeoff: ${candidate.intendedTradeoff}`]);
-        return { ...candidate, threadId, rawText: previousText, baseInput: proposal.baseInput, candidateId: proposal.candidateId, mandate: proposal.mandate };
+        const correction = `${brief}
+
+Correct the same construction pass. Do not start a different design direction. Call types_get, then repair the proposal using the exact error below. Preserve its title, hypothesis, mechanism, intended tradeoff, and pass objective when they are usable. Use at most five operations and create at most four layers. At least one operation array must contain a change. Figmaboy will validate the complete replacement before rendering. Return only the required structured proposal.
+
+EXACT VALIDATION OR RENDER ERROR
+${errorMessage(failure).slice(0, 1_200)}
+
+REJECTED PROPOSAL
+${previousText.slice(0, 20_000)}`;
+        previousText = await runEvolveExec("correction", correction, images, designerSchema(), activityId);
+        const candidate = designerCandidate(parseAgentJson(previousText));
+        finishEvolveActivity(activityId, "complete", `Corrected proposal: ${candidate.summary}`, [`Hypothesis: ${candidate.hypothesis}`, `Mechanism: ${candidate.mechanism}`]);
+        return { ...candidate, rawText: previousText, baseInput: proposal.baseInput, candidateId: proposal.candidateId };
       } catch (nextCause) {
-        if (evolveCancelled) { finishEvolveActivity(activityId, "discarded", "Evolution stopped"); await disposeSpecialistThread(threadId); throw nextCause; }
-        attempt += 1;
-        failure = nextCause;
-        if (retryableEvolveError(nextCause)) {
-          finishEvolveActivity(activityId, "recovering", evolveRecoveryDetail("designer", nextCause));
-          await disposeSpecialistThread(threadId);
-          await waitForRetry(attempt);
-          threadId = "";
-        } else {
-          finishEvolveActivity(activityId, "recovering", `Still correcting: ${errorMessage(nextCause)}`);
+        if (evolveCancelled) {
+          finishEvolveActivity(activityId, "discarded", "Evolution stopped");
+          throw nextCause;
         }
+        failure = nextCause;
+        finishEvolveActivity(activityId, "recovering", attempt < 2 ? `Correction ${attempt} failed: ${errorMessage(nextCause)}` : `Pass could not be corrected: ${errorMessage(nextCause)}`);
+        if (attempt < 2 && retryableEvolveError(nextCause)) await waitForRetry(attempt);
       }
     }
-    await disposeSpecialistThread(threadId);
-    throw new Error("Evolution stopped");
+    throw failure;
   }
 
-  function candidateAccepted(assessment: EvolveAssessment, candidateLabel: "image_1" | "image_2"): boolean {
-    return assessment.preference === candidateLabel && assessment.confidence >= 0.65 && !assessment.regressions.some((regression) => regression.severity !== "minor");
+  function candidateAccepted(assessment: EvolveAssessment): boolean {
+    return assessment.preference === "image_2" && assessment.confidence >= 0.65 && !assessment.regressions.some((regression) => regression.severity !== "minor");
   }
 
   function assessmentSatisfied(assessment: EvolveAssessment): boolean {
@@ -1226,98 +1039,30 @@
   async function compareRenderedCandidate(args: {
     direction: string;
     frame: JsonObject;
-    baselineImage: string;
-    incumbentImage: string;
+    sourceContext: JsonObject;
+    referenceImage: string;
+    currentImage: string;
     candidate: EvolveRenderedCandidate;
     frozen: EvolveCriterion[];
-    candidateLabel: "image_1" | "image_2";
+    objective: EvolveObjective;
   }): Promise<EvolveAssessment> {
     return runDirector({
       direction: args.direction,
       frame: args.frame,
-      context: args.candidate.context,
-      baselineImage: args.baselineImage,
-      currentImage: args.candidate.image,
-      previousImage: args.incumbentImage,
+      sourceContext: args.sourceContext,
+      draftContext: args.candidate.context,
+      referenceImage: args.referenceImage,
+      currentImage: args.currentImage,
       candidateImage: args.candidate.image,
-      candidateLabel: args.candidateLabel,
+      objective: args.objective,
       frozen: args.frozen,
     });
-  }
-
-  async function confirmChallenger(args: {
-    direction: string;
-    frame: JsonObject;
-    baselineImage: string;
-    incumbentImage: string;
-    candidate: EvolveRenderedCandidate;
-    frozen: EvolveCriterion[];
-  }): Promise<EvolveAssessment | null> {
-    const [first, mirrored] = await Promise.all([
-      compareRenderedCandidate({ ...args, candidateLabel: "image_1" }),
-      compareRenderedCandidate({ ...args, candidateLabel: "image_2" }),
-    ]);
-    const firstAccepts = candidateAccepted(first, "image_1");
-    const mirroredAccepts = candidateAccepted(mirrored, "image_2");
-    if (firstAccepts === mirroredAccepts) return firstAccepts ? (first.confidence >= mirrored.confidence ? first : mirrored) : null;
-    const tiebreakLabel: "image_1" | "image_2" = crypto.getRandomValues(new Uint8Array(1))[0] % 2 ? "image_1" : "image_2";
-    const tiebreak = await compareRenderedCandidate({ ...args, candidateLabel: tiebreakLabel });
-    return candidateAccepted(tiebreak, tiebreakLabel) ? tiebreak : null;
-  }
-
-  async function chooseGenerationChallenger(args: {
-    direction: string;
-    frame: JsonObject;
-    baselineImage: string;
-    incumbentImage: string;
-    candidates: EvolveRenderedCandidate[];
-    frozen: EvolveCriterion[];
-  }): Promise<EvolveRenderedCandidate | null> {
-    const comparisons = await Promise.all(args.candidates.map(async (candidate, index) => {
-      const candidateLabel: "image_1" | "image_2" = (evolvePass + index) % 2 ? "image_2" : "image_1";
-      const comparison = await compareRenderedCandidate({ ...args, candidate, candidateLabel });
-      candidate.comparison = comparison;
-      return candidateAccepted(comparison, candidateLabel) ? candidate : null;
-    }));
-    const finalists = comparisons.filter((candidate): candidate is EvolveRenderedCandidate => Boolean(candidate));
-    if (!finalists.length) return null;
-    let champion = finalists[0];
-    for (const challenger of finalists.slice(1)) {
-      const candidateLabel: "image_1" | "image_2" = crypto.getRandomValues(new Uint8Array(1))[0] % 2 ? "image_1" : "image_2";
-      const comparison = await compareRenderedCandidate({ ...args, incumbentImage: champion.image, candidate: challenger, candidateLabel });
-      if (candidateAccepted(comparison, candidateLabel)) { challenger.comparison = comparison; champion = challenger; }
-    }
-    const confirmed = await confirmChallenger({ ...args, candidate: champion });
-    if (!confirmed) return null;
-    champion.comparison = confirmed;
-    return champion;
   }
 
   function renderFingerprint(imageUrl: string): string {
     let hash = 2166136261;
     for (let index = 0; index < imageUrl.length; index += Math.max(1, Math.floor(imageUrl.length / 20_000))) hash = Math.imul(hash ^ imageUrl.charCodeAt(index), 16777619);
     return `${imageUrl.length}:${hash >>> 0}`;
-  }
-
-  function rememberLineage(history: EvolveLineage[], candidate: EvolveRenderedCandidate, outcome: EvolveLineage["outcome"], reason: string): EvolveLineage[] {
-    const assessment = candidate.comparison;
-    const lineage: EvolveLineage = {
-      title: candidate.proposal.title,
-      hypothesis: candidate.proposal.hypothesis,
-      mechanism: candidate.proposal.mechanism,
-      criterionIds: candidate.proposal.mandate.criterionIds,
-      strengths: assessment?.successes.map((success) => success.note).slice(0, 4) ?? [],
-      outcome,
-      reason: reason.slice(0, 320),
-      fingerprint: renderFingerprint(candidate.image),
-      generation: evolvePass,
-      quality: Math.max(0, Math.min(1, (assessment?.confidence ?? 0) - (assessment?.regressions.some((regression) => regression.severity !== "minor") ? .25 : 0) + Math.min(.15, (assessment?.successes.length ?? 0) * .03))),
-    };
-    const normalizedMechanism = lineage.mechanism.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-    const duplicate = history.find((entry) => entry.fingerprint === lineage.fingerprint || entry.mechanism.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim() === normalizedMechanism);
-    if (duplicate && duplicate.quality >= lineage.quality) return [...history.filter((entry) => entry !== duplicate), duplicate].slice(-12);
-    const withoutDuplicate = history.filter((entry) => entry !== duplicate);
-    return [...withoutDuplicate, lineage].slice(-12);
   }
 
   function journalCandidate(proposal: EvolveProposal, outcome: EvolveJournalCandidate["outcome"], reason: string): EvolveJournalCandidate {
@@ -1328,15 +1073,25 @@
     if (!generations.length) return "";
     const clean = (value: string) => value.replace(/\s+/g, " ").trim();
     const sections = generations.map((generation) => {
-      const mandates = generation.mandates.map((mandate) => `- ${mandate.id} · ${mandate.intent} · ${mandate.mutationStrength}: ${clean(mandate.unresolvedPressure)} Different by: ${clean(mandate.requiredDifference)}`).join("\n");
-      const candidates = generation.candidates.map((candidate) => `#### ${candidate.id} · ${clean(candidate.title)} · ${candidate.outcome}\n\n- Hypothesis: ${clean(candidate.hypothesis)}\n- Mechanism: ${clean(candidate.mechanism)}\n- Tradeoff: ${clean(candidate.tradeoff)}\n- Decision: ${clean(candidate.reason)}`).join("\n\n");
-      return `### Generation ${generation.generation}${generation.winner ? ` · winner ${generation.winner}` : " · incumbent retained"}\n\nSearch mandates:\n\n${mandates || "- No candidate mandates were produced."}\n\n${candidates || "No candidate reached visual review."}`;
+      const candidate = generation.candidate;
+      return `### Pass ${generation.generation} · ${candidate.outcome}
+
+Objective: ${clean(generation.objective.instruction)}
+Done when: ${clean(generation.objective.completionSignal)}
+
+- Result: ${clean(candidate.title)}
+- Hypothesis: ${clean(candidate.hypothesis)}
+- Mechanism: ${clean(candidate.mechanism)}
+- Tradeoff: ${clean(candidate.tradeoff)}
+- Decision: ${clean(candidate.reason)}`;
     });
-    return `## Evolution journal\n\n${sections.join("\n\n")}`;
+    return `## Reconstruction journal
+
+${sections.join("\n\n")}`;
   }
 
-  function updateJournalCandidate(generation: EvolveJournalGeneration, id: string, patch: Partial<EvolveJournalCandidate>): void {
-    generation.candidates = generation.candidates.map((candidate) => candidate.id === id ? { ...candidate, ...patch } : candidate);
+  function updateJournalCandidate(generation: EvolveJournalGeneration, patch: Partial<EvolveJournalCandidate>): void {
+    generation.candidate = { ...generation.candidate, ...patch };
   }
 
   async function persistIncompleteEvolutionJournal(status: "stopped" | "error", detail: string): Promise<void> {
@@ -1354,14 +1109,9 @@
 
   async function cancelEvolveWorkflow() {
     evolveCancelled = true;
-    const pending = [...hiddenTurnWaiters.entries()];
-    await Promise.all(pending.map(async ([threadId, waiter]) => {
-      if (waiter.turnId) await request("turn/interrupt", { threadId, turnId: waiter.turnId }).catch(() => undefined);
-      settleHiddenTurn(threadId, new Error("Evolution stopped"));
-    }));
-    await persistIncompleteEvolutionJournal("stopped", `Stopped after generation ${evolvePass}. ${evolveKept} winners had been applied and ${evolveDiscarded} candidates discarded.`);
+    await invoke("codex_evolve_cancel", { runId: evolveRunId }).catch(() => undefined);
+    await persistIncompleteEvolutionJournal("stopped", `Stopped after pass ${evolvePass}. The reconstruction keeps ${evolveKept} accepted passes; ${evolveDiscarded} proposals were rejected.`);
     await discardEvolveRun();
-    await disposeAllSpecialistThreads();
     evolveRunning = false;
     evolveRunOutcome = "stopped";
     evolveStage = "idle";
@@ -1390,7 +1140,7 @@
     timeline = { ...timeline, error: "", items: appendUserMessage ? [...timeline.items, { id: `local_${Date.now()}`, type: "userMessage", content: [{ type: "text", text: message, text_elements: [] }] }] : timeline.items };
     pinnedToBottom = true;
     setAttention("working");
-    const captureActivity = beginEvolveActivity("Capturing the selected frame");
+    const captureActivity = beginEvolveActivity("Preparing the reconstruction");
     let workflowFailure = "";
 
     try {
@@ -1401,57 +1151,76 @@
         await injectEvolveHistory(parentThreadId, "user", message);
         if (createdParentThread) await renameThread(parentThreadId, direction.slice(0, 72));
       }
-      const controlThreadId = onEditorRpc ? "local-editor" : await startEvolveThread("control");
-      if (!onEditorRpc) evolveControlThreadId = controlThreadId;
+
       const status = await callEditor("editor_status");
       const selectedIds = Array.isArray(status.selectedIds) ? status.selectedIds.filter((id): id is string => typeof id === "string") : [];
       if (selectedIds.length !== 1) throw new Error("Select exactly one frame in Figmaboy, then run /evolve again.");
-      const frameId = selectedIds[0];
-      const documentResult = await callEditor("document_get");
-      const document = object(documentResult.document);
-      let frame = object(object(document.nodes)[frameId]);
-      if (frame.type !== "frame") throw new Error("Select a frame, not an individual layer, then run /evolve again.");
-      let changeToken = Number(documentResult.changeToken);
-      const pageEpoch = Number(documentResult.pageEpoch ?? status.pageEpoch ?? 0);
-      let acceptedContext = frameContext(document, frameId);
-      await callEditor("geometry_get", { ids: Object.keys(object(acceptedContext.nodes)) });
-      const baselineImage = await captureEvolveFrame(frameId);
+      const sourceFrameId = selectedIds[0];
+      const sourceDocumentResult = await callEditor("document_get");
+      const sourceDocument = object(sourceDocumentResult.document);
+      const sourceFrame = object(object(sourceDocument.nodes)[sourceFrameId]);
+      if (sourceFrame.type !== "frame") throw new Error("Select a frame, not an individual layer, then run /evolve again.");
+      const pageEpoch = Number(sourceDocumentResult.pageEpoch ?? status.pageEpoch ?? 0);
+      const sourceContext = frameContext(sourceDocument, sourceFrameId);
+      await callEditor("geometry_get", { ids: Object.keys(object(sourceContext.nodes)) });
+      const referenceImage = await captureEvolveFrame(sourceFrameId);
       if (evolveCancelled) return;
-      finishEvolveActivity(captureActivity, "complete", "Baseline pixels, layers, and geometry captured");
-      await callEditor("evolve_run_start", { runId: evolveRunId, frameId, expectedChangeToken: changeToken, pageEpoch });
-      let acceptedImage = baselineImage;
+
+      const reconstruction = await callEditor("evolve_reconstruction_start", {
+        runId: evolveRunId,
+        sourceFrameId,
+        expectedChangeToken: Number(sourceDocumentResult.changeToken),
+        pageEpoch,
+      });
+      const draftFrameId = String(reconstruction.draftFrameId ?? "");
+      if (!draftFrameId) throw new Error("Figmaboy could not create the reconstruction frame");
+      let changeToken = Number(reconstruction.changeToken);
+      let currentDocument = object(reconstruction.document);
+      let draftFrame = object(object(currentDocument.nodes)[draftFrameId]);
+      if (draftFrame.type !== "frame") throw new Error("EVOLVE_NEEDS_FRAME: the reconstruction frame was not created");
+      let draftContext = frameContext(currentDocument, draftFrameId);
+      let currentImage = await captureEvolveFrame(draftFrameId);
+      finishEvolveActivity(captureActivity, "complete", "The reference is frozen and an empty reconstruction frame is ready beside it", ["The source frame will remain unchanged", "Accepted passes will appear on the reconstruction frame"]);
+
       let assessment: EvolveAssessment | null = null;
       let frozenCriteria: EvolveCriterion[] | null = null;
       let satisfactionVotes = 0;
-      let stagnation = 0;
-      let lineageHistory: EvolveLineage[] = [];
-      let finalSummary = "The direction was already satisfied.";
-      const renderHistory = new Set([renderFingerprint(baselineImage)]);
+      let finalSummary = "The reconstruction satisfies the requested direction.";
+      const renderHistory = new Set([renderFingerprint(currentImage)]);
 
       while (!evolveCancelled) {
         const liveDocumentResult = await callEditor("document_get");
         if (Number(liveDocumentResult.changeToken) !== changeToken) {
           const liveDocument = object(liveDocumentResult.document);
-          const liveFrame = object(object(liveDocument.nodes)[frameId]);
-          if (liveFrame.type !== "frame") throw new Error("EVOLVE_NEEDS_FRAME: the evolution target is no longer available");
+          const liveDraft = object(object(liveDocument.nodes)[draftFrameId]);
+          if (liveDraft.type !== "frame") throw new Error("EVOLVE_NEEDS_FRAME: the reconstruction frame was removed");
           changeToken = Number(liveDocumentResult.changeToken);
-          frame = liveFrame;
-          acceptedContext = frameContext(liveDocument, frameId);
-          acceptedImage = await captureEvolveFrame(frameId);
+          currentDocument = liveDocument;
+          draftFrame = liveDraft;
+          draftContext = frameContext(liveDocument, draftFrameId);
+          currentImage = await captureEvolveFrame(draftFrameId);
           assessment = null;
           satisfactionVotes = 0;
-          stagnation = 0;
-          await callEditor("evolve_run_start", { runId: evolveRunId, frameId, expectedChangeToken: changeToken, pageEpoch });
-          const continued = beginEvolveActivity("Continuing from your canvas edit");
-          finishEvolveActivity(continued, "complete", "View changes were ignored and committed design edits became the next generation base");
+          await callEditor("evolve_run_start", { runId: evolveRunId, frameId: draftFrameId, expectedChangeToken: changeToken, pageEpoch });
+          const continued = beginEvolveActivity("Continuing from the current reconstruction");
+          finishEvolveActivity(continued, "complete", "Your canvas edits became the next construction base. The frozen reference did not change.");
         }
+
         if (!assessment) {
           evolveStage = satisfactionVotes ? "verify" : "review";
-          assessment = await runDirector({ direction, frame, context: acceptedContext, baselineImage, currentImage: acceptedImage, frozen: frozenCriteria, verification: satisfactionVotes > 0, archive: lineageHistory, stagnation });
+          assessment = await runDirector({
+            direction,
+            frame: draftFrame,
+            sourceContext,
+            draftContext,
+            referenceImage,
+            currentImage,
+            frozen: frozenCriteria,
+            verification: satisfactionVotes > 0,
+          });
           if (!frozenCriteria) frozenCriteria = assessment.criteria.map(({ id, requirement }) => ({ id, requirement, status: "unmet", evidence: "Frozen direction criterion" }));
         }
         if (evolveCancelled) return;
-
         if (assessmentSatisfied(assessment)) {
           satisfactionVotes += 1;
           if (satisfactionVotes >= 2) break;
@@ -1459,162 +1228,183 @@
           continue;
         }
         satisfactionVotes = 0;
-        if (!assessment.regions.length) { assessment = null; continue; }
+        const objective = assessment.nextObjective;
+        if (!objective) {
+          assessment = null;
+          continue;
+        }
 
         evolvePass += 1;
         evolveStage = "design";
-        const generationAssessment = assessment;
-        const mandates = generationAssessment.mandates.length === 3 ? generationAssessment.mandates : fallbackMandates(generationAssessment.criteria, generationAssessment.regions, generationAssessment.successes, lineageHistory, stagnation);
-        const proposalResults = await Promise.allSettled(mandates.map((mandate) => runDesigner({
+        let proposal = await runDesigner({
           direction,
-          frameId,
-          context: acceptedContext,
-          image: acceptedImage,
-          assessment: generationAssessment,
-          accepted: emptyOperationState(),
-          candidateId: `G${evolvePass}-${mandate.id}`,
-          mandate,
-        })));
-        if (evolveCancelled) return;
-        evolveStage = "preview";
+          sourceFrameId,
+          draftFrameId,
+          sourceContext,
+          draftContext,
+          referenceImage,
+          currentImage,
+          assessment,
+          objective,
+        });
         const generationRecord: EvolveJournalGeneration = {
           generation: evolvePass,
-          mandates: structuredClone(mandates),
-          candidates: proposalResults.map((result, index) => result.status === "fulfilled"
-            ? journalCandidate(result.value, "pending", "Candidate is waiting for isolated rendering and visual comparison")
-            : { id: `G${evolvePass}-${mandates[index].id}`, title: "Candidate failed before rendering", hypothesis: mandates[index].unresolvedPressure, mechanism: "No valid mechanism returned", tradeoff: "No candidate reached visual review", outcome: "failed", reason: errorMessage(result.reason).slice(0, 320) }),
-          winner: null,
+          objective: structuredClone(objective),
+          candidate: journalCandidate(proposal, "pending", "Waiting for isolated rendering and review"),
         };
-        const proposals = proposalResults.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
-        evolveDiscarded += proposalResults.length - proposals.length;
-        if (!proposals.length) {
-          const failures = [...new Set(proposalResults.flatMap((result) => result.status === "rejected" ? [errorMessage(result.reason).replace(/\s+/g, " ").trim()] : []).filter(Boolean))];
-          throw new Error(`All designers failed before producing a proposal. ${failures.join(" | ").slice(0, 1_200)}`);
-        }
-        const rendered: EvolveRenderedCandidate[] = [];
-        for (let proposal of proposals) {
-          const renderActivity = beginEvolveActivity(`Rendering candidate ${proposal.candidateId}`);
-          while (!evolveCancelled) {
-            try {
-              const result = await callEditor("evolve_candidate_render", { runId: evolveRunId, candidateId: proposal.candidateId, operations: proposal.operations });
-              const image = screenshotDataUrl(result);
-              const fingerprint = renderFingerprint(image);
-              const renderedCandidate: EvolveRenderedCandidate = { proposal, image, thumbnail: thumbnailDataUrl(result), context: frameContext(result.document, frameId) };
-              if (renderHistory.has(fingerprint)) {
-                evolveDiscarded += 1;
-                lineageHistory = rememberLineage(lineageHistory, renderedCandidate, "duplicate", "Rendered result repeated an earlier phenotype");
-                updateJournalCandidate(generationRecord, proposal.candidateId, { outcome: "duplicate", reason: "Rendered result repeated an earlier candidate" });
-                finishEvolveActivity(renderActivity, "discarded", "This rendered result was already considered");
-              } else {
-                renderHistory.add(fingerprint);
-                rendered.push(renderedCandidate);
-                updateEvolveActivity(renderActivity, { image: renderedCandidate.thumbnail });
-                finishEvolveActivity(renderActivity, "complete", "Candidate rendered in an isolated canvas", [`${proposal.title}: ${proposal.hypothesis}`, `Mechanism: ${proposal.mechanism}`]);
-              }
-              await disposeSpecialistThread(proposal.threadId);
-              break;
-            } catch (cause) {
-              const message = errorMessage(cause);
-              if (/STALE_DOCUMENT|EVOLVE_PAGE_CHANGED|EVOLVE_NEEDS_FRAME/.test(message)) { await disposeSpecialistThread(proposal.threadId); throw cause; }
-              finishEvolveActivity(renderActivity, "recovering", `Candidate rejected: ${message}`);
-              proposal = await correctDesignerProposal(proposal, cause, emptyOperationState());
-            }
+
+        evolveStage = "preview";
+        const renderActivity = beginEvolveActivity(`Rendering pass ${evolvePass}`);
+        let rendered!: EvolveRenderedCandidate;
+        let correctionRounds = 0;
+        while (!evolveCancelled) {
+          try {
+            const validation = await callEditor("evolve_candidate_validate", {
+              runId: evolveRunId,
+              candidateId: proposal.candidateId,
+              operations: proposal.operations,
+            });
+            const validationToken = typeof validation.validationToken === "string" ? validation.validationToken : "";
+            if (!validationToken) throw new Error("Figmaboy validation returned no candidate receipt");
+            const result = await callEditor("evolve_candidate_render", {
+              runId: evolveRunId,
+              candidateId: proposal.candidateId,
+              operations: proposal.operations,
+              validationToken,
+            });
+            rendered = {
+              proposal,
+              image: screenshotDataUrl(result),
+              thumbnail: thumbnailDataUrl(result),
+              context: frameContext(result.document, draftFrameId),
+            };
+            updateEvolveActivity(renderActivity, { image: rendered.thumbnail });
+            finishEvolveActivity(renderActivity, "complete", "The proposed pass rendered in an isolated canvas", [proposal.hypothesis, `Mechanism: ${proposal.mechanism}`]);
+            break;
+          } catch (cause) {
+            const message = errorMessage(cause);
+            if (/STALE_DOCUMENT|EVOLVE_PAGE_CHANGED|EVOLVE_NEEDS_FRAME/.test(message)) throw cause;
+            if (correctionRounds >= 2) throw new Error(`Construction pass ${evolvePass} failed after two corrections: ${message}`);
+            correctionRounds += 1;
+            finishEvolveActivity(renderActivity, "recovering", `Pass rejected by the canvas: ${message}`);
+            proposal = await correctDesignerProposal(proposal, cause);
+            generationRecord.candidate = journalCandidate(proposal, "pending", "Corrected proposal is waiting for review");
           }
         }
         if (evolveCancelled) return;
-        if (!rendered.length) {
-          stagnation += 1;
-          assessment = null;
+
+        const fingerprint = renderFingerprint(rendered.image);
+        if (renderHistory.has(fingerprint)) {
+          evolveDiscarded += 1;
+          updateJournalCandidate(generationRecord, { outcome: "duplicate", reason: "The pass reproduced an earlier reconstruction" });
           evolveJournal = [...evolveJournal, generationRecord];
-          await callEditor("evolve_run_start", { runId: evolveRunId, frameId, expectedChangeToken: changeToken, pageEpoch });
+          const duplicate = beginEvolveActivity(`Pass ${evolvePass} made no visible progress`);
+          finishEvolveActivity(duplicate, "discarded", "The next director will choose a different construction objective");
+          assessment = null;
+          await callEditor("evolve_run_start", { runId: evolveRunId, frameId: draftFrameId, expectedChangeToken: changeToken, pageEpoch });
           continue;
         }
+        renderHistory.add(fingerprint);
+
         evolveStage = "compare";
-        const champion = await chooseGenerationChallenger({ direction, frame, baselineImage, incumbentImage: acceptedImage, candidates: rendered, frozen: frozenCriteria ?? generationAssessment.criteria });
-        if (evolveCancelled) return;
-        evolveDiscarded += rendered.length - (champion ? 1 : 0);
-        for (const candidate of rendered) {
-          if (candidate === champion) continue;
-          lineageHistory = rememberLineage(lineageHistory, candidate, "lost", candidate.comparison?.summary ?? "Candidate did not defeat the incumbent");
-          updateJournalCandidate(generationRecord, candidate.proposal.candidateId, { outcome: "rejected", reason: candidate.comparison?.summary ?? "Candidate did not defeat the incumbent" });
-        }
-        if (!champion) {
-          for (const candidate of rendered) updateJournalCandidate(generationRecord, candidate.proposal.candidateId, { outcome: "rejected", reason: candidate.comparison?.summary ?? "Candidate did not defeat the incumbent" });
-          stagnation += 1;
-          const discarded = beginEvolveActivity(`Generation ${evolvePass} kept the current design`);
-          finishEvolveActivity(discarded, "discarded", stagnation >= 2 ? "Every challenger lost. The next generation will broaden variation and revive a promising alternate mechanism." : "Every challenger lost its comparison with the current best");
-          assessment = null;
+        const comparison = await compareRenderedCandidate({
+          direction,
+          frame: draftFrame,
+          sourceContext,
+          referenceImage,
+          currentImage,
+          candidate: rendered,
+          frozen: frozenCriteria ?? assessment.criteria,
+          objective,
+        });
+        rendered.comparison = comparison;
+        if (!candidateAccepted(comparison)) {
+          evolveDiscarded += 1;
+          updateJournalCandidate(generationRecord, { outcome: "rejected", reason: comparison.summary });
           evolveJournal = [...evolveJournal, generationRecord];
-          await callEditor("evolve_run_start", { runId: evolveRunId, frameId, expectedChangeToken: changeToken, pageEpoch });
+          const rejected = beginEvolveActivity(`Pass ${evolvePass} kept the current reconstruction`);
+          finishEvolveActivity(rejected, "discarded", comparison.summary, comparison.regressions.map((regression) => regression.note));
+          assessment = null;
+          await callEditor("evolve_run_start", { runId: evolveRunId, frameId: draftFrameId, expectedChangeToken: changeToken, pageEpoch });
           continue;
         }
 
         let committed: JsonObject;
         try {
-          committed = await callEditor("evolve_candidate_commit", { runId: evolveRunId, candidateId: champion.proposal.candidateId });
+          committed = await callEditor("evolve_candidate_commit", { runId: evolveRunId, candidateId: proposal.candidateId });
         } catch (cause) {
           if (!/EVOLVE_REBASE_CONFLICT/.test(errorMessage(cause))) throw cause;
           evolveDiscarded += 1;
-          const conflict = beginEvolveActivity(`Generation ${evolvePass} rebased`);
-          finishEvolveActivity(conflict, "recovering", "Your canvas changed in the same properties. Starting the next generation from your version.");
+          updateJournalCandidate(generationRecord, { outcome: "superseded", reason: "Your edits changed the same properties before this pass could commit" });
+          evolveJournal = [...evolveJournal, generationRecord];
           const current = await callEditor("document_get");
           changeToken = Number(current.changeToken);
-          const currentDocument = object(current.document);
-          frame = object(object(currentDocument.nodes)[frameId]);
-          acceptedContext = frameContext(currentDocument, frameId);
-          acceptedImage = await captureEvolveFrame(frameId);
+          currentDocument = object(current.document);
+          draftFrame = object(object(currentDocument.nodes)[draftFrameId]);
+          if (draftFrame.type !== "frame") throw new Error("EVOLVE_NEEDS_FRAME: the reconstruction frame was removed");
+          draftContext = frameContext(currentDocument, draftFrameId);
+          currentImage = await captureEvolveFrame(draftFrameId);
           assessment = null;
-          stagnation = 0;
-          updateJournalCandidate(generationRecord, champion.proposal.candidateId, { outcome: "superseded", reason: "The user changed the same canvas properties before commit, so the next generation restarted from the user version" });
-          evolveJournal = [...evolveJournal, generationRecord];
-          await callEditor("evolve_run_start", { runId: evolveRunId, frameId, expectedChangeToken: changeToken, pageEpoch });
+          await callEditor("evolve_run_start", { runId: evolveRunId, frameId: draftFrameId, expectedChangeToken: changeToken, pageEpoch });
           continue;
         }
+
         if (committed.needsReview === true) {
           const current = await callEditor("document_get");
-          const currentDocument = object(current.document);
-          const currentImage = await captureEvolveFrame(frameId);
-          const rebased: EvolveRenderedCandidate = { proposal: champion.proposal, image: screenshotDataUrl(committed), thumbnail: thumbnailDataUrl(committed), context: frameContext(committed.document, frameId) };
-          const confirmed = await confirmChallenger({ direction, frame: object(object(currentDocument.nodes)[frameId]), baselineImage, incumbentImage: currentImage, candidate: rebased, frozen: frozenCriteria ?? generationAssessment.criteria });
-          if (!confirmed) {
+          const liveDocument = object(current.document);
+          const liveFrame = object(object(liveDocument.nodes)[draftFrameId]);
+          if (liveFrame.type !== "frame") throw new Error("EVOLVE_NEEDS_FRAME: the reconstruction frame was removed");
+          const liveImage = await captureEvolveFrame(draftFrameId);
+          const rebased: EvolveRenderedCandidate = {
+            proposal,
+            image: screenshotDataUrl(committed),
+            thumbnail: thumbnailDataUrl(committed),
+            context: frameContext(committed.document, draftFrameId),
+          };
+          const rebaseAssessment = await compareRenderedCandidate({
+            direction,
+            frame: liveFrame,
+            sourceContext,
+            referenceImage,
+            currentImage: liveImage,
+            candidate: rebased,
+            frozen: frozenCriteria ?? assessment.criteria,
+            objective,
+          });
+          if (!candidateAccepted(rebaseAssessment)) {
             evolveDiscarded += 1;
-            stagnation += 1;
-            lineageHistory = rememberLineage(lineageHistory, rebased, "lost", "The rebased candidate no longer defeated the user-edited incumbent");
-            changeToken = Number(current.changeToken);
-            frame = object(object(currentDocument.nodes)[frameId]);
-            acceptedContext = frameContext(currentDocument, frameId);
-            acceptedImage = currentImage;
-            assessment = null;
-            updateJournalCandidate(generationRecord, champion.proposal.candidateId, { outcome: "rejected", reason: "After rebasing onto the user-edited canvas, the candidate no longer defeated the incumbent" });
+            updateJournalCandidate(generationRecord, { outcome: "superseded", reason: "The pass no longer improved the user-edited reconstruction" });
             evolveJournal = [...evolveJournal, generationRecord];
-            await callEditor("evolve_run_start", { runId: evolveRunId, frameId, expectedChangeToken: changeToken, pageEpoch });
+            changeToken = Number(current.changeToken);
+            currentDocument = liveDocument;
+            draftFrame = liveFrame;
+            draftContext = frameContext(liveDocument, draftFrameId);
+            currentImage = liveImage;
+            assessment = null;
+            await callEditor("evolve_run_start", { runId: evolveRunId, frameId: draftFrameId, expectedChangeToken: changeToken, pageEpoch });
             continue;
           }
-          champion.image = rebased.image;
-          champion.thumbnail = rebased.thumbnail;
-          champion.context = rebased.context;
-          champion.comparison = confirmed;
-          committed = await callEditor("evolve_candidate_commit", { runId: evolveRunId, candidateId: champion.proposal.candidateId });
+          rendered = { ...rebased, comparison: rebaseAssessment };
+          committed = await callEditor("evolve_candidate_commit", { runId: evolveRunId, candidateId: proposal.candidateId });
         }
         if (evolveCancelled) return;
+
         changeToken = Number(committed.changeToken);
         const committedDocumentResult = await callEditor("document_get");
-        const committedDocument = object(committedDocumentResult.document);
-        frame = object(object(committedDocument.nodes)[frameId]);
-        acceptedImage = await captureEvolveFrame(frameId);
-        acceptedContext = frameContext(committedDocument, frameId);
-        lineageHistory = rememberLineage(lineageHistory, champion, "winner", champion.comparison?.summary ?? "Selected as the generation winner");
-        generationRecord.winner = champion.proposal.candidateId;
-        updateJournalCandidate(generationRecord, champion.proposal.candidateId, { outcome: "accepted", reason: champion.comparison?.summary ?? "Selected as the generation winner" });
+        currentDocument = object(committedDocumentResult.document);
+        draftFrame = object(object(currentDocument.nodes)[draftFrameId]);
+        if (draftFrame.type !== "frame") throw new Error("EVOLVE_NEEDS_FRAME: the reconstruction frame was removed");
+        draftContext = frameContext(currentDocument, draftFrameId);
+        currentImage = await captureEvolveFrame(draftFrameId);
+        updateJournalCandidate(generationRecord, { outcome: "accepted", reason: rendered.comparison?.summary ?? "The pass advanced its construction objective" });
         evolveJournal = [...evolveJournal, generationRecord];
         assessment = null;
-        stagnation = 0;
-        finalSummary = `${champion.proposal.title}: ${champion.proposal.summary}`;
+        finalSummary = `${proposal.title}: ${proposal.summary}`;
         evolveKept += 1;
-        const kept = beginEvolveActivity(`Generation ${evolvePass} selected ${champion.proposal.title}`);
-        updateEvolveActivity(kept, { image: champion.thumbnail });
-        finishEvolveActivity(kept, "kept", `${champion.proposal.summary} The winner is applied on canvas.`, [`Winning hypothesis: ${champion.proposal.hypothesis}`, `Mechanism: ${champion.proposal.mechanism}`, `Tradeoff: ${champion.proposal.intendedTradeoff}`]);
-        await callEditor("evolve_run_start", { runId: evolveRunId, frameId, expectedChangeToken: changeToken, pageEpoch });
+        const kept = beginEvolveActivity(`Pass ${evolvePass} applied to the reconstruction`);
+        updateEvolveActivity(kept, { image: rendered.thumbnail });
+        finishEvolveActivity(kept, "kept", proposal.summary, [`Objective: ${objective.instruction}`, `Done when: ${objective.completionSignal}`, `Mechanism: ${proposal.mechanism}`]);
+        await callEditor("evolve_run_start", { runId: evolveRunId, frameId: draftFrameId, expectedChangeToken: changeToken, pageEpoch });
       }
 
       if (evolveCancelled) return;
@@ -1622,7 +1412,9 @@
       await discardEvolveRun();
       evolveRunOutcome = "complete";
       const journal = evolutionJournalMarkdown(evolveJournal);
-      const resultMessage = `${finalSummary}\n\nEvolved through ${evolvePass} ${evolvePass === 1 ? "generation" : "generations"}. ${evolveKept} ${evolveKept === 1 ? "winner" : "winners"} applied, ${evolveDiscarded} candidates discarded. Two fresh directors agreed that the requested direction is satisfied.${journal ? `\n\n${journal}` : ""}`;
+      const resultMessage = `${finalSummary}
+
+Reconstructed beside the original through ${evolvePass} ${evolvePass === 1 ? "pass" : "passes"}. ${evolveKept} accepted and ${evolveDiscarded} rejected. Two fresh directors agreed that the requested direction is satisfied.${journal ? `\n\n${journal}` : ""}`;
       await injectEvolveHistory(parentThreadId, "assistant", resultMessage);
       evolveJournalPersisted = true;
       timeline = { ...timeline, items: [...timeline.items, { id: `local_evolve_${Date.now()}`, type: "agentMessage", text: resultMessage }] };
@@ -1632,18 +1424,16 @@
       const failure = errorMessage(cause);
       if (!evolveCancelled) await persistIncompleteEvolutionJournal("error", failure);
       await discardEvolveRun();
-      await disposeAllSpecialistThreads();
-      if (!evolveCancelled) { workflowFailure = failure; evolveRunOutcome = "error"; }
+      if (!evolveCancelled) {
+        workflowFailure = failure;
+        evolveRunOutcome = "error";
+      }
     } finally {
       if (workflowEpoch === evolveWorkflowEpoch) {
-        await disposeAllSpecialistThreads();
         evolveRunning = false;
         evolveStage = "idle";
         rpcBusy = false;
-        evolveControlThreadId = null;
-        hiddenThreadIds.clear();
-        hiddenTurnWaiters.forEach((waiter) => clearTimeout(waiter.timer));
-        hiddenTurnWaiters.clear();
+        evolveExecActivities.clear();
       }
     }
     if (workflowFailure && workflowEpoch === evolveWorkflowEpoch) {
@@ -2231,7 +2021,7 @@
         <button class="send" aria-label={working ? "Steer Codex" : "Send message"} title={sendDisabledReason ?? (working ? "Steer Codex" : "Send (Enter)")} disabled={sendDisabledReason !== null} onclick={() => send()}>{#if rpcBusy}<LoaderCircle class="spin" size={14} />{:else}<Send size={15} weight="bold" />{/if}</button>
       </div>
     </div>
-    <div class="footer-meta"><span>{evolveRunning ? "Directors and designers are working in isolated canvases" : working ? "You can steer the active turn" : "Working locally"}</span><kbd>Markdown · Shift ↵ newline</kbd></div>
+    <div class="footer-meta"><span>{evolveRunning ? "Reconstructing beside the frozen reference" : working ? "You can steer the active turn" : "Working locally"}</span><kbd>Markdown · Shift ↵ newline</kbd></div>
   </footer>
 </aside>
 

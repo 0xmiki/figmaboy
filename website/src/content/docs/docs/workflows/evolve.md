@@ -1,6 +1,6 @@
 ---
 title: Evolve a frame
-description: Repeatedly improve one frame toward a visual direction while accepted work stays visible on the canvas.
+description: Reconstruct a selected frame from first principles while the original remains visible as a frozen reference.
 ---
 
 Select one frame, then give `/evolve` a visual direction:
@@ -9,27 +9,29 @@ Select one frame, then give `/evolve` a visual direction:
 /evolve Strengthen the hierarchy and make the primary action easier to find
 ```
 
-Figmaboy freezes the requested direction, gives three isolated designers different ways to pursue it, renders each proposal away from the live document, and compares them with the current best. The strongest candidate becomes the starting point for the next generation.
+Figmaboy leaves the selected frame untouched and creates an empty frame of the same size beside it. The original supplies exact content, assets, dimensions, and product intent. A director and designer then construct a new interpretation for your requested direction.
 
 ## What happens during a pass
 
-1. Figmaboy captures the selected frame and freezes clear criteria from your direction.
-2. A design director creates three distinct search mandates for the generation.
-3. Three designers independently form and implement their own hypotheses.
-4. Figmaboy renders every proposal in an isolated candidate document.
-5. Fresh visual comparisons select the strongest challenger.
-6. The winner appears on the live canvas and becomes the base for the next generation.
+1. Figmaboy freezes the selected frame as the reference.
+2. It creates and selects an empty sibling frame named as an evolution draft.
+3. A director chooses one small construction objective with a visible completion condition.
+4. One designer builds that pass inside an isolated candidate document. A pass may contain at most five operations and four new layers.
+5. The director compares the proposal with the current reconstruction and its objective.
+6. An accepted pass appears on the sibling frame and becomes the base for the next pass.
 
 The loop finishes when two independent reviews agree that the requested direction has been reached. It has no fixed pass count. Select **Stop** whenever you want to keep the accepted progress and finish early.
 
+The per-pass budget is intentional. Think of the reconstruction as a painting built layer by layer. Each pass adds one region, component, or design decision, pauses for inspection, and leaves the next layer for later. You can watch the composition emerge while each review pays attention to local detail.
+
 ## What stays safe
 
-- Candidate documents are isolated, so designers cannot overwrite one another or the live canvas while they work.
-- Rejected candidates never modify the accepted design.
+- The reference frame never changes during the run.
+- Candidate documents are isolated, so rejected proposals never modify the visible reconstruction.
 - A temporary network failure retries the current stage instead of restarting the run.
 - If a proposal contains invalid native properties, Figmaboy sends the exact validation error and node contract back to the same designer for correction. The failed implementation does not count as a discarded visual candidate.
-- Accepted passes form one undoable Figmaboy change. Press <kbd>Ctrl/Cmd</kbd> + <kbd>Z</kbd> once to return to the design from before `/evolve`.
-- Designers may rewrite text, resize or restyle the target frame, create and delete descendants, and reparent content inside it. They cannot delete the target frame or touch nodes outside it.
+- Stop and network errors leave the best accepted reconstruction on the canvas.
+- The designer may rewrite, resize, restyle, create, delete, and reparent content inside the reconstruction. It cannot edit the reference or anything outside the reconstruction frame.
 
 ## Give a direction, not a score
 
@@ -51,6 +53,6 @@ Avoid prompts such as `make it better`. Name the character, hierarchy, density, 
 
 ## During the run
 
-The Codex tab shows each generation's mandates, hypotheses, render status, comparisons, and winner. The journal remains in the conversation after the run, while large screenshots are released from memory.
+The Codex tab shows each pass's objective, hypothesis, render status, and decision. The journal remains in the conversation after the run, while large screenshots are released from memory.
 
-You may keep navigating the canvas while evolution runs. If you commit a design edit to the target frame, Figmaboy makes that version the next generation's base. A conflicting candidate must still win a fresh visual comparison before it can replace your edit.
+You may keep navigating the canvas while reconstruction runs. If you edit the reconstruction, Figmaboy uses your version as the next base. The frozen reference still reflects the frame as it appeared when the run began.

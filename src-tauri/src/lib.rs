@@ -2012,6 +2012,7 @@ pub fn run() {
                 database: Mutex::new(connection),
             });
             app.manage(codex::CodexState::default());
+            app.manage(codex::EvolveExecState::default());
             app.manage(editor_bridge::EditorBridgeState::default());
             let bridge_app = app.handle().clone();
             let bridge_data_dir = data_dir.clone();
@@ -2066,6 +2067,8 @@ pub fn run() {
             codex::codex_request,
             codex::codex_respond,
             codex::codex_disconnect,
+            codex::codex_evolve_exec,
+            codex::codex_evolve_cancel,
             codex::codex_ui_state_read,
             codex::codex_ui_state_write,
             codex::codex_attachment_save,

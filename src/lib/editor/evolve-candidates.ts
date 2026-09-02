@@ -13,6 +13,7 @@ export type EvolveCandidate = {
   operations: unknown[];
   document: PageDocument;
   createdIds: string[];
+  validationToken: string;
 };
 
 type EvolveRun = {
@@ -139,6 +140,7 @@ export class EvolveCandidateStore {
       operations: structuredClone(operations),
       document: result.candidate,
       createdIds: result.createdIds,
+      validationToken: crypto.randomUUID(),
     };
     run.candidates.set(candidateId, candidate);
     return candidate;

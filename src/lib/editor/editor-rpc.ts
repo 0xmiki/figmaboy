@@ -6,6 +6,9 @@ import { selectionBounds, transformPoint, worldBounds, worldMatrix, worldToNodeL
 
 type JsonObject = Record<string, unknown>;
 
+export const EVOLVE_PASS_MAX_OPERATIONS = 5;
+export const EVOLVE_PASS_MAX_CREATES = 4;
+
 function object(value: unknown, label: string): JsonObject {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`);
   return value as JsonObject;
@@ -32,6 +35,13 @@ function frameTreeIds(document: PageDocument, frameId: string): Set<string> {
   };
   visit(frameId);
   return ids;
+}
+
+/** Keeps reconstruction passes small enough to inspect and watch accumulate. */
+export function validateEvolutionPassSize(operations: unknown[]): void {
+  if (operations.length > EVOLVE_PASS_MAX_OPERATIONS) throw new Error(`EVOLVE_PASS_TOO_LARGE: use at most ${EVOLVE_PASS_MAX_OPERATIONS} operations in one construction pass; split this work into a smaller visible step`);
+  const creates = operations.filter((value) => object(value, "operation").kind === "create").length;
+  if (creates > EVOLVE_PASS_MAX_CREATES) throw new Error(`EVOLVE_PASS_TOO_LARGE: create at most ${EVOLVE_PASS_MAX_CREATES} layers in one construction pass; leave the remaining layers for later passes`);
 }
 
 /** Host-enforced safety boundary for the bounded /evolve experiment. */

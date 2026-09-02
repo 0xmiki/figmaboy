@@ -234,6 +234,15 @@ struct EvolveCandidateRenderParams {
     run_id: String,
     candidate_id: String,
     operations: Vec<EditOperation>,
+    validation_token: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EvolveCandidateValidateParams {
+    run_id: String,
+    candidate_id: String,
+    operations: Vec<EditOperation>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema, Serialize)]
@@ -528,7 +537,7 @@ impl FigmaboyMcp {
             "containers": { "childIds": "managed by operations", "clipContent": "frame-only clipping toggle" },
             "review": { "tool": "frame_screenshot", "rule": "Capture each completed frame and visually review it before finishing." },
             "evolution": {
-                "tools": ["evolve_run_start", "evolve_candidate_render", "evolve_candidate_commit", "evolve_run_discard"],
+                "tools": ["evolve_run_start", "evolve_candidate_validate", "evolve_candidate_render", "evolve_candidate_commit", "evolve_run_discard"],
                 "scope": "One selected frame. Candidates may change its content, styling, geometry, and descendant hierarchy, but must keep the target frame present and cannot touch nodes outside it.",
                 "previewRule": "Candidates render against an immutable run snapshot without changing the live canvas. Commit only a visually accepted winner."
             },
@@ -613,7 +622,7 @@ impl FigmaboyMcp {
     }
 
     #[tool(
-        description = "Capture one immutable evolution base from the active page. Internal Figmaboy evolve orchestration uses this before parallel designers start."
+        description = "Capture one immutable evolution base for the active reconstruction frame. Internal Figmaboy evolve orchestration refreshes this after each accepted pass."
     )]
     async fn evolve_run_start(
         &self,
@@ -630,6 +639,16 @@ impl FigmaboyMcp {
         Parameters(params): Parameters<EvolveCandidateRenderParams>,
     ) -> CallToolResult {
         self.call("evolve_candidate_render", params).await
+    }
+
+    #[tool(
+        description = "Validate one isolated /evolve candidate against the current run without rendering or changing the live canvas. On failure, correct the same hypothesis using the exact returned error."
+    )]
+    async fn evolve_candidate_validate(
+        &self,
+        Parameters(params): Parameters<EvolveCandidateValidateParams>,
+    ) -> CallToolResult {
+        self.call("evolve_candidate_validate", params).await
     }
 
     #[tool(

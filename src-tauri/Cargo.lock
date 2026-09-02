@@ -875,6 +875,7 @@ dependencies = [
  "chrono",
  "gtk",
  "image",
+ "libc",
  "rusqlite",
  "serde",
  "serde_json",

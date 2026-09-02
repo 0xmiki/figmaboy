@@ -130,7 +130,7 @@ export type ComposerCommand = {
 export const COMPOSER_COMMANDS: ComposerCommand[] = [
   { id: "/new", label: "/new", description: "Start a new chat", action: "new" },
   { id: "/review", label: "/review", description: "Review the current design", action: "review" },
-  { id: "/evolve", label: "/evolve", description: "Loop a director and designer toward your direction", action: "evolve" },
+  { id: "/evolve", label: "/evolve", description: "Reconstruct a selected frame beside its reference", action: "evolve" },
   { id: "/save", label: "/save", description: "Save the open design", action: "save" },
   { id: "/compact", label: "/compact", description: "Compact this chat context", action: "compact" },
   { id: "/undo", label: "/undo", description: "Undo the last Figmaboy change", action: "undo" },

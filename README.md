@@ -116,7 +116,7 @@ Codex stores chat history in a separate local working directory for each design.
 
 The composer recognizes `@selection`, `@current-frame`, `@page`, and `@design`. Type `$` to invoke an installed Codex skill or `/` for Figmaboy chat actions such as `/review`, `/evolve`, `/save`, `/compact`, and `/undo`.
 
-Select one frame and run `/evolve [direction]` when you want repeated design passes. Each generation compares three isolated proposals, applies the strongest result, and records the decision in the conversation. One undo returns to the design from before the run.
+Select one frame and run `/evolve [direction]` to reconstruct it from first principles. Figmaboy keeps the selected frame as a frozen reference, creates an empty sibling frame, and applies accepted construction passes to the new frame while recording every decision in the conversation.
 
 ### Use Figmaboy from another Codex client
 

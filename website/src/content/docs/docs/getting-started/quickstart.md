@@ -39,7 +39,7 @@ Select one frame and run:
 /evolve Make this dashboard easier to scan with a clearer hierarchy and less visual noise
 ```
 
-Figmaboy applies candidates on the canvas and keeps the stronger result. Read [Evolve a frame](../../workflows/evolve/) for the loop, Stop behavior, and undo boundary.
+Figmaboy freezes the selected frame as a reference and reconstructs the idea in a new frame beside it. Read [Evolve a frame](../../workflows/evolve/) for the construction loop and Stop behavior.
 
 ## Composer shortcuts
 

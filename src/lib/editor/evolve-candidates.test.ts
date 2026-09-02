@@ -52,6 +52,16 @@ describe("isolated evolve candidates", () => {
     expect(() => store.candidate("run", "A")).toThrow("EVOLVE_CANDIDATE_MISSING");
   });
 
+  it("issues a new validation receipt when a candidate is corrected", () => {
+    const base = document();
+    const store = new EvolveCandidateStore();
+    store.start({ runId: "run", fileId: "file", pageId: "page", pageEpoch: 1, frameId: "frame", contentRevision: 4, document: base });
+    const first = store.materialize("run", "A", [{ kind: "update", id: "card", patch: { radius: 24 } }]);
+    const corrected = store.materialize("run", "A", [{ kind: "update", id: "card", patch: { radius: 32 } }]);
+    expect(first.validationToken).not.toBe(corrected.validationToken);
+    expect(store.candidate("run", "A").validationToken).toBe(corrected.validationToken);
+  });
+
   it("detects a user edit before an agent deletion", () => {
     const base = document();
     const current = structuredClone(base);

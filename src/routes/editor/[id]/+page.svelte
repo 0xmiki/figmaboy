@@ -13,7 +13,7 @@
     ExcludeSquare as Ungroup, LockOpen as Unlock, X,
   } from "phosphor-svelte";
   import type { DesignNode, PageDocument, PageMeta } from "$lib/domain";
-  import { cloneDocument, defaultNode } from "$lib/domain";
+  import { cloneDocument, defaultNode, uid } from "$lib/domain";
   import { screenToWorld, selectionBounds, unionRects, worldBounds } from "$lib/geometry";
   import { repository } from "$lib/repository";
   import { EditorSession } from "$lib/editor/editor.svelte";
@@ -26,7 +26,7 @@
   import LeftPanel from "$lib/editor/LeftPanel.svelte";
   import PrototypePreview from "$lib/editor/PrototypePreview.svelte";
   import Toolbar from "$lib/editor/Toolbar.svelte";
-  import { applyExternalOperations, centerNodes, nodeGeometry, placeImageNode, setBorderRadius, validateEvolutionOperations } from "$lib/editor/editor-rpc";
+  import { applyExternalOperations, centerNodes, nodeGeometry, placeImageNode, setBorderRadius, validateEvolutionOperations, validateEvolutionPassSize } from "$lib/editor/editor-rpc";
   import { EvolveCandidateStore, type EvolveCandidate } from "$lib/editor/evolve-candidates";
 
   const repo = repository();
@@ -631,6 +631,12 @@
     return session?.externalPreviewSource?.kind === "codex" && session.externalPreviewSource.id.startsWith("evolve:");
   }
 
+  function canonicalJson(value: unknown): string {
+    if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+    if (value && typeof value === "object") return `{${Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right)).map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`).join(",")}}`;
+    return JSON.stringify(value);
+  }
+
   async function handleEditorRpc(request: EditorRpcRequest): Promise<unknown> {
     if (!session) throw new Error("NO_ACTIVE_EDITOR: open a design file");
     const params = (request.params && typeof request.params === "object" ? request.params : {}) as Record<string, unknown>;
@@ -655,6 +661,39 @@
       const canvasClientRect = { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
       return { changeToken: session.changeToken, viewport: session.document.viewport, canvasClientRect, nodes: nodeGeometry(session, ids, canvasClientRect) };
     }
+    if (request.method === "evolve_reconstruction_start") {
+      const runId = typeof params.runId === "string" ? params.runId : "";
+      const sourceFrameId = typeof params.sourceFrameId === "string" ? params.sourceFrameId : "";
+      if (!runId) throw new Error("EVOLVE_RUN_MISSING: runId is required");
+      if (typeof params.expectedChangeToken === "number" && params.expectedChangeToken !== session.changeToken) throw new Error(`STALE_DOCUMENT: expected changeToken ${params.expectedChangeToken}, current value is ${session.changeToken}`);
+      if (typeof params.pageEpoch === "number" && params.pageEpoch !== session.pageEpoch) throw new Error("EVOLVE_PAGE_CHANGED: the active page changed before reconstruction started");
+      const source = session.document.nodes[sourceFrameId];
+      if (source?.type !== "frame") throw new Error("EVOLVE_NEEDS_FRAME: select a frame to use as the reconstruction reference");
+      await waitForCommittedGesture(session.pageEpoch);
+      const sourceBounds = worldBounds(session.document, source);
+      const gap = Math.max(160, Math.min(320, source.width * .12));
+      const occupied = session.document.rootIds.map((id) => session!.document.nodes[id]).filter(Boolean).map((node) => worldBounds(session!.document, node));
+      let draftX = sourceBounds.x + sourceBounds.width + gap;
+      const draftY = sourceBounds.y;
+      for (let attempt = 0; attempt < occupied.length + 1; attempt += 1) {
+        const collision = occupied.find((bounds) => draftX < bounds.x + bounds.width + gap && draftX + source.width + gap > bounds.x && draftY < bounds.y + bounds.height + gap && draftY + source.height + gap > bounds.y);
+        if (!collision) break;
+        draftX = collision.x + collision.width + gap;
+      }
+      const draftFrameId = uid("evolve");
+      const draft = defaultNode("frame", draftX, draftY, { id: draftFrameId, name: `${source.name} · Evolution`, width: source.width, height: source.height, clipContent: source.clipContent });
+      const result = new DesignService(session).transact({
+        label: "Start evolution reconstruction",
+        source: { kind: "codex", id: `evolve:${runId}` },
+        expectedChangeToken: session.changeToken,
+        operations: [{ kind: "create", node: draft }] as unknown as Parameters<DesignService["transact"]>[0]["operations"],
+      });
+      session.setSelection([sourceFrameId, draftFrameId]);
+      fitCanvas("selection");
+      session.setSelection([draftFrameId]);
+      const run = evolveCandidates.start({ runId, fileId: session.file.id, pageId: session.page.id, pageEpoch: session.pageEpoch, frameId: draftFrameId, contentRevision: session.changeToken, document: session.document });
+      return { ...result, runId, sourceFrameId, draftFrameId, frameId: draftFrameId, pageId: run.pageId, pageEpoch: run.pageEpoch, changeToken: run.baseContentRevision, document: cloneDocument(session.document) };
+    }
     if (request.method === "evolve_run_start") {
       const runId = typeof params.runId === "string" ? params.runId : "";
       const frameId = typeof params.frameId === "string" ? params.frameId : "";
@@ -671,8 +710,22 @@
       if (run.fileId !== session.file.id || run.pageId !== session.page.id || run.pageEpoch !== session.pageEpoch) throw new Error("EVOLVE_PAGE_CHANGED: the evolution page is no longer active");
       if (!candidateId) throw new Error("EVOLVE_CANDIDATE_MISSING: candidateId is required");
       const operations = Array.isArray(params.operations) ? params.operations : [];
-      const candidate = evolveCandidates.materialize(runId, candidateId, operations);
+      const validationToken = typeof params.validationToken === "string" ? params.validationToken : "";
+      if (!validationToken) throw new Error("EVOLVE_VALIDATION_REQUIRED: validate the candidate before rendering it");
+      const candidate = evolveCandidates.candidate(runId, candidateId);
+      if (candidate.validationToken !== validationToken || canonicalJson(candidate.operations) !== canonicalJson(operations)) throw new Error("EVOLVE_VALIDATION_REQUIRED: candidate operations changed after validation");
       return { ...(await queueEvolveCandidateRender(candidate)), runId, candidateId, frameId: run.frameId, baseChangeToken: run.baseContentRevision, renderedChangeToken: candidate.renderedContentRevision, document: candidate.document };
+    }
+    if (request.method === "evolve_candidate_validate") {
+      const runId = typeof params.runId === "string" ? params.runId : "";
+      const candidateId = typeof params.candidateId === "string" ? params.candidateId : "";
+      const run = evolveCandidates.run(runId);
+      if (run.fileId !== session.file.id || run.pageId !== session.page.id || run.pageEpoch !== session.pageEpoch) throw new Error("EVOLVE_PAGE_CHANGED: the evolution page is no longer active");
+      if (!candidateId) throw new Error("EVOLVE_CANDIDATE_MISSING: candidateId is required");
+      const operations = Array.isArray(params.operations) ? params.operations : [];
+      validateEvolutionPassSize(operations);
+      const candidate = evolveCandidates.materialize(runId, candidateId, operations);
+      return { valid: true, runId, candidateId, frameId: run.frameId, validationToken: candidate.validationToken, createdIds: candidate.createdIds, operationCount: candidate.operations.length };
     }
     if (request.method === "evolve_candidate_commit") {
       const runId = typeof params.runId === "string" ? params.runId : "";

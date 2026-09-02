@@ -22,7 +22,7 @@
   } = $props();
 
   let open = $state(true);
-  const steps = ["Review", "Generate", "Render", "Compare"];
+  const steps = ["Review", "Build", "Render", "Compare"];
   const activeStep = $derived(stage === "design" ? 1 : stage === "preview" ? 2 : stage === "compare" ? 3 : 0);
   const groupedActivities = $derived.by(() => {
     const groups = new Map<number, Activity[]>();
@@ -47,7 +47,7 @@
   <summary>
     <span class="live-dot" aria-hidden="true"></span>
     <span class="summary-copy"><strong>{outcome === "complete" ? "Evolution journal" : outcome === "stopped" ? "Stopped evolution" : outcome === "error" ? "Evolution journal" : "Evolving design"}</strong><small>{stageLabel}</small></span>
-    <span class="counts">Gen {Math.max(1, pass)} · {kept} winners · {discarded} discarded</span>
+    <span class="counts">Pass {Math.max(1, pass)} · {kept} accepted · {discarded} rejected</span>
     <CaretDown size={12} />
   </summary>
   <div class="evolve-body">
@@ -59,7 +59,7 @@
     <div class="activity-list">
       {#each groupedActivities as group (group.generation)}
         <section class="generation-group">
-          <h4>{group.generation ? `Generation ${group.generation}` : "Setup and direction"}</h4>
+          <h4>{group.generation ? `Pass ${group.generation}` : "Reference and direction"}</h4>
           {#each group.entries as activity (activity.id)}
             {@const Icon = ActivityIcon(activity.status)}
             <div class:active={activity.status === "working"} class:recovering={activity.status === "recovering"} class:kept={activity.status === "kept"} class="activity-row">

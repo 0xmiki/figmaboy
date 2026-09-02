@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { emptyDocument } from "$lib/domain";
 import type { OpenedFile } from "$lib/domain";
 import { EditorSession } from "$lib/editor/editor.svelte";
-import { applyExternalOperations, centerNodes, placeImageNode, setBorderRadius, validateEvolutionOperations } from "$lib/editor/editor-rpc";
+import { applyExternalOperations, centerNodes, placeImageNode, setBorderRadius, validateEvolutionOperations, validateEvolutionPassSize } from "$lib/editor/editor-rpc";
 
 function metadata() {
   const timestamp = new Date(0).toISOString();
@@ -59,6 +59,12 @@ describe("editor RPC operations", () => {
     expect(() => validateEvolutionOperations(editor, "screen", [{ kind: "reparent", ids: ["headline"], parentId: "content" }])).not.toThrow();
     expect(() => validateEvolutionOperations(editor, "screen", [{ kind: "update", id: "screen", patch: { width: 1200 } }])).not.toThrow();
     expect(() => validateEvolutionOperations(editor, "screen", [{ kind: "delete", ids: ["screen"] }])).toThrow("keep the target frame");
+  });
+
+  it("keeps reconstruction passes visibly incremental", () => {
+    expect(() => validateEvolutionPassSize(Array.from({ length: 5 }, (_, index) => ({ kind: "update", id: `node-${index}`, patch: { x: index } })))).not.toThrow();
+    expect(() => validateEvolutionPassSize(Array.from({ length: 6 }, (_, index) => ({ kind: "update", id: `node-${index}`, patch: { x: index } })))).toThrow("use at most 5 operations");
+    expect(() => validateEvolutionPassSize(Array.from({ length: 5 }, (_, index) => ({ kind: "create", parentId: "frame", node: { id: `node-${index}` } })))).toThrow("create at most 4 layers");
   });
 
   it("accepts rich native styling inside a semantic component tree", () => {

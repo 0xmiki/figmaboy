@@ -1,14 +1,14 @@
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
     collections::HashMap,
     fs,
-    io::{BufRead, BufReader, Write},
+    io::{BufRead, BufReader, Read, Write},
     path::{Path, PathBuf},
     process::{Child, ChildStdin, Command, Stdio},
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Mutex,
     },
     thread,
@@ -27,6 +27,35 @@ pub struct CodexState {
     process: Arc<Mutex<Option<CodexProcess>>>,
     pending: Arc<Mutex<HashMap<u64, PendingResponse>>>,
     next_id: AtomicU64,
+}
+
+pub struct EvolveExecState {
+    active: Arc<Mutex<HashMap<String, EvolveExecHandle>>>,
+}
+
+struct EvolveExecHandle {
+    run_id: String,
+    pid: u32,
+    cancelled: Arc<AtomicBool>,
+}
+
+struct EvolveExecGuard {
+    exec_id: String,
+    pid: u32,
+    directory: PathBuf,
+    active: Arc<Mutex<HashMap<String, EvolveExecHandle>>>,
+}
+
+impl Drop for EvolveExecGuard {
+    fn drop(&mut self) {
+        terminate_evolve_process(self.pid, false);
+        std::thread::sleep(Duration::from_millis(100));
+        terminate_evolve_process(self.pid, true);
+        if let Ok(mut active) = self.active.lock() {
+            active.remove(&self.exec_id);
+        }
+        let _ = fs::remove_dir_all(&self.directory);
+    }
 }
 
 struct CodexProcess {
@@ -56,6 +85,14 @@ impl Default for CodexState {
             process: Arc::new(Mutex::new(None)),
             pending: Arc::new(Mutex::new(HashMap::new())),
             next_id: AtomicU64::new(1),
+        }
+    }
+}
+
+impl Default for EvolveExecState {
+    fn default() -> Self {
+        Self {
+            active: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
@@ -497,6 +534,409 @@ pub fn codex_attachment_save(
     })
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EvolveExecImage {
+    name: String,
+    data_url: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EvolveExecRequest {
+    exec_id: String,
+    run_id: String,
+    workspace_id: String,
+    role: String,
+    prompt: String,
+    images: Vec<EvolveExecImage>,
+    output_schema: Value,
+    model: String,
+    effort: Option<String>,
+    service_tier: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EvolveExecResponse {
+    exec_id: String,
+    text: String,
+    exit_code: i32,
+}
+
+fn decode_evolve_image(value: &str) -> CommandResult<(Vec<u8>, &'static str)> {
+    let (header, encoded) = value
+        .split_once(',')
+        .ok_or_else(|| "Evolution image must be a data URL".to_string())?;
+    let extension = match header {
+        "data:image/png;base64" => "png",
+        "data:image/jpeg;base64" => "jpg",
+        "data:image/webp;base64" => "webp",
+        _ => return Err("Evolution images must be PNG, JPEG, or WebP".into()),
+    };
+    let bytes = BASE64
+        .decode(encoded)
+        .map_err(|_| "Evolution image contains invalid base64 data".to_string())?;
+    if bytes.len() > 20 * 1024 * 1024 {
+        return Err("Evolution image is larger than 20 MB".into());
+    }
+    Ok((bytes, extension))
+}
+
+#[cfg(unix)]
+fn configure_evolve_process(command: &mut Command) {
+    use std::os::unix::process::CommandExt;
+    command.process_group(0);
+}
+
+#[cfg(windows)]
+fn configure_evolve_process(command: &mut Command) {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+    command.creation_flags(CREATE_NEW_PROCESS_GROUP);
+}
+
+#[cfg(not(any(unix, windows)))]
+fn configure_evolve_process(_command: &mut Command) {}
+
+#[cfg(unix)]
+fn terminate_evolve_process(pid: u32, force: bool) {
+    let signal = if force { libc::SIGKILL } else { libc::SIGTERM };
+    unsafe {
+        libc::kill(-(pid as i32), signal);
+    }
+}
+
+#[cfg(windows)]
+fn terminate_evolve_process(pid: u32, force: bool) {
+    let mut command = Command::new("taskkill");
+    command.args(["/PID", &pid.to_string(), "/T"]);
+    if force {
+        command.arg("/F");
+    }
+    let _ = command.stdout(Stdio::null()).stderr(Stdio::null()).status();
+}
+
+#[cfg(not(any(unix, windows)))]
+fn terminate_evolve_process(_pid: u32, _force: bool) {}
+
+fn evolve_event_text(value: &Value) -> Option<&str> {
+    if value.get("type").and_then(Value::as_str) != Some("item.completed") {
+        return None;
+    }
+    let item = value.get("item")?;
+    (item.get("type").and_then(Value::as_str) == Some("agent_message"))
+        .then(|| item.get("text").and_then(Value::as_str))
+        .flatten()
+}
+
+fn evolve_command(codex: &Path, schema_path: &Path, directory: &Path) -> Command {
+    let mut command = Command::new(codex);
+    command.args([
+        "exec",
+        "--ephemeral",
+        "--ignore-user-config",
+        "--ignore-rules",
+        "--disable",
+        "apps",
+        "--sandbox",
+        "read-only",
+        "--skip-git-repo-check",
+        "--json",
+        "--output-schema",
+    ]);
+    command.arg(schema_path);
+    command.args(["-c", "agents.enabled=false", "-C"]);
+    command.arg(directory);
+    command
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn codex_evolve_exec(
+    app: AppHandle,
+    state: State<'_, EvolveExecState>,
+    request: EvolveExecRequest,
+) -> CommandResult<EvolveExecResponse> {
+    let active = state.active.clone();
+    tauri::async_runtime::spawn_blocking(move || run_codex_evolve_exec(app, active, request))
+        .await
+        .map_err(|error| format!("Evolution worker task failed: {error}"))?
+}
+
+fn run_codex_evolve_exec(
+    app: AppHandle,
+    active: Arc<Mutex<HashMap<String, EvolveExecHandle>>>,
+    request: EvolveExecRequest,
+) -> CommandResult<EvolveExecResponse> {
+    let exec_id = safe_workspace_id(&request.exec_id)?;
+    let run_id = safe_workspace_id(&request.run_id)?;
+    if !matches!(
+        request.role.as_str(),
+        "designer" | "director" | "correction"
+    ) {
+        return Err("Invalid evolution exec role".into());
+    }
+    if request.prompt.len() > 2_000_000 {
+        return Err("Evolution prompt is too large".into());
+    }
+    let workspace = workspace_dir(&app, &request.workspace_id)?;
+    let directory = workspace.join("evolve-exec").join(&exec_id);
+    fs::create_dir_all(&directory)
+        .map_err(|error| format!("Could not create evolution workspace: {error}"))?;
+    let schema_path = directory.join("output-schema.json");
+    fs::write(
+        &schema_path,
+        serde_json::to_vec(&request.output_schema).map_err(|error| error.to_string())?,
+    )
+    .map_err(|error| format!("Could not write evolution output schema: {error}"))?;
+    let mut image_paths = Vec::new();
+    for (index, image) in request.images.iter().enumerate() {
+        let (bytes, extension) = decode_evolve_image(&image.data_url)?;
+        let safe_name: String = image
+            .name
+            .chars()
+            .filter(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
+            .take(48)
+            .collect();
+        let path = directory.join(format!(
+            "{}-{}.{}",
+            index,
+            if safe_name.is_empty() {
+                "frame"
+            } else {
+                &safe_name
+            },
+            extension
+        ));
+        fs::write(&path, bytes)
+            .map_err(|error| format!("Could not write evolution image: {error}"))?;
+        image_paths.push(path);
+    }
+
+    let codex = codex_executable()?;
+    let mut command = evolve_command(&codex, &schema_path, &directory);
+    if !request.model.trim().is_empty() {
+        command.args(["--model", request.model.trim()]);
+    }
+    if let Some(effort) = request
+        .effort
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        command.args([
+            "-c",
+            &format!("model_reasoning_effort=\"{}\"", effort.replace('"', "")),
+        ]);
+    }
+    if let Some(tier) = request
+        .service_tier
+        .as_deref()
+        .filter(|value| !value.trim().is_empty() && *value != "default")
+    {
+        command.args(["-c", &format!("service_tier=\"{}\"", tier.replace('"', ""))]);
+    }
+    if request.role != "director" {
+        let mcp = figmaboy_mcp_executable()?;
+        let data_dir = app
+            .path()
+            .app_local_data_dir()
+            .map_err(|error| error.to_string())?;
+        let bridge = data_dir.join("editor-bridge.json");
+        command.args(["-c", "mcp_servers={}"]);
+        command.args([
+            "-c",
+            &format!("mcp_servers.figmaboy.command={}", toml_string(&mcp)),
+        ]);
+        command.args([
+            "-c",
+            &format!(
+                "mcp_servers.figmaboy.env.FIGMABOY_BRIDGE_FILE={}",
+                toml_string(&bridge)
+            ),
+        ]);
+        command.args(["-c", "mcp_servers.figmaboy.enabled_tools=[\"types_get\"]"]);
+    }
+    for path in &image_paths {
+        command.arg("--image").arg(path);
+    }
+    command.args(["--", "-"]);
+    command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    configure_evolve_process(&mut command);
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("Could not start evolution worker: {error}"))?;
+    let pid = child.id();
+    let cancelled = Arc::new(AtomicBool::new(false));
+    active
+        .lock()
+        .map_err(|_| "Evolution worker state is unavailable".to_string())?
+        .insert(
+            exec_id.clone(),
+            EvolveExecHandle {
+                run_id: run_id.clone(),
+                pid,
+                cancelled: cancelled.clone(),
+            },
+        );
+    let _guard = EvolveExecGuard {
+        exec_id: exec_id.clone(),
+        pid,
+        directory: directory.clone(),
+        active: active.clone(),
+    };
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or("Could not open evolution worker input")?;
+    let prompt_result = stdin
+        .write_all(request.prompt.as_bytes())
+        .and_then(|_| stdin.flush());
+    drop(stdin);
+    if let Err(error) = prompt_result {
+        terminate_evolve_process(pid, false);
+        let _ = child.wait();
+        let mut diagnostics = String::new();
+        if let Some(mut stderr) = child.stderr.take() {
+            let _ = stderr.read_to_string(&mut diagnostics);
+        }
+        let diagnostics = strip_ansi(&diagnostics).trim().to_string();
+        return Err(if diagnostics.is_empty() {
+            format!("Evolution worker closed before reading its prompt: {error}")
+        } else {
+            format!("Evolution worker could not start: {diagnostics}")
+        });
+    }
+
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or("Could not read evolution worker output")?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or("Could not read evolution worker logs")?;
+    let final_text = Arc::new(Mutex::new(String::new()));
+    let failure = Arc::new(Mutex::new(String::new()));
+    let output_text = final_text.clone();
+    let output_failure = failure.clone();
+    let output_app = app.clone();
+    let output_exec_id = exec_id.clone();
+    let output_run_id = run_id.clone();
+    let stdout_thread = thread::spawn(move || {
+        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+            let Ok(event) = serde_json::from_str::<Value>(&line) else {
+                continue;
+            };
+            if let Some(text) = evolve_event_text(&event) {
+                if let Ok(mut current) = output_text.lock() {
+                    *current = text.to_string();
+                }
+            }
+            if matches!(
+                event.get("type").and_then(Value::as_str),
+                Some("turn.failed" | "error")
+            ) {
+                if let Ok(mut current) = output_failure.lock() {
+                    *current = event
+                        .get("error")
+                        .and_then(|error| error.get("message").or(Some(error)))
+                        .and_then(Value::as_str)
+                        .unwrap_or("Evolution worker failed")
+                        .to_string();
+                }
+            }
+            let _ = output_app.emit(
+                "codex-evolve-event",
+                json!({ "execId": output_exec_id, "runId": output_run_id, "event": event }),
+            );
+        }
+    });
+    let log_app = app.clone();
+    let log_exec_id = exec_id.clone();
+    let stderr_thread = thread::spawn(move || {
+        for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+            let line = strip_ansi(&line);
+            if !line.trim().is_empty() {
+                let _ = log_app.emit(
+                    "codex-evolve-log",
+                    json!({ "execId": log_exec_id, "message": line }),
+                );
+            }
+        }
+    });
+
+    let mut cancellation_started: Option<std::time::Instant> = None;
+    let status = loop {
+        if cancelled.load(Ordering::Relaxed) {
+            let started = cancellation_started.get_or_insert_with(|| {
+                terminate_evolve_process(pid, false);
+                std::time::Instant::now()
+            });
+            if started.elapsed() >= Duration::from_millis(500) {
+                terminate_evolve_process(pid, true);
+            }
+        }
+        if let Some(status) = child.try_wait().map_err(|error| error.to_string())? {
+            break status;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    terminate_evolve_process(pid, false);
+    std::thread::sleep(Duration::from_millis(100));
+    terminate_evolve_process(pid, true);
+    let _ = stdout_thread.join();
+    let _ = stderr_thread.join();
+    if cancelled.load(Ordering::Relaxed) {
+        return Err("Evolution stopped".into());
+    }
+    let exit_code = status.code().unwrap_or(-1);
+    let failure = failure
+        .lock()
+        .map(|value| value.clone())
+        .unwrap_or_default();
+    if !status.success() {
+        return Err(if failure.is_empty() {
+            format!("Evolution worker exited with status {exit_code}")
+        } else {
+            failure
+        });
+    }
+    let text = final_text
+        .lock()
+        .map(|value| value.clone())
+        .unwrap_or_default();
+    if text.trim().is_empty() {
+        return Err("Evolution worker returned no structured result".into());
+    }
+    Ok(EvolveExecResponse {
+        exec_id,
+        text,
+        exit_code,
+    })
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn codex_evolve_cancel(
+    state: State<'_, EvolveExecState>,
+    run_id: String,
+) -> CommandResult<usize> {
+    let run_id = safe_workspace_id(&run_id)?;
+    let handles = state
+        .active
+        .lock()
+        .map_err(|_| "Evolution worker state is unavailable".to_string())?;
+    let mut cancelled = 0;
+    for handle in handles.values().filter(|handle| handle.run_id == run_id) {
+        handle.cancelled.store(true, Ordering::Relaxed);
+        terminate_evolve_process(handle.pid, false);
+        cancelled += 1;
+    }
+    Ok(cancelled)
+}
+
 #[tauri::command]
 pub async fn codex_request(
     state: State<'_, CodexState>,
@@ -564,5 +1004,41 @@ mod tests {
         let invalid = "data:text/plain;base64,aGVsbG8=";
         let (header, _) = invalid.split_once(',').unwrap();
         assert_ne!(header, "data:image/png;base64");
+    }
+
+    #[test]
+    fn evolution_images_are_decoded_and_typed() {
+        let (bytes, extension) = decode_evolve_image("data:image/png;base64,aGVsbG8=").unwrap();
+        assert_eq!(bytes, b"hello");
+        assert_eq!(extension, "png");
+        assert!(decode_evolve_image("data:image/svg+xml;base64,aGVsbG8=").is_err());
+    }
+
+    #[test]
+    fn evolution_exec_keeps_only_completed_agent_messages() {
+        let event = json!({ "type": "item.completed", "item": { "type": "agent_message", "text": "{\"ok\":true}" } });
+        assert_eq!(evolve_event_text(&event), Some("{\"ok\":true}"));
+        assert_eq!(evolve_event_text(&json!({ "type": "turn.started" })), None);
+    }
+
+    #[test]
+    fn evolution_schema_path_immediately_follows_its_flag() {
+        let command = evolve_command(
+            Path::new("codex"),
+            Path::new("/tmp/output-schema.json"),
+            Path::new("/tmp/evolve"),
+        );
+        let arguments: Vec<String> = command
+            .get_args()
+            .map(|value| value.to_string_lossy().into_owned())
+            .collect();
+        let schema_flag = arguments
+            .iter()
+            .position(|value| value == "--output-schema")
+            .unwrap();
+        assert_eq!(arguments[schema_flag + 1], "/tmp/output-schema.json");
+        assert!(arguments
+            .windows(2)
+            .any(|pair| pair == ["-c", "agents.enabled=false"]));
     }
 }
