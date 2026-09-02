@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.5.3, 2026-09-02
+
+### Added
+
+- `/evolve` now reconstructs a selected frame from first principles in a new sibling frame while keeping the original as a frozen visual and semantic reference.
+- Each reconstruction pass has one visible completion condition and a host-enforced budget of five operations and four new layers, so the design appears on the canvas layer by layer.
+
+### Changed
+
+- Evolve uses one sequential designer instead of three parallel candidates. Fresh directors choose the next focused construction step and judge its rendered result against the current reconstruction.
+- Short-lived `codex exec` workers run with fast mode, no subagents, no inherited user providers, and only the native type contract available to designers.
+- Figmaboy validates candidate operations itself and binds the resulting receipt to the exact render, rather than trusting the model to perform validation.
+
+### Fixed
+
+- Evolve worker process trees and temporary files are removed after every pass, cancellation, and failure.
+- Empty, malformed, oversized, and canvas-rejected proposals receive bounded corrections with the exact validation error instead of ending immediately or looping forever.
+- Evolve activity follows the bottom of the Codex timeline while the user remains there.
+- Right-clicking inside a selected parent frame keeps the parent selected and opens its context menu.
+- The first double-click selects nested text as a movable and resizable layer. A second double-click enters text editing.
+
 ## 0.5.2, 2026-09-01
 
 ### Added

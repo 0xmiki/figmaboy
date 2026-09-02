@@ -3,6 +3,28 @@ title: Release notes
 description: What changed in the current Figmaboy release.
 ---
 
+## Figmaboy 0.5.3
+
+Released September 2, 2026.
+
+### Reconstruct from first principles
+
+`/evolve` now leaves the selected frame untouched and creates an empty sibling frame beside it. The original remains a frozen reference for content, assets, dimensions, and product intent while Figmaboy constructs a new interpretation for the requested direction.
+
+Each pass adds one region, component, or design decision. A pass may contain at most five operations and four new layers. The director names a visible completion condition, the designer builds only that step, and accepted work appears on the reconstruction before the next pass begins.
+
+### A smaller and safer evolve runtime
+
+One sequential designer replaces the parallel candidate tournament. Every director, designer, and correction runs in a short-lived `codex exec` worker with subagents and unrelated providers disabled. Figmaboy owns validation, rendering, cancellation, and process cleanup.
+
+Empty, malformed, oversized, and canvas-rejected proposals receive the exact error and a bounded correction opportunity. Persistent failures stop cleanly instead of producing an endless correction loop. The best completed reconstruction remains on the canvas after Stop or an error.
+
+### Editor interaction fixes
+
+- The evolution journal follows new activity while you remain at the bottom of the Codex timeline.
+- Right-clicking a child inside a selected parent frame opens the menu for the parent without changing selection.
+- The first double-click selects nested text as a normal movable and resizable layer. Double-click the selected text again to edit it.
+
 ## Figmaboy 0.5.2
 
 Released September 1, 2026.

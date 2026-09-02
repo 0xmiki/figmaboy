@@ -32,14 +32,14 @@ Figmaboy supplies its bundled MCP to the built-in chat automatically. Open the C
 
 [Create your first design](https://0xmiki.github.io/figmaboy/docs/getting-started/quickstart/)
 
-## What is new in 0.5.2
+## What is new in 0.5.3
 
-- `/evolve [direction]` runs three isolated design hypotheses per generation, compares their rendered results, and applies the strongest candidate.
-- The Codex sidebar preserves a compact generation journal with mandates, hypotheses, previews, comparisons, and winners.
-- Large documents use indexed geometry, transient drag rendering, compact move history, directional retention, and bounded cached frame previews.
-- Evolve specialists use only the required tools and stop on shared system errors instead of repeating impossible corrections.
+- `/evolve [direction]` keeps the selected frame as a frozen reference and reconstructs it from scratch in a new sibling frame.
+- Focused passes build the reconstruction layer by layer while the Codex sidebar records each objective, proposal, render, and decision.
+- Figmaboy validates every proposal before rendering and returns exact errors for bounded correction.
+- Canvas context menus respect selected parent frames, nested text requires a second double-click to edit, and evolution activity follows the latest work.
 
-[Read the 0.5.2 release notes](https://0xmiki.github.io/figmaboy/docs/reference/release-notes/)
+[Read the 0.5.3 release notes](https://0xmiki.github.io/figmaboy/docs/reference/release-notes/)
 
 ## Projects and designs
 

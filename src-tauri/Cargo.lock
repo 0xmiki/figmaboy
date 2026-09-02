@@ -869,7 +869,7 @@ dependencies = [
 
 [[package]]
 name = "figmaboy"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -893,7 +893,7 @@ dependencies = [
 
 [[package]]
 name = "figmaboy-mcp"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "base64 0.22.1",
  "directories",
