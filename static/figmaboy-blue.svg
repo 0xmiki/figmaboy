@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 32 32" role="img" aria-labelledby="title desc">
+  <title id="title">Figmaboy</title>
+  <desc id="desc">Shape Boy, a friendly rounded canvas face made from a square, circle, and curved path.</desc>
+  <defs>
+    <mask id="face">
+      <rect width="32" height="32" fill="white"/>
+      <rect x="8.5" y="10" width="5" height="5" rx="1.2" fill="black"/>
+      <circle cx="21" cy="12.5" r="2.5" fill="black"/>
+      <path d="M9.5 20.5c3.2 3.7 9.2 4.2 13 0" fill="none" stroke="black" stroke-width="2.4" stroke-linecap="round"/>
+    </mask>
+  </defs>
+  <rect x="3" y="3" width="26" height="26" rx="8.5" fill="#0071e3" mask="url(#face)"/>
+</svg>
