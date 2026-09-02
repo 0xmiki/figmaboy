@@ -1,15 +1,17 @@
 ---
 import "../styles/landing.css";
+import phosphor from "@iconify-json/ph/icons.json";
 import release from "../release.json";
 
 const base = `${import.meta.env.BASE_URL.replace(/\/$/, "")}/`;
 const github = "https://github.com/0xmiki/figmaboy";
 const docs = `${base}docs/`;
 const download = `${base}download/`;
-const nativeAsset = `${base}figmaboy-landing-page-asset.png`;
-const generatedAsset = `${base}gptimage-landing-page-asset.png`;
-const productScreenshot = `${base}figmaboy-screenshot.png`;
+const actualDesign = `${base}figmaboy-landing-page-asset.png`;
+const actualDesignFileId = "file_2713dfb9-bc98-4788-90c1-43ce48726e9e";
 const releaseTag = `v${release.version}`;
+const phosphorIcons = phosphor.icons as Record<string, { body: string }>;
+const ph = (name: string) => phosphorIcons[name]?.body ?? "";
 ---
 
 <!doctype html>
@@ -17,154 +19,185 @@ const releaseTag = `v${release.version}`;
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width" />
-    <meta name="theme-color" content="#f2f0e8" />
-    <meta name="description" content="Figmaboy is a local-first desktop design workspace with Codex app-server chat built directly into the canvas." />
-    <meta property="og:title" content="Figmaboy — design with Codex on canvas" />
-    <meta property="og:description" content="Design by hand or ask Codex to build native, editable layers inside a focused desktop canvas." />
+    <meta name="theme-color" content="#ffffff" />
+    <meta name="description" content="Figmaboy is a local-first desktop interface design tool with Codex built beside the canvas." />
+    <meta property="og:title" content="Figmaboy — design interfaces with Codex" />
+    <meta property="og:description" content="Draw by hand or ask Codex to create and refine native, editable layers on the same canvas." />
     <meta property="og:type" content="website" />
     <meta property="og:image" content="https://raw.githubusercontent.com/0xmiki/figmaboy/main/docs/assets/figmaboy-codex-workflow.png" />
     <link rel="icon" href={`${base}favicon.png`} />
     <link rel="canonical" href="https://0xmiki.github.io/figmaboy/" />
-    <title>Figmaboy — a quieter way to make</title>
+    <title>Figmaboy — design interfaces with Codex</title>
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>
-    <header class="site-nav">
-      <div class="wrap nav-inner">
-        <a class="brand" href={base} aria-label="Figmaboy home"><span class="signal"></span>FIGMABOY<sup>®</sup></a>
-        <nav class="nav-links" aria-label="Primary navigation">
-          <a href={github}>GitHub</a>
-          <a href={docs}>Docs</a>
-        </nav>
-        <a class="button button-dark nav-download" href={download}>
-          <span data-download-copy>Download Figmaboy</span>
-          <svg class="nav-download-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M12 4v11m0 0 4-4m-4 4-4-4M6 19h12" />
-          </svg>
+
+    <header class="site-header">
+      <nav class="nav shell" aria-label="Primary navigation">
+        <a class="wordmark" href={base} aria-label="Figmaboy home">
+          <img src={`${base}figmaboy-dark.svg`} alt="" width="28" height="28" />
         </a>
-      </div>
+        <div class="nav-links">
+          <a href={docs}>Docs</a>
+          <a href={github}>GitHub</a>
+          <a class="nav-cta" href={download}><span data-download-copy>Download</span></a>
+        </div>
+      </nav>
     </header>
 
     <main id="main">
-      <section class="hero" aria-labelledby="hero-title">
-        <div class="wrap hero-grid">
-          <div class="hero-copy" data-reveal>
-            <p class="eyebrow">Figmaboy + Codex&nbsp; / &nbsp;01</p>
-            <h1 class="display" id="hero-title">
-              <span>Where design</span>
-              <span>meets the</span>
-              <span>design agent.</span>
-            </h1>
-            <p class="hero-lede">A focused desktop design workspace with Codex chat built directly into the canvas. Design, ask, run, and review without leaving the file.</p>
-            <div class="hero-actions">
-              <a class="button button-dark" href={`${docs}getting-started/install/`}>Get started <svg class="button-arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4h8v8M12 4 4 12" /></svg></a>
-              <a class="button button-light" href={download}><span data-download-copy>Download Figmaboy</span> <span class="arrow">↓</span></a>
-            </div>
-            <p class="hero-meta">Linux · macOS · Windows &nbsp;/&nbsp; {releaseTag}<br />Local-first workspace · Codex tools included</p>
-            <div class="chat-badge"><span class="signal"></span>CODEX CHAT BUILT IN</div>
-          </div>
+      <section class="hero shell" aria-labelledby="hero-title">
+        <h1 id="hero-title">Design interfaces with Codex.</h1>
+        <p>Figmaboy puts the Codex CLI beside a native design canvas. Signed in with the ChatGPT account you already use. No API key or MCP setup.</p>
+        <div class="hero-actions">
+          <a class="button primary" href={download}><span data-download-copy>Download Figmaboy</span></a>
+        </div>
+        <span class="availability">{releaseTag} · Linux, macOS, and Windows</span>
+      </section>
 
-          <div class="product-object" data-reveal>
-            <div class="product-labels"><span>FIGMABOY / CODEX–01</span><span class="live"><span class="signal"></span>CODEX</span></div>
-            <div class="app-window" aria-label="Figmaboy desktop workspace preview">
-              <div class="window-bar"><span class="traffic"><i></i><i></i><i></i></span><span>Untitled&nbsp; / &nbsp;Page 01</span><span class="window-play">▶</span></div>
-              <div class="app-main">
-                <aside class="layers">LAYERS<div class="layer-list"><span>Radio app</span><span>Now tuning</span><span>Presets</span></div><div class="tool-label">TOOLS</div><div class="tools"><span>↖</span><span>□</span><span>T</span></div></aside>
-                <div class="canvas">
-                  <article class="artboard"><div class="artboard-kicker">RADIO / 001</div><div class="artboard-title">Make<br />better.</div><div class="art-signal"></div><div class="art-bar"></div><div class="artboard-note">Native layers.<br />Clear decisions.</div><div class="artboard-num">01</div></article>
-                </div>
-                <aside class="mini-chat"><header><b>Chat</b><span>···</span></header><div class="mini-chat-body"><div class="mini-user">Refine this radio frame.</div><p>I’ll tighten the hierarchy and review the result.</p><div class="mini-work">✓ Applied 6 design changes</div><p>Updated and saved locally.</p></div><div class="mini-composer">Ask anything… <span>↑</span></div></aside>
+      <figure class="product shell-wide" aria-labelledby="product-caption" data-design-file={actualDesignFileId}>
+        <div class="product-app">
+          <aside class="app-left" aria-label="Pages and layers">
+            <div class="app-rail">
+              <div class="app-rail-item active"><svg viewBox="0 0 256 256" set:html={ph("file")}></svg><span>File</span></div>
+              <div class="app-rail-item"><svg viewBox="0 0 256 256" set:html={ph("shapes")}></svg><span>Assets</span></div>
+              <div class="app-rail-item"><svg viewBox="0 0 256 256" set:html={ph("toolbox")}></svg><span>Tools</span></div>
+            </div>
+            <div class="app-browser">
+              <header><b>Radio concept</b><svg viewBox="0 0 256 256" set:html={ph("dots-three")}></svg></header>
+              <section><b>Pages</b><span class="browser-actions"><svg viewBox="0 0 256 256" set:html={ph("magnifying-glass")}></svg><svg viewBox="0 0 256 256" set:html={ph("plus")}></svg></span></section>
+              <div class="page-row">Radio</div>
+              <section><b>Layers</b><span class="sliders">⌁</span></section>
+              <div class="layer-tree">
+                <b><i>⌄</i><svg viewBox="0 0 256 256" set:html={ph("frame-corners")}></svg>Sonic 60 — Radio Player</b>
+                <span><i>⌄</i><svg viewBox="0 0 256 256" set:html={ph("frame-corners")}></svg>System status bar</span>
+                <span><i>⌄</i><svg viewBox="0 0 256 256" set:html={ph("frame-corners")}></svg>Header</span>
+                <span><i>⌄</i><svg viewBox="0 0 256 256" set:html={ph("frame-corners")}></svg>Tuning console</span>
+                <span class="nested"><svg viewBox="0 0 256 256" set:html={ph("text-t")}></svg>Frequency display</span>
+                <span class="nested"><svg viewBox="0 0 256 256" set:html={ph("frame-corners")}></svg>Station info</span>
+                <span><i>⌄</i><svg viewBox="0 0 256 256" set:html={ph("frame-corners")}></svg>Preset stations</span>
+                <span><i>⌄</i><svg viewBox="0 0 256 256" set:html={ph("frame-corners")}></svg>Playback controls</span>
+                <span><i>⌄</i><svg viewBox="0 0 256 256" set:html={ph("frame-corners")}></svg>Bottom navigation</span>
               </div>
             </div>
-            <div class="product-bottom"><div>LOCAL FIRST&nbsp; / &nbsp;NATIVE LAYERS<br />SERIAL NO. 2026–0830</div><div class="hardware"><div class="knob-wrap"><div class="knob"></div>MODE</div><div class="knob-wrap"><div class="knob"></div>ZOOM</div></div></div>
+          </aside>
+          <section class="app-canvas" aria-label="Design canvas">
+            <header><b><svg viewBox="0 0 256 256" set:html={ph("caret-left")}></svg>Back</b><strong>Radio concept<svg viewBox="0 0 256 256" set:html={ph("caret-down")}></svg></strong><button aria-label="Copy design ID"><svg viewBox="0 0 256 256" set:html={ph("copy")}></svg></button><span>Saved locally</span></header>
+            <div class="canvas-design"><img src={actualDesign} alt="Sonic 60 mobile radio interface created as native Figmaboy layers" width="946" height="2048" fetchpriority="high" /></div>
+            <div class="app-toolbar" aria-hidden="true">
+              <b><svg viewBox="0 0 256 256" set:html={ph("cursor")}></svg></b>
+              <span><svg viewBox="0 0 256 256" set:html={ph("hand")}></svg></span>
+              <i></i>
+              <span><svg viewBox="0 0 256 256" set:html={ph("frame-corners")}></svg></span>
+              <span><svg viewBox="0 0 256 256" set:html={ph("rectangle")}></svg></span>
+              <span><svg viewBox="0 0 256 256" set:html={ph("text-t")}></svg></span>
+              <i></i>
+              <span><svg viewBox="0 0 256 256" set:html={ph("magnifying-glass-minus")}></svg></span>
+              <small>78%</small>
+              <span><svg viewBox="0 0 256 256" set:html={ph("magnifying-glass-plus")}></svg></span>
+            </div>
+          </section>
+          <aside class="app-chat" aria-label="Codex sidebar">
+            <div class="app-chat-tabs"><b>Codex</b><span>Design</span><span>Prototype</span><svg viewBox="0 0 256 256" set:html={ph("x")}></svg></div>
+            <div class="app-chat-tools" aria-hidden="true">
+              <svg viewBox="0 0 256 256" set:html={ph("dots-three")}></svg>
+              <svg viewBox="0 0 256 256" set:html={ph("arrow-counter-clockwise")}></svg>
+              <svg viewBox="0 0 256 256" set:html={ph("plus")}></svg>
+            </div>
+            <div class="chat-body">
+              <div class="chat-prompt">Build a tactile mobile radio player with clear tuning controls and five station presets.</div>
+              <p>I’ll inspect the open frame, build the radio interface as native layers, and review the finished design.</p>
+              <div class="chat-work"><span>Worked for 1m 9s</span><svg viewBox="0 0 256 256" set:html={ph("caret-down")}></svg></div>
+              <div class="chat-answer">
+                <p>Built and reviewed the radio player.</p>
+                <ul><li>Large tuning card with live frequency readout</li><li>Five presets with a clear active state</li><li>Playback, volume, and sleep controls</li><li>Every element remains a native editable layer</li></ul>
+              </div>
+            </div>
+            <div class="chat-composer">
+              <div class="chat-placeholder">Ask anything about this design</div>
+              <div class="chat-composer-controls">
+                <span><svg viewBox="0 0 256 256" set:html={ph("plus")}></svg></span>
+                <span><svg viewBox="0 0 256 256" set:html={ph("clock")}></svg></span>
+                <i></i>
+                <em>GPT-5.6-Sol<svg viewBox="0 0 256 256" set:html={ph("caret-down")}></svg></em>
+                <em><svg viewBox="0 0 256 256" set:html={ph("lightning")}></svg>Medium · Fast<svg viewBox="0 0 256 256" set:html={ph("caret-down")}></svg></em>
+                <b><svg viewBox="0 0 256 256" set:html={ph("arrow-up")}></svg></b>
+              </div>
+            </div>
+            <div class="chat-footer"><span>Working locally</span><span>Markdown · Shift ↵ newline</span></div>
+          </aside>
+        </div>
+        <figcaption id="product-caption">The real Figmaboy editor with Sonic 60, a design made from 183 editable layers.</figcaption>
+      </figure>
+
+      <section class="work section shell" aria-labelledby="work-title">
+        <div class="section-copy">
+          <h2 id="work-title">Design the same file together.</h2>
+          <p>Codex reads the open design and changes the native layers you edit by hand. Every result stays selectable, movable, and ready for another pass.</p>
+        </div>
+        <ol class="work-steps">
+          <li><span>1</span><div><h3>Open a frame.</h3><p>Select the screen or component you want to change.</p></div></li>
+          <li><span>2</span><div><h3>Describe the outcome.</h3><p>Codex inspects the current layers, makes the change, and reviews the rendered frame.</p></div></li>
+          <li><span>3</span><div><h3>Keep designing.</h3><p>Edit the result yourself or continue the conversation without flattening your work.</p></div></li>
+        </ol>
+      </section>
+
+      <section class="codex-account" aria-labelledby="account-title">
+        <div class="shell account-grid">
+          <div class="section-copy">
+            <span class="section-label">Your Codex account</span>
+            <h2 id="account-title">Use the Codex access you already have.</h2>
+            <p>Figmaboy runs your installed Codex CLI and uses its existing ChatGPT login. Your normal Codex limits apply. Figmaboy does not resell tokens or require a separate API key.</p>
+          </div>
+          <div class="account-flow" aria-label="Figmaboy uses the existing Codex CLI login">
+            <div><span>Codex CLI</span><b>Signed in</b></div>
+            <span aria-hidden="true">→</span>
+            <div><span>Figmaboy</span><b>Ready to design</b></div>
           </div>
         </div>
-        <div class="wrap hero-annotation"><span>01 — DESIGNED FOR FOCUS</span><span>VERSION {release.version} / &nbsp;AUG 2026</span></div>
       </section>
 
-      <section class="principles" aria-labelledby="principles-title">
-        <div class="wrap principles-inner">
-          <div data-reveal><p class="eyebrow">02&nbsp; / &nbsp;Principles</p><h2 id="principles-title">Less interface.<br />More intention.</h2></div>
-          <div class="principle-list" data-reveal><div class="principle"><b>01</b><span>USEFUL, BEFORE DECORATIVE</span></div><div class="principle"><b>02</b><span>CLEAR AT FIRST GLANCE</span></div><div class="principle"><b>03</b><span>BUILT TO OUTLAST TRENDS</span></div></div>
-        </div>
-      </section>
-
-      <section class="features" id="codex" aria-labelledby="features-title">
-        <div class="wrap">
-          <header class="section-head" data-reveal><div><p class="eyebrow">03&nbsp; / &nbsp;Codex chat</p><h2 class="display" id="features-title">Your design agent,<br />on canvas.</h2></div><p class="section-intro">Codex works where the design is already open. Ask, inspect, approve, and continue without breaking context.</p></header>
-          <article class="core-card" data-reveal>
-            <div class="core-copy"><span class="core-badge">CORE FEATURE / 01</span><h3>Codex is part of<br />the workspace.</h3><p>Ask Codex to build, edit, inspect, run, or explain. It sees the open design through MCP—and its work stays visible beside the canvas.</p><div class="core-meta">PROJECT-AWARE &nbsp;/&nbsp; LOCAL &nbsp;/&nbsp; REVIEWABLE</div></div>
-            <div class="chat-demo"><header><b>Chat</b><span>GPT-5.6-Sol · Medium</span></header><div class="chat-demo-body"><div class="chat-user">Build the radio screen from this page.</div><p>I’ll inspect the open design, create the native structure, and review the finished frame.</p><div class="chat-work"><span>✓</span> Inspected 1 design · Applied 8 changes · Captured 1 preview</div><p class="chat-done">Built, reviewed, and saved locally.</p></div><div class="chat-composer">Ask anything about this design <span>↑</span></div></div>
-          </article>
-          <div class="feature-grid" id="features">
-            <article class="feature-card" data-reveal><div><span class="feature-num">02</span><h3>Command by intent.</h3><p>Describe the screen or change. Use <code>/evolve</code> when one selected frame needs repeated design passes toward a clear direction.</p><div class="feature-meta">NATIVE LAYERS &nbsp;/&nbsp; ATOMIC EDITS</div></div><div class="command-ui"><div class="search-box">/evolve Clarify the hierarchy</div><div class="search-result">Evolve selected frame&nbsp; ↵</div><div class="search-result alt">Review once instead</div></div></article>
-            <article class="feature-card" data-reveal><div><span class="feature-num">03</span><h3>Use saved designs offline.</h3><p>Reference a design by copied ID or unique name. Codex receives its visual preview and native layers while Figmaboy is closed.</p><div class="feature-meta">STABLE IDS &nbsp;/&nbsp; READ-ONLY CONTEXT</div></div><div class="file-stack"><div class="file-card">ID<br />PNG<br />JSON</div></div></article>
+      <section class="evolve" aria-label="Evolve">
+        <div class="shell evolve-grid">
+          <div class="section-copy">
+            <span class="section-label">/evolve</span>
+            <p>Select a frame and type <code>/evolve</code> with a direction. Figmaboy keeps the original untouched, creates an empty frame beside it, and rebuilds the design one visible pass at a time.</p>
+            <a class="text-link" href={`${docs}workflows/evolve/`}>How reconstruction works <span aria-hidden="true">→</span></a>
+          </div>
+          <div class="evolve-demo" aria-label="Figmaboy canvas with a reference, reconstruction, and the evolve command in Codex">
+            <div class="demo-canvas">
+              <div class="demo-frame reference-mini"><span>Reference</span><img src={actualDesign} alt="" /></div>
+              <div class="demo-frame rebuild-mini"><span>Reconstruction</span><i></i><b></b><em></em></div>
+            </div>
+            <div class="demo-codex">
+              <header><b>Codex</b><span>Design</span></header>
+              <div class="demo-message"><code>/evolve</code> Rebuild this radio app with a simpler hierarchy.</div>
+              <div class="demo-progress"><span></span><div><b>Reconstructing design</b><small>Pass 3 · Building playback controls</small></div></div>
+              <div class="demo-composer">Ask anything about this design <i>↑</i></div>
+            </div>
           </div>
         </div>
       </section>
 
-      <section class="comparison" id="compare" aria-labelledby="comparison-title">
-        <div class="wrap">
-          <header class="section-head" data-reveal><div><p class="eyebrow">04&nbsp; / &nbsp;The comparison</p><h2 class="display" id="comparison-title">Same idea.<br />A more useful result.</h2></div><p class="section-intro">The visual brief stayed the same. The crucial difference was asking Codex to build through Figmaboy instead of returning one flattened image.</p></header>
-          <div class="prompt-compare" data-reveal>
-            <div class="prompt-row"><span class="prompt-label">A / GPT-IMAGE</span><q class="prompt-copy">generate a phone ui of a very stunning chill braun deter rams era inpired radio app</q><span class="prompt-kind">RASTER OUTPUT</span></div>
-            <div class="prompt-row featured"><span class="prompt-label">B / FIGMABOY</span><q class="prompt-copy">Use Figmaboy to design a calm mobile radio app inspired by Dieter Rams. Keep every layer native and editable.</q><span class="prompt-kind">NATIVE DESIGN</span></div>
-          </div>
-          <div class="result-grid">
-            <article class="result-card" data-reveal>
-              <div class="result-top">A&nbsp; / &nbsp;GPT-IMAGE <span class="result-badge"><span class="signal"></span>RASTER</span></div>
-              <a class="result-stage" href={generatedAsset} target="_blank" rel="noreferrer" aria-label="Explore the GPT-image radio design, then open the complete image"><img src={generatedAsset} alt="A basic radio interface rendered as one generated image" loading="lazy" /><span class="stage-cue" aria-hidden="true"><span class="cue-hover">HOVER TO PAN · CLICK TO OPEN ↗</span><span class="cue-touch">TAP TO OPEN FULL SIZE ↗</span></span></a>
-              <div class="result-footer"><div><h3>Basic, unrealistic, flattened.</h3><p>It resembles a UI, but its oversized, presentation-first composition is not grounded in a practical phone experience. As one raster, nothing can be selected or refined.</p><a class="full-design-link" href={generatedAsset} target="_blank" rel="noreferrer">View full design ↗</a></div></div>
-            </article>
-            <article class="result-card native-card" data-reveal>
-              <div class="result-top">B&nbsp; / &nbsp;FIGMABOY <span class="result-badge dark"><span class="signal"></span>NATIVE UI</span></div>
-              <a class="result-stage native" href={nativeAsset} target="_blank" rel="noreferrer" aria-label="Explore the native Figmaboy radio design, then open the complete image"><img src={nativeAsset} alt="A grounded radio interface made from editable Figmaboy layers" loading="lazy" /><span class="stage-cue" aria-hidden="true"><span class="cue-hover">HOVER TO PAN · CLICK TO OPEN ↗</span><span class="cue-touch">TAP TO OPEN FULL SIZE ↗</span></span></a>
-              <div class="result-footer"><div><h3>Beautiful, grounded, editable.</h3><p>A believable interface with practical hierarchy, spacing, and controls—built as native layers you can select, rearrange, and keep shaping.</p><a class="full-design-link" href={nativeAsset} target="_blank" rel="noreferrer">View full design ↗</a></div></div>
-            </article>
-          </div>
-          <div class="difference-callout" data-reveal><span>THE DIFFERENCE</span><strong>GPT Image makes a basic impression of a UI. Figmaboy makes a <em>grounded interface</em> you can actually build from.</strong><p>Get realistic structure, native layers, and a design that is ready to inspect, refine, and hand off.</p></div>
-          <div class="proof-grid" data-reveal><div class="proof"><span class="proof-label">OUTPUT</span><span class="proof-value"><span>FLATTENED PNG</span> → <b>NATIVE LAYERS</b></span></div><div class="proof"><span class="proof-label">REFINEMENT</span><span class="proof-value"><span>REGENERATE</span> → <b>SELECT + EDIT</b></span></div><div class="proof"><span class="proof-label">HANDOFF</span><span class="proof-value"><span>VISUAL REFERENCE</span> → <b>STRUCTURED DESIGN</b></span></div></div>
-        </div>
-      </section>
-
-      <section class="real-workspace" aria-labelledby="real-workspace-title">
-        <div class="wrap">
-          <header class="section-head" data-reveal><div><p class="eyebrow">05&nbsp; / &nbsp;Built in Figmaboy</p><h2 class="display" id="real-workspace-title">A complete design,<br />still editable.</h2></div><p class="section-intro">One finished radio interface sits on the canvas as a named native layer tree, with the Codex conversation preserved beside it.</p></header>
-          <figure class="real-screenshot" data-reveal><a href={productScreenshot} target="_blank" rel="noreferrer" aria-label="View the full Figmaboy radio design screenshot"><img src={productScreenshot} alt="Figmaboy showing one complete editable radio interface with its native layers and Codex conversation" loading="lazy" /></a><figcaption><span>ACTUAL FIGMABOY WORKSPACE</span><span>RADIO DESIGN + NATIVE LAYERS + CODEX</span><a href={productScreenshot} target="_blank" rel="noreferrer">VIEW FULL SCREENSHOT ↗</a></figcaption></figure>
-        </div>
-      </section>
-
-      <section class="showcase" aria-labelledby="showcase-title">
-        <div class="wrap">
-          <header class="showcase-head"><p class="eyebrow">06&nbsp; / &nbsp;The workspace</p><span class="showcase-label">DESIGN + CODE, ONE WORKSPACE.</span></header>
-          <div class="showcase-grid">
-            <div class="workspace-stage" data-reveal><div class="workspace-window"><div class="ws-bar"><span class="traffic"><i></i><i></i><i></i></span><span class="ws-file">Radio concept&nbsp; — &nbsp;82%</span></div><div class="ws-body"><aside class="ws-side">LAYERS<div class="layer-bars"><i style="--w:94%"></i><i style="--w:88%"></i><i style="--w:80%"></i><i style="--w:72%"></i><i style="--w:64%"></i></div></aside><div class="ws-canvas"><article class="ws-art"><small>FORM / FUNCTION</small><h4>Make less.<br />Mean more.</h4><div class="ws-redbar"></div><div class="ws-blackbar"></div><footer>FIGMABOY STUDIO &nbsp;/&nbsp; 2026</footer></article></div><aside class="ws-chat"><header><b>Chat</b><span>↻&nbsp; ＋</span></header><div class="ws-chat-body"><div class="ws-chat-user">Refine the selected hero frame.</div><p>I’ll inspect the current hierarchy and tighten the composition.</p><div class="ws-chat-work">✓ Applied 4 design changes</div><p>Reviewed and saved locally.</p></div><div class="ws-chat-compose">Ask anything… <span>↑</span></div></aside></div></div></div>
-            <div class="showcase-copy" data-reveal><div class="number">01</div><h2 id="showcase-title">Design and direct,<br />side by side.</h2><p>The Codex sidebar and live MCP keep the instruction, canvas, layer tree, approvals, and visual evidence in one window.</p><div class="specs"><div class="spec"><span>CONTEXT</span><b>OPEN DESIGN</b></div><div class="spec"><span>LOOP</span><b>DESIGN + CODE</b></div><div class="spec"><span>HANDOFF</span><b>SAVED LOCALLY</b></div></div></div>
-          </div>
-        </div>
-      </section>
-
-      <section class="closing" id="download" aria-labelledby="closing-title">
-        <div class="wrap"><div class="closing-main" data-reveal><p class="eyebrow">07&nbsp; / &nbsp;Get Figmaboy</p><h2 class="display" id="closing-title">Make room for<br />the work.</h2><div class="closing-signal" aria-hidden="true"></div><div class="closing-action"><a class="button button-dark" href={download}><span class="signal"></span><span data-download-copy>Download Figmaboy</span> <span class="arrow">↓</span></a><p class="closing-note">Open source · {releaseTag}<br />Linux · macOS · Windows</p></div></div><footer class="site-footer"><div class="footer-row"><a class="footer-brand" href={base}>FIGMABOY®</a><span class="footer-made">THIS WEBSITE WAS DESIGNED IN FIGMABOY.</span><span class="footer-links"><a href={docs}>DOCS</a><a href={github}>GITHUB</a><a href={`${github}/issues`}>ISSUES</a></span></div><div class="copyright">© 2026 FIGMABOY. A SMALL DESKTOP TOOL.</div></footer></div>
+      <section class="closing shell" aria-labelledby="closing-title">
+        <h2 id="closing-title">Download Figmaboy.</h2>
+        <p>Open source for Linux, macOS, and Windows.</p>
+        <a class="button primary" href={download}><span data-download-copy>Download Figmaboy</span></a>
       </section>
     </main>
 
-    <script>
-      const reveal = new IntersectionObserver((entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            entry.target.classList.add("visible");
-            reveal.unobserve(entry.target);
-          }
-        });
-      }, { threshold: 0.12 });
-      document.querySelectorAll("[data-reveal]").forEach((element) => reveal.observe(element));
+    <footer class="footer shell">
+      <span>Figmaboy {releaseTag}</span>
+      <nav aria-label="Footer navigation"><a href={docs}>Docs</a><a href={github}>GitHub</a><a href={`${github}/issues`}>Issues</a></nav>
+      <span>MIT licensed</span>
+    </footer>
 
+    <script>
       const browserNavigator = navigator as Navigator & { userAgentData?: { platform?: string } };
       const userAgent = browserNavigator.userAgent.toLowerCase();
       const platformHint = `${browserNavigator.userAgentData?.platform ?? ""} ${browserNavigator.platform ?? ""} ${userAgent}`.toLowerCase();
       const platform = /android|iphone|ipad/.test(userAgent)
-        ? "unknown"
+        ? null
         : /mac/.test(platformHint)
           ? "macOS"
           : /win/.test(platformHint)

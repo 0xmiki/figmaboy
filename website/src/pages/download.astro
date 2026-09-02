@@ -27,7 +27,7 @@ const assets = {
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width" />
-    <meta name="theme-color" content="#f2f0e8" />
+    <meta name="theme-color" content="#ffffff" />
     <meta name="description" content="Download Figmaboy for macOS, Windows, or Linux." />
     <meta property="og:title" content="Download Figmaboy" />
     <meta property="og:description" content="Choose the Figmaboy desktop installer for your platform and start designing with Codex." />
@@ -40,14 +40,12 @@ const assets = {
     <a class="skip-link" href="#main">Skip to content</a>
     <header class="site-nav">
       <div class="wrap nav-inner">
-        <a class="brand" href={base} aria-label="Figmaboy home"><span class="signal"></span>FIGMABOY<sup>®</sup></a>
+        <a class="brand" href={base} aria-label="Figmaboy home"><img src={`${base}figmaboy-dark.svg`} alt="" /></a>
         <nav class="nav-links" aria-label="Primary navigation">
-          <a href={`${base}#codex`}>Codex chat</a>
-          <a href={`${base}#features`}>Features</a>
-          <a href={`${base}#compare`}>Compare</a>
           <a href={docs}>Docs</a>
+          <a href={github}>GitHub</a>
+          <span class="download-version"><span data-version>{releaseTag}</span>&nbsp; latest</span>
         </nav>
-        <span class="download-version"><span class="signal"></span><span data-version>{releaseTag}</span>&nbsp; LATEST</span>
       </div>
     </header>
 
@@ -55,18 +53,16 @@ const assets = {
       <section class="download-hero" aria-labelledby="download-title">
         <div class="wrap download-hero-grid">
           <div class="download-intro">
-            <p class="eyebrow">01&nbsp; / &nbsp;Download</p>
-            <h1 class="display" id="download-title">Your canvas.<br />On your machine.</h1>
-            <p>Choose the desktop build for your system. Figmaboy stays local, keeps every layer editable, and includes the tools used by its Codex tab.</p>
+            <h1 class="display" id="download-title">Download Figmaboy.</h1>
+            <p>Get the desktop app for macOS, Windows, or Linux. Your designs stay on your machine, and the built-in Codex tab is ready when you open a file.</p>
             <div class="platform-index" aria-label="Supported platforms"><span>macOS</span><span>Windows</span><span>Linux</span></div>
           </div>
 
           <article class="detected-download" aria-live="polite">
-            <div class="detected-top"><span><i></i> SYSTEM READOUT</span><span data-detected-label>DETECTING…</span></div>
+            <div class="detected-top"><span>Recommended</span><span data-detected-label>Detecting...</span></div>
             <div class="detected-body">
-              <p class="detected-kicker">RECOMMENDED DOWNLOAD</p>
               <h2 data-detected-title>Choose your platform</h2>
-              <p data-detected-copy>We’ll suggest the right build when your browser shares its operating system.</p>
+              <p data-detected-copy>Choose macOS, Windows, or Linux below.</p>
 
               <div class="detected-actions" data-actions="unknown">
                 <a class="download-button primary" href="#all-downloads">View all downloads <span>↓</span></a>
@@ -84,50 +80,50 @@ const assets = {
                 <a class="download-button secondary" href="#linux">.deb / .rpm <span>↓</span></a>
               </div>
             </div>
-            <div class="detected-foot"><span>OPEN SOURCE / MIT</span><span>CODEX BUILT IN</span><span>LOCAL FIRST</span></div>
+            <div class="detected-foot"><span>Open source</span><span>Codex built in</span><span>Local files</span></div>
           </article>
         </div>
       </section>
 
       <section class="release-band" aria-label="Latest release information">
         <div class="wrap release-band-grid">
-          <div><span>RELEASE</span><strong data-version>{releaseTag}</strong></div>
-          <div><span>STATUS</span><strong><i></i> LATEST</strong></div>
-          <div><span>PLATFORMS</span><strong>03</strong></div>
-          <div><span>DESIGN TOOLS</span><strong>INCLUDED</strong></div>
+          <div><span>Release</span><strong data-version>{releaseTag}</strong></div>
+          <div><span>Status</span><strong>Latest</strong></div>
+          <div><span>Platforms</span><strong>macOS, Windows, Linux</strong></div>
+          <div><span>License</span><strong>MIT</strong></div>
         </div>
       </section>
 
       <section class="all-downloads" id="all-downloads" aria-labelledby="all-downloads-title">
         <div class="wrap">
           <header class="download-section-head">
-            <div><p class="eyebrow">02&nbsp; / &nbsp;All platforms</p><h2 class="display" id="all-downloads-title">Pick the build<br />that fits.</h2></div>
-            <p>Version <span data-version>{releaseTag}</span>. Every desktop build includes the tools used by Figmaboy's Codex tab.</p>
+            <div><span class="section-label">All platforms</span><h2 class="display" id="all-downloads-title">Choose your build.</h2></div>
+            <p>Every <span data-version>{releaseTag}</span> installer includes the design tools used by the built-in Codex tab.</p>
           </header>
 
           <div class="platform-grid">
             <article class="platform-card" id="macos" data-platform-card="macos">
-              <header><span class="platform-mark">01</span><div><p>APPLE</p><h3>macOS</h3></div><span class="platform-status">DMG</span></header>
+              <header><div><p>Apple</p><h3>macOS</h3></div><span class="platform-status">DMG</span></header>
               <div class="asset-list">
-                <a data-asset="mac-arm-dmg" href={assets.macArmDmg}><span><b>Apple Silicon</b><small>DMG · ARM64 · MCP included</small></span><i>↓</i></a>
-                <a data-asset="mac-intel-dmg" href={assets.macIntelDmg}><span><b>Intel Mac</b><small>DMG · x86_64 · MCP included</small></span><i>↓</i></a>
+                <a data-asset="mac-arm-dmg" href={assets.macArmDmg}><span><b>Apple Silicon</b><small>For M-series Macs</small></span><i>↓</i></a>
+                <a data-asset="mac-intel-dmg" href={assets.macIntelDmg}><span><b>Intel Mac</b><small>For Intel-based Macs</small></span><i>↓</i></a>
               </div>
             </article>
 
             <article class="platform-card" id="windows" data-platform-card="windows">
-              <header><span class="platform-mark">02</span><div><p>MICROSOFT</p><h3>Windows</h3></div><span class="platform-status">x64</span></header>
+              <header><div><p>Microsoft</p><h3>Windows</h3></div><span class="platform-status">x64</span></header>
               <div class="asset-list">
-                <a data-asset="windows-nsis" href={assets.windowsNsis}><span><b>Windows installer</b><small>NSIS .exe · per-user · MCP included</small></span><i>↓</i></a>
-                <a data-asset="windows-msi" href={assets.windowsMsi}><span><b>Windows MSI</b><small>MSI · system install · MCP included</small></span><i>↓</i></a>
+                <a data-asset="windows-nsis" href={assets.windowsNsis}><span><b>Windows installer</b><small>Recommended for most people</small></span><i>↓</i></a>
+                <a data-asset="windows-msi" href={assets.windowsMsi}><span><b>Windows MSI</b><small>For managed installations</small></span><i>↓</i></a>
               </div>
             </article>
 
             <article class="platform-card" id="linux" data-platform-card="linux">
-              <header><span class="platform-mark">03</span><div><p>GNU / LINUX</p><h3>Linux</h3></div><span class="platform-status">x64</span></header>
+              <header><div><p>Linux</p><h3>Linux</h3></div><span class="platform-status">x64</span></header>
               <div class="asset-list">
-                <a data-asset="linux-appimage" href={assets.linuxAppImage}><span><b>AppImage</b><small>Portable · built-in Codex tools included</small></span><i>↓</i></a>
-                <a data-asset="linux-deb" href={assets.linuxDeb}><span><b>Debian / Ubuntu</b><small>.deb · MCP included</small></span><i>↓</i></a>
-                <a data-asset="linux-rpm" href={assets.linuxRpm}><span><b>Fedora / RHEL</b><small>.rpm · MCP included</small></span><i>↓</i></a>
+                <a data-asset="linux-appimage" href={assets.linuxAppImage}><span><b>AppImage</b><small>Portable, no installation required</small></span><i>↓</i></a>
+                <a data-asset="linux-deb" href={assets.linuxDeb}><span><b>Debian / Ubuntu</b><small>Debian package</small></span><i>↓</i></a>
+                <a data-asset="linux-rpm" href={assets.linuxRpm}><span><b>Fedora / RHEL</b><small>RPM package</small></span><i>↓</i></a>
               </div>
             </article>
           </div>
@@ -138,15 +134,14 @@ const assets = {
 
       <section class="connect-next" aria-labelledby="connect-title">
         <div class="wrap connect-next-grid">
-          <div><p class="eyebrow">03&nbsp; / &nbsp;Next step</p><h2 class="display" id="connect-title">Installed?<br />Create a design.</h2></div>
-          <div class="connect-copy"><p>Open Figmaboy, create a design, and select the Codex tab. The built-in tools are ready without MCP registration.</p><a class="download-button primary" href={`${docs}getting-started/quickstart/`}>Create your first design <span>↗</span></a></div>
+          <div><span class="section-label">After installation</span><h2 class="display" id="connect-title">Open it and start designing.</h2></div>
+          <div class="connect-copy"><p>Create a design and open the Codex tab. Figmaboy connects its built-in design tools automatically.</p><a class="download-button primary" href={`${docs}getting-started/quickstart/`}>Create your first design <span>→</span></a></div>
         </div>
       </section>
     </main>
 
     <footer class="download-footer">
-      <div class="wrap footer-row"><a class="footer-brand" href={base}>FIGMABOY®</a><span class="footer-made">THIS WEBSITE WAS DESIGNED IN FIGMABOY.</span><span class="footer-links"><a href={docs}>DOCS</a><a href={github}>GITHUB</a><a href={`${github}/issues`}>ISSUES</a></span></div>
-      <div class="wrap copyright">© 2026 FIGMABOY. A SMALL DESKTOP TOOL.</div>
+      <div class="wrap footer-row"><span>Figmaboy <span data-version>{releaseTag}</span></span><span class="footer-links"><a href={docs}>Docs</a><a href={github}>GitHub</a><a href={`${github}/issues`}>Issues</a></span><span>MIT licensed</span></div>
     </footer>
 
     <script>
@@ -166,10 +161,10 @@ const assets = {
               : "unknown";
 
       const recommendations = {
-        macos: { label: "MACOS DETECTED", title: "Download for macOS", copy: "Choose Apple Silicon for M-series Macs, or Intel for older Macs." },
-        windows: { label: "WINDOWS DETECTED", title: "Download for Windows", copy: "The .exe installer is the simplest choice. MSI is available for system-managed installs." },
-        linux: { label: "LINUX DETECTED", title: "Download for Linux", copy: "Use the AppImage, or choose a native .deb or .rpm package below." },
-        unknown: { label: "PLATFORM UNKNOWN", title: "Choose your platform", copy: "Select macOS, Windows, or Linux from the complete release below." },
+        macos: { label: "macOS detected", title: "Download for macOS", copy: "Choose Apple Silicon for M-series Macs, or Intel for older Macs." },
+        windows: { label: "Windows detected", title: "Download for Windows", copy: "The .exe installer works for most people. MSI is available for managed installations." },
+        linux: { label: "Linux detected", title: "Download for Linux", copy: "Use the AppImage, or choose a .deb or .rpm package below." },
+        unknown: { label: "Choose a platform", title: "Choose your platform", copy: "Select macOS, Windows, or Linux below." },
       } as const;
 
       const recommendation = recommendations[platform];

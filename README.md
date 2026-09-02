@@ -1,5 +1,7 @@
 # Figmaboy
 
+<img src="static/figmaboy-app-icon.svg" alt="Shape Boy, the Figmaboy logo" width="72" />
+
 **A local-first design editor with Codex chat beside the canvas.**
 
 Draw and style native layers by hand, or ask Codex to work on the open document. Replies, tool calls, and approvals stay in the sidebar. Codex edits use the same undo history and local autosave as manual edits.
@@ -32,14 +34,14 @@ Figmaboy supplies its bundled MCP to the built-in chat automatically. Open the C
 
 [Create your first design](https://0xmiki.github.io/figmaboy/docs/getting-started/quickstart/)
 
-## What is new in 0.5.3
+## What is new in 0.5.4
 
-- `/evolve [direction]` keeps the selected frame as a frozen reference and reconstructs it from scratch in a new sibling frame.
-- Focused passes build the reconstruction layer by layer while the Codex sidebar records each objective, proposal, render, and decision.
-- Figmaboy validates every proposal before rendering and returns exact errors for bounded correction.
-- Canvas context menus respect selected parent frames, nested text requires a second double-click to edit, and evolution activity follows the latest work.
+- Shape Boy is the new mark across the desktop app, installers, website, and documentation.
+- The new landing page is now the main website and shows the real editor, Codex sidebar, and Sonic 60 design.
+- The documentation and download page use the same visual system as the landing page.
+- Platform detection and direct installer links remain available on the redesigned download page.
 
-[Read the 0.5.3 release notes](https://0xmiki.github.io/figmaboy/docs/reference/release-notes/)
+[Read the 0.5.4 release notes](https://0xmiki.github.io/figmaboy/docs/reference/release-notes/)
 
 ## Projects and designs
 

@@ -160,9 +160,7 @@ try {
 await page.locator(".messages").evaluate((element) => element.scrollTo({ top: element.scrollHeight }));
 await page.waitForTimeout(250);
 
-for (const path of ["docs/assets/figmaboy-codex-workflow.png", "static/figmaboy-screenshot.png"]) {
-  await page.screenshot({ path, fullPage: true });
-}
+await page.screenshot({ path: "docs/assets/figmaboy-codex-workflow.png", fullPage: true });
 
 await browser.close();
-console.log("Captured current Figmaboy Codex workflow screenshots");
+console.log("Captured current Figmaboy Codex workflow screenshot");

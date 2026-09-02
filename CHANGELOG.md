@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.4, 2026-09-03
+
+### Added
+
+- Shape Boy is the new Figmaboy mark across the desktop app, installers, website, documentation, and repository.
+- The landing page uses the real Sonic 60 design inside a proportional reconstruction of the Figmaboy editor and Codex sidebar.
+
+### Changed
+
+- The new landing page now lives at the main website route. The temporary `/v2` route and retired landing design have been removed.
+- The documentation and download page now share the landing page's typography, colors, spacing, navigation, and controls.
+- The download page keeps platform detection and release hydration while presenting the recommended installer and complete platform list with simpler labels.
+
 ## 0.5.3, 2026-09-02
 
 ### Added

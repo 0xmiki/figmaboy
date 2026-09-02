@@ -3,6 +3,20 @@ title: Release notes
 description: What changed in the current Figmaboy release.
 ---
 
+## Figmaboy 0.5.4
+
+Released September 3, 2026.
+
+### Meet Shape Boy
+
+Shape Boy is now the Figmaboy mark. The square eye, circular eye, and curved path use the same basic forms available on the canvas. The new mark appears in the desktop app, platform installers, website, documentation, and repository.
+
+### One website
+
+The new landing page now lives at the main Figmaboy URL. Its product preview reconstructs the real editor proportions, Codex sidebar, composer, Phosphor controls, and Sonic 60 design instead of showing a generated product image.
+
+The documentation and download page now use the same type, color, spacing, navigation, and button system. Platform detection and direct release links continue to work on the download page.
+
 ## Figmaboy 0.5.3
 
 Released September 2, 2026.
