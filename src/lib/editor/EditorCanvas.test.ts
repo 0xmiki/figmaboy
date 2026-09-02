@@ -15,6 +15,25 @@ function sessionWithRectangle() {
   return { session: new EditorSession({ file, pages: [page], page, document } satisfies OpenedFile), nodeId: node.id };
 }
 
+function sessionWithNestedText() {
+  const timestamp = new Date(0).toISOString();
+  const file = { id: "file", projectId: null, name: "Untitled", starred: false, createdAt: timestamp, updatedAt: timestamp, lastOpenedAt: timestamp, trashedAt: null, thumbnail: null };
+  const page = { id: "page", fileId: file.id, name: "Page 1", position: 0, revision: 0 };
+  const document = emptyDocument();
+  const frame = defaultNode("frame", 0, 0, { id: "frame", width: 500, height: 400 });
+  const text = defaultNode("text", 40, 50, { id: "text", parentId: frame.id, width: 180, height: 36, text: "Editable label" });
+  if (frame.type !== "frame") throw new Error("Expected a frame fixture");
+  frame.childIds = [text.id];
+  document.nodes = { [frame.id]: frame, [text.id]: text };
+  document.rootIds = [frame.id];
+  return { session: new EditorSession({ file, pages: [page], page, document } satisfies OpenedFile), frameId: frame.id, textId: text.id };
+}
+
+async function canvasClick(target: Element, pointerId: number, detail: number) {
+  await fireEvent.pointerDown(target, { button: 0, pointerId, detail, clientX: 60, clientY: 70 });
+  await fireEvent.pointerUp(window, { button: 0, pointerId, detail, clientX: 60, clientY: 70 });
+}
+
 describe("canvas interaction preview", () => {
   beforeEach(() => {
     vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
@@ -44,5 +63,38 @@ describe("canvas interaction preview", () => {
     expect(session.document.nodes[nodeId]).toMatchObject({ x: 160, y: 160 });
     expect(session.changeToken).toBe(initialChangeToken + 1);
     expect(session.hasActiveGesture).toBe(false);
+  });
+
+  it("opens a selected parent frame context menu when the pointer is over a child", async () => {
+    const { session, frameId, textId } = sessionWithNestedText();
+    const onContextMenu = vi.fn();
+    const view = render(EditorCanvas, { session, onContextMenu });
+    const text = view.container.querySelector<SVGGElement>(`[data-node-id='${textId}']`);
+    expect(text).toBeTruthy();
+    session.select(frameId);
+
+    await fireEvent.contextMenu(text!, { clientX: 60, clientY: 70 });
+
+    expect(session.selectedIds).toEqual([frameId]);
+    expect(onContextMenu).toHaveBeenCalledWith(expect.anything(), expect.anything(), frameId);
+  });
+
+  it("selects nested text on the first double-click and edits it on the second", async () => {
+    const { session, textId } = sessionWithNestedText();
+    const view = render(EditorCanvas, { session, onContextMenu: () => {} });
+    const text = view.container.querySelector<SVGGElement>(`[data-node-id='${textId}']`);
+    expect(text).toBeTruthy();
+
+    await canvasClick(text!, 1, 1);
+    await canvasClick(text!, 2, 2);
+    await fireEvent.dblClick(text!);
+    expect(session.selectedIds).toEqual([textId]);
+    expect(session.editingTextId).toBeNull();
+
+    await canvasClick(text!, 3, 1);
+    await canvasClick(text!, 4, 2);
+    await fireEvent.dblClick(text!);
+    expect(session.editingTextId).toBe(textId);
+    expect(view.getByRole("textbox", { name: "Edit text" })).toBeInTheDocument();
   });
 });

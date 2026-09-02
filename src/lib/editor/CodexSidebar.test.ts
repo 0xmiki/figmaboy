@@ -375,6 +375,19 @@ describe("Codex sidebar diagnostics", () => {
     expect(await screen.findByPlaceholderText("Ask anything about this design")).toBeEnabled();
   });
 
+  it("keeps the evolution journal scrolled to the latest activity", async () => {
+    await startEvolution();
+    await waitFor(() => expect(pendingExec("director")).toBeTruthy());
+    const scrollTo = vi.mocked(HTMLElement.prototype.scrollTo);
+    scrollTo.mockClear();
+
+    finishExec("director", revisionAssessment());
+
+    await waitFor(() => expect(pendingExec("designer")).toBeTruthy());
+    await waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: expect.any(Number), behavior: "auto" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Stop Codex" }));
+  });
+
   it("retries one transient director exec and preserves the exact error", async () => {
     await startEvolution();
     await waitFor(() => expect(pendingExec("director")).toBeTruthy());

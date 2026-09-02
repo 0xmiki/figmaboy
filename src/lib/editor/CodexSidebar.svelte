@@ -339,7 +339,8 @@
 
   $effect(() => {
     const lastItem = timeline.items.at(-1);
-    const marker = `${timeline.items.length}:${lastItem?.id ?? ""}:${lastItem ? itemText(lastItem).length + String(lastItem.aggregatedOutput ?? "").length : 0}`;
+    const lastActivity = evolveActivities.at(-1);
+    const marker = `${timeline.items.length}:${lastItem?.id ?? ""}:${lastItem ? itemText(lastItem).length + String(lastItem.aggregatedOutput ?? "").length : 0}:${evolveActivities.length}:${lastActivity?.id ?? ""}:${lastActivity?.status ?? ""}:${lastActivity?.detail.length ?? 0}:${lastActivity?.notes.join("\n").length ?? 0}`;
     if (!marker || !pinnedToBottom) return;
     void tick().then(() => scrollToLatest(false));
   });

@@ -756,7 +756,7 @@
     startScreen = pointFromEvent(event);
     startWorld = worldFromEvent(event);
     lastWorld = startWorld;
-    if (targetNode.type === "text" && repeatedPress) {
+    if (targetNode.type === "text" && repeatedPress && session.selectedIds.includes(targetId)) {
       pendingTextEditId = targetId;
       mode = "edit-text";
       capturePointer(event);
@@ -791,21 +791,12 @@
     capturePointer(event);
   }
 
-  function nodeDoubleClick(_event: MouseEvent, id: string) {
-    const node = session.document.nodes[id];
-    if (node?.type === "text" && isCanvasNodeSelectable(session.document, id)) {
-      session.select(id);
-      session.editingTextId = id;
-      createdTextId = null;
-      session.beginGesture();
-    }
-  }
-
   function nodeContextMenu(event: MouseEvent, id: string) {
-    const node = session.document.nodes[id];
-    if (!node || node.locked) return;
-    if (!session.selectedIds.includes(id)) session.select(id);
-    onContextMenu(event, worldFromEvent(event), id);
+    const targetId = canvasSelectionTarget(session.document, id, session.selectedIds);
+    const node = targetId ? session.document.nodes[targetId] : null;
+    if (!targetId || !node || node.locked) return;
+    if (!session.selectedIds.includes(targetId)) session.select(targetId);
+    onContextMenu(event, worldFromEvent(event), targetId);
   }
 
   function startHandle(event: PointerEvent, nextHandle: string) {
@@ -1515,7 +1506,7 @@
     <g class="world">
       {#each renderedRootIds as id}
         {#if session.document.nodes[id]}
-          <CanvasNode node={session.document.nodes[id]} document={session.document} selectedIds={session.selectedIds} imageSources={session.imageSources} {renderedNodeIds} {unclippedFrameIds} frameRasters={frameRasterUrls} {rasterizedFrameIds} onNodePointerDown={nodePointerDown} onNodeDoubleClick={nodeDoubleClick} onNodeContextMenu={nodeContextMenu} />
+          <CanvasNode node={session.document.nodes[id]} document={session.document} selectedIds={session.selectedIds} imageSources={session.imageSources} {renderedNodeIds} {unclippedFrameIds} frameRasters={frameRasterUrls} {rasterizedFrameIds} onNodePointerDown={nodePointerDown} onNodeContextMenu={nodeContextMenu} />
         {/if}
       {/each}
     </g>
