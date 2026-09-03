@@ -1,13 +1,11 @@
-import type { DesignNode, ImportedAsset, NodeType, PageDocument, Rect } from "$lib/domain";
+import type { DesignNode, ImportedAsset, NodeType, PageDocument, Rect, TextNode } from "$lib/domain";
 import { cloneDocument, defaultNode } from "$lib/domain";
 import type { EditorSession } from "$lib/editor/editor.svelte";
 import type { ExtensionDesignOperation } from "$lib/extensions/types";
 import { selectionBounds, transformPoint, worldBounds, worldMatrix, worldToNodeLocal } from "$lib/geometry";
+import { layoutText } from "$lib/text-layout";
 
 type JsonObject = Record<string, unknown>;
-
-export const EVOLVE_PASS_MAX_OPERATIONS = 5;
-export const EVOLVE_PASS_MAX_CREATES = 4;
 
 function object(value: unknown, label: string): JsonObject {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`);
@@ -35,13 +33,6 @@ function frameTreeIds(document: PageDocument, frameId: string): Set<string> {
   };
   visit(frameId);
   return ids;
-}
-
-/** Keeps reconstruction passes small enough to inspect and watch accumulate. */
-export function validateEvolutionPassSize(operations: unknown[]): void {
-  if (operations.length > EVOLVE_PASS_MAX_OPERATIONS) throw new Error(`EVOLVE_PASS_TOO_LARGE: use at most ${EVOLVE_PASS_MAX_OPERATIONS} operations in one construction pass; split this work into a smaller visible step`);
-  const creates = operations.filter((value) => object(value, "operation").kind === "create").length;
-  if (creates > EVOLVE_PASS_MAX_CREATES) throw new Error(`EVOLVE_PASS_TOO_LARGE: create at most ${EVOLVE_PASS_MAX_CREATES} layers in one construction pass; leave the remaining layers for later passes`);
 }
 
 /** Host-enforced safety boundary for the bounded /evolve experiment. */
@@ -442,4 +433,72 @@ export function nodeGeometry(session: EditorSession, ids: string[], canvasRect: 
       clientCorners: canvasCorners.map((point) => ({ x: canvasRect.x + point.x, y: canvasRect.y + point.y })),
     };
   });
+}
+
+export type DesignAuditIssue = {
+  code: "clipped" | "outside-parent" | "text-overflow" | "low-contrast" | "small-target";
+  severity: "error" | "warning";
+  nodeId: string;
+  nodeName: string;
+  message: string;
+};
+
+function solidHex(node: DesignNode | undefined): string | null {
+  return node?.fill?.type === "solid" && /^#[0-9a-f]{6}$/i.test(node.fill.color) ? node.fill.color : null;
+}
+
+function luminance(color: string): number {
+  const channels = [1, 3, 5].map((start) => Number.parseInt(color.slice(start, start + 2), 16) / 255).map((value) => value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4);
+  return .2126 * channels[0]! + .7152 * channels[1]! + .0722 * channels[2]!;
+}
+
+function contrastRatio(left: string, right: string): number {
+  const values = [luminance(left), luminance(right)].sort((a, b) => b - a);
+  return (values[0]! + .05) / (values[1]! + .05);
+}
+
+function nearestSolidBackground(document: PageDocument, node: DesignNode): string | null {
+  let parentId = node.parentId;
+  while (parentId) {
+    const parent = document.nodes[parentId];
+    const color = solidHex(parent);
+    if (color) return color;
+    parentId = parent?.parentId ?? null;
+  }
+  return null;
+}
+
+/** Read-only deterministic checks used by Codex before it proposes a design pass. */
+export function auditDesign(document: PageDocument, frameId: string): { frameId: string; checkedNodes: number; errors: number; warnings: number; issues: DesignAuditIssue[] } {
+  const frame = document.nodes[frameId];
+  if (frame?.type !== "frame") throw new Error(`frameId must identify a frame; received ${frameId || "nothing"}`);
+  const issues: DesignAuditIssue[] = [];
+  const checked = new Set<string>();
+  const visit = (id: string) => {
+    const node = document.nodes[id];
+    if (!node) return;
+    checked.add(id);
+    const parent = node.parentId ? document.nodes[node.parentId] : null;
+    if (parent && (parent.type === "frame" || parent.type === "group")) {
+      const outside = node.x < 0 || node.y < 0 || node.x + node.width > parent.width || node.y + node.height > parent.height;
+      if (outside) issues.push({ code: parent.clipContent ? "clipped" : "outside-parent", severity: parent.clipContent ? "error" : "warning", nodeId: node.id, nodeName: node.name, message: `${node.name} extends outside ${parent.name}${parent.clipContent ? " and will be clipped" : ""}.` });
+    }
+    if (node.type === "text") {
+      const layout = layoutText(node as TextNode);
+      const autoResize = node.textAutoResize ?? (node.autoWidth ? "width-and-height" : "height");
+      if (autoResize === "none" && (layout.width > node.width + 1 || layout.height > node.height + 1)) issues.push({ code: "text-overflow", severity: "error", nodeId: node.id, nodeName: node.name, message: `${node.name} needs ${Math.ceil(layout.width)} × ${Math.ceil(layout.height)} px inside a ${Math.ceil(node.width)} × ${Math.ceil(node.height)} px box.` });
+      const foreground = solidHex(node);
+      const background = nearestSolidBackground(document, node);
+      if (foreground && background) {
+        const ratio = contrastRatio(foreground, background);
+        const large = node.fontSize >= 24 || (node.fontSize >= 18.66 && node.fontWeight >= 700);
+        const minimum = large ? 3 : 4.5;
+        if (ratio < minimum) issues.push({ code: "low-contrast", severity: "warning", nodeId: node.id, nodeName: node.name, message: `${node.name} has ${ratio.toFixed(2)}:1 contrast; target at least ${minimum}:1.` });
+      }
+    }
+    if (/button|control|tab|nav item|menu item/i.test(node.name) && (node.width < 32 || node.height < 32)) issues.push({ code: "small-target", severity: "warning", nodeId: node.id, nodeName: node.name, message: `${node.name} is ${Math.ceil(node.width)} × ${Math.ceil(node.height)} px; interactive targets should be at least 32 × 32 px.` });
+    if (node.type === "frame" || node.type === "group") node.childIds.forEach(visit);
+  };
+  visit(frameId);
+  return { frameId, checkedNodes: checked.size, errors: issues.filter((issue) => issue.severity === "error").length, warnings: issues.filter((issue) => issue.severity === "warning").length, issues };
 }

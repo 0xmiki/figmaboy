@@ -39,6 +39,7 @@ function revisionAssessment(overrides: Record<string, unknown> = {}) {
   return {
     verdict: "revise", preference: "not_applicable", confidence: .9,
     criteria: [
+      { id: "design-resolution", requirement: "Deliver a visually resolved interface with clear affordances", status: "unmet", evidence: "The reconstruction is still missing resolved interaction details." },
       { id: "composition-originality", requirement: "Invent a visibly different information architecture and composition", status: "unmet", evidence: "The reconstruction has not established its own structure yet." },
       { id: "goal-1", requirement: "Create a clear visual hierarchy", status: "unmet", evidence: "The current frame has equal visual weight." },
       { id: "goal-2", requirement: "Keep supporting content readable", status: "met", evidence: "Supporting copy remains readable." },
@@ -52,6 +53,7 @@ function revisionAssessment(overrides: Record<string, unknown> = {}) {
 
 function satisfiedAssessment() {
   const criteria = [
+    { id: "design-resolution", requirement: "Deliver a visually resolved interface with clear affordances", status: "met", evidence: "The interface uses deliberate hierarchy, spacing, typography, and controls." },
     { id: "composition-originality", requirement: "Invent a visibly different information architecture and composition", status: "met", evidence: "The reconstruction uses a distinct structure and component grammar." },
     { id: "goal-1", requirement: "Keep the restrained editorial hierarchy", status: "met", evidence: "The reconstruction has a clear restrained hierarchy." },
     { id: "goal-2", requirement: "Preserve readable supporting copy", status: "met", evidence: "The supporting copy is readable and balanced." },
@@ -226,8 +228,6 @@ describe("Codex sidebar diagnostics", () => {
         if (params.tool === "evolve_candidate_validate") {
           const candidateId = String((params.arguments as Record<string, unknown>)?.candidateId ?? "");
           const operations = Array.isArray((params.arguments as Record<string, unknown>)?.operations) ? (params.arguments as Record<string, unknown>).operations as Array<Record<string, unknown>> : [];
-          if (operations.length > 5) throw new Error("EVOLVE_PASS_TOO_LARGE: use at most 5 operations in one construction pass; split this work into a smaller visible step");
-          if (operations.filter((operation) => operation.kind === "create").length > 4) throw new Error("EVOLVE_PASS_TOO_LARGE: create at most 4 layers in one construction pass; leave the remaining layers for later passes");
           const validationToken = `host-validated-${candidateId}-${++evolveFixture.validation}`;
           evolveFixture.validatedCandidates.set(candidateId, validationToken);
           return { content: [], structuredContent: { valid: true, candidateId, validationToken } };
@@ -240,7 +240,7 @@ describe("Codex sidebar diagnostics", () => {
           if ((params.arguments as Record<string, unknown>)?.validationToken !== evolveFixture.validatedCandidates.get(candidateId)) throw new Error("EVOLVE_CANDIDATE_MISSING: regenerate this candidate");
           const operations = Array.isArray((params.arguments as Record<string, unknown>)?.operations) ? (params.arguments as Record<string, unknown>).operations as Array<Record<string, unknown>> : [];
           const patch = operations.find((operation) => operation.kind === "update" && operation.id === "evolve-draft")?.patch as Record<string, unknown> | undefined;
-          return { content: [], structuredContent: { imageBase64: `candidate-${evolveFixture.render}`, mimeType: "image/png", candidateId: (params.arguments as Record<string, unknown>)?.candidateId, renderedChangeToken: evolveFixture.changeToken, document: editorDocument(patch) } };
+          return { content: [], structuredContent: { imageBase64: `candidate-${evolveFixture.render}`, mimeType: "image/png", candidateId: (params.arguments as Record<string, unknown>)?.candidateId, renderedChangeToken: evolveFixture.changeToken, document: editorDocument(patch), audit: { issueCount: 0, issues: [] } } };
         }
         if (params.tool === "evolve_candidate_commit") { evolveFixture.changeToken += 1; return { content: [], structuredContent: { committed: true, needsReview: false, changeToken: evolveFixture.changeToken } }; }
         if (params.tool === "evolve_run_discard") return { content: [], structuredContent: { discarded: true } };
@@ -352,6 +352,8 @@ describe("Codex sidebar diagnostics", () => {
     expect(planning.images.map((image: { name: string }) => image.name)).toEqual(["reference", "current-draft"]);
     expect(planning.prompt).toContain("smallest coherent visible nextObjective");
     expect(planning.prompt).toContain("composition-originality");
+    expect(planning.prompt).toContain("design-resolution");
+    expect(planning.prompt).toContain("Minimal does not mean empty");
     expect(planning.prompt).toContain("The reference is a product brief, not a template");
     expect(planning.prompt).toContain("Reference content inventory");
     expect(planning.prompt).not.toContain("Frozen reference layers:");
@@ -364,12 +366,20 @@ describe("Codex sidebar diagnostics", () => {
     expect(designer.prompt).toContain("Do not spawn subagents");
     expect(designer.prompt).toContain("Frozen reference frame ID: screen");
     expect(designer.prompt).toContain("Writable reconstruction frame ID: evolve-draft");
+    expect(designer.prompt).toContain("Evolution run ID:");
+    expect(designer.prompt).toContain("Attached image order: 1. frozen reference, 2. current reconstruction");
     expect(designer.prompt).toContain("Figmaboy will decode and validate them before rendering");
-    expect(designer.prompt).toContain("Use at most five operations and create at most four layers");
+    expect(designer.prompt).toContain("Use as many operations and layers as the objective genuinely requires");
     expect(designer.prompt).toContain("Work like a painter applying one layer at a time");
     expect(designer.prompt).toContain("Treat the reference as a content inventory and product brief");
     expect(designer.prompt).toContain("Do not reuse or trace the source component boundaries");
     expect(designer.prompt).not.toContain("Frozen reference layers and exact content");
+    expect(designer.prompt).toContain("icons_search before creating an icon");
+    expect(designer.prompt).toContain("assets_list before reusing artwork");
+    expect(designer.prompt).toContain("fonts_list when choosing typography");
+    expect(designer.prompt).toContain("design_audit when the current frame may contain fit");
+    expect(designer.prompt).toContain("You may call evolve_candidate_validate and evolve_candidate_render");
+    expect(designer.prompt).toContain("dedicated visual-review turn");
     expect(designer.images).toHaveLength(2);
     expect(evolveExecFixture.some((entry) => entry.request.role === "generation")).toBe(false);
     finishExec("designer", designCandidate("P1", { fill: { type: "solid", color: "#111111", opacity: 1 } }));
@@ -378,9 +388,20 @@ describe("Codex sidebar diagnostics", () => {
       method: "mcpServer/tool/call",
       params: expect.objectContaining({ tool: "evolve_candidate_render", arguments: expect.objectContaining({ candidateId: "P1", validationToken: "host-validated-P1-1" }) }),
     })));
+    await waitFor(() => expect(pendingExec("reviewer")).toBeTruthy());
+    const review = pendingExec("reviewer")!.request;
+    expect(review.images.map((image: { name: string }) => image.name)).toEqual(["reference", "current-draft", "candidate"]);
+    expect(review.prompt).toContain("the exact rendered candidate produced by your proposal");
+    expect(review.prompt).toContain("Deterministic candidate audit");
+    finishExec("reviewer", designCandidate("P1", { fill: { type: "solid", color: "#151515", opacity: 1 } }));
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("codex_request", expect.objectContaining({
+      method: "mcpServer/tool/call",
+      params: expect.objectContaining({ tool: "evolve_candidate_render", arguments: expect.objectContaining({ candidateId: "P1", validationToken: "host-validated-P1-2", operations: [{ kind: "update", id: "evolve-draft", patch: { fill: { type: "solid", color: "#151515", opacity: 1 } } }] }) }),
+    })));
     await waitFor(() => expect(pendingExec("director")).toBeTruthy());
     const comparison = pendingExec("director")!.request;
     expect(comparison.images.map((image: { name: string }) => image.name)).toEqual(["reference", "current-draft", "candidate"]);
+    expect(comparison.images[2].dataUrl).toContain("candidate-2");
     finishExec("director", revisionAssessment({ preference: "image_2", summary: "The pass establishes a stronger structural hierarchy." }));
 
     await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("codex_request", expect.objectContaining({
@@ -394,7 +415,7 @@ describe("Codex sidebar diagnostics", () => {
     finishExec("director", satisfiedAssessment());
     expect(await screen.findByText(/Reconstructed beside the original through 1 pass/)).toBeInTheDocument();
     expect(screen.getByText("Evolution complete")).toBeInTheDocument();
-    expect(evolveFixture.validation).toBe(1);
+    expect(evolveFixture.validation).toBe(2);
   });
 
   it("cancels the active reconstruction worker as one run-owned process", async () => {
@@ -453,7 +474,7 @@ describe("Codex sidebar diagnostics", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Stop Codex" }));
   });
 
-  it("returns an oversized construction pass for a smaller correction", async () => {
+  it("allows a construction objective to use more than five operations", async () => {
     await startEvolution("/evolve Reconstruct this terminal interface step by step");
     await waitFor(() => expect(pendingExec("director")).toBeTruthy());
     finishExec("director", revisionAssessment());
@@ -465,15 +486,11 @@ describe("Codex sidebar diagnostics", () => {
       creates: [], reorders: [], deletes: [], reparents: [], summary: "Attempted the entire reconstruction.",
     });
 
-    await waitFor(() => expect(pendingExec("correction")).toBeTruthy());
-    const correction = pendingExec("correction")!.request;
-    expect(correction.prompt).toContain("EVOLVE_PASS_TOO_LARGE: use at most 5 operations");
-    expect(correction.prompt).toContain("Use at most five operations and create at most four layers");
-    finishExec("correction", designCandidate("P1", { fill: { type: "solid", color: "#111111", opacity: 1 } }));
     await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("codex_request", expect.objectContaining({
       method: "mcpServer/tool/call",
-      params: expect.objectContaining({ tool: "evolve_candidate_render", arguments: expect.objectContaining({ candidateId: "P1" }) }),
+      params: expect.objectContaining({ tool: "evolve_candidate_render", arguments: expect.objectContaining({ candidateId: "P1", operations: expect.arrayContaining([expect.objectContaining({ kind: "update" })]) }) }),
     })));
+    expect(evolveExecFixture.some((entry) => entry.request.role === "correction")).toBe(false);
     await fireEvent.click(screen.getByRole("button", { name: "Stop Codex" }));
   });
 
@@ -489,7 +506,8 @@ describe("Codex sidebar diagnostics", () => {
     const correction = pendingExec("correction")!.request;
     expect(correction.prompt).toContain("Node evolve-draft layer blur must be a finite number");
     expect(correction.prompt).toContain("Correct the same construction pass");
-    expect(correction.prompt).toContain("Figmaboy will validate the complete replacement before rendering");
+    expect(correction.prompt).toContain("Figmaboy will render the complete correction");
+    expect(correction.prompt).toContain("exact result through visual review");
     finishExec("correction", designCandidate("P1", { effects: [{ type: "layer-blur", radius: 18 }] }));
     await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("codex_request", expect.objectContaining({
       method: "mcpServer/tool/call",

@@ -86,12 +86,14 @@
     image: string;
     thumbnail: string;
     context: JsonObject;
+    audit: JsonObject;
     comparison?: EvolveAssessment;
   };
   type EvolveActivity = { id: string; pass: number; title: string; detail: string; notes: string[]; image?: string; status: "working" | "complete" | "kept" | "discarded" | "recovering" };
   type EvolveExecResponse = { execId: string; text: string; exitCode: number };
   type PromptSegment = { type: "text" | "skill"; value: string; name?: string };
   const ORIGINALITY_REQUIREMENT = "Invent a visibly different information architecture, composition, component grouping, and interaction framing from the reference.";
+  const RESOLUTION_REQUIREMENT = "Deliver a visually resolved interface with deliberate hierarchy, spacing, typography, and recognizable affordances. Minimalism must simplify the design without turning controls into placeholder-like text or lines.";
   let { workspaceId, pageId, fileName, visible, embedded = false, onAttentionChange, onClose, onEditorRpc }: {
     workspaceId: string;
     pageId: string;
@@ -402,7 +404,16 @@
     let detail = "";
     if (itemType === "mcp_tool_call") {
       const tool = String(item.tool ?? item.name ?? "");
-      detail = tool.includes("types_get") ? "A designer is reading the native layer contract" : tool.includes("evolve_candidate_validate") ? "A designer is validating its candidate" : "A designer is checking its work";
+      detail = tool.includes("types_get") ? "A designer is reading the native layer contract"
+        : tool.includes("design_capabilities") ? "A designer is checking the available design language"
+        : tool.includes("icons_search") ? "A designer is browsing the icon catalog"
+        : tool.includes("assets_list") ? "A designer is reviewing reusable artwork"
+        : tool.includes("fonts_list") ? "A designer is checking available typefaces"
+        : tool.includes("design_audit") ? "A designer is checking fit, contrast, and usability"
+        : tool.includes("evolve_candidate_render") ? "A designer is inspecting its rendered proposal"
+        : tool.includes("evolve_candidate_validate") ? "A designer is validating its candidate"
+        : tool.includes("frame_screenshot") ? "A designer is inspecting the current reconstruction"
+        : "A designer is checking its work";
     } else if (itemType === "agent_message") detail = "Collecting the construction proposal";
     else if (itemType.includes("collab") || itemType.includes("agent")) detail = "Designers are working independently";
     if (detail) updateEvolveActivity(activityId, { detail });
@@ -667,7 +678,7 @@
     };
   }
 
-  async function runEvolveExec(role: "designer" | "director" | "correction", promptText: string, images: Array<{ name: string; dataUrl: string }>, outputSchema: JsonObject, activityId?: string): Promise<string> {
+  async function runEvolveExec(role: "designer" | "director" | "correction" | "reviewer", promptText: string, images: Array<{ name: string; dataUrl: string }>, outputSchema: JsonObject, activityId?: string): Promise<string> {
     const execId = crypto.randomUUID();
     if (activityId) evolveExecActivities.set(execId, activityId);
     try {
@@ -735,6 +746,9 @@
       const originalityIndex = proposedCriteria.findIndex((criterion) => criterion.id === "composition-originality");
       if (originalityIndex >= 0) proposedCriteria[originalityIndex] = { ...proposedCriteria[originalityIndex]!, requirement: ORIGINALITY_REQUIREMENT };
       else proposedCriteria.unshift({ id: "composition-originality", requirement: ORIGINALITY_REQUIREMENT, status: "unmet", evidence: "The empty reconstruction has not established an original composition yet." });
+      const resolutionIndex = proposedCriteria.findIndex((criterion) => criterion.id === "design-resolution");
+      if (resolutionIndex >= 0) proposedCriteria[resolutionIndex] = { ...proposedCriteria[resolutionIndex]!, requirement: RESOLUTION_REQUIREMENT };
+      else proposedCriteria.unshift({ id: "design-resolution", requirement: RESOLUTION_REQUIREMENT, status: "unmet", evidence: "The empty reconstruction has not established a resolved interface yet." });
     }
     const criteria = (frozen ?? proposedCriteria.slice(0, 6)).map((criterion) => {
       const returned = rawCriteria.find((candidate) => String(candidate.id) === criterion.id) ?? {};
@@ -901,7 +915,7 @@
     const title = comparing ? `Judging construction pass ${evolvePass}` : args.verification ? "Checking the reconstruction one more time" : "Planning the next construction pass";
     const criteria = args.frozen
       ? `Frozen direction criteria: ${JSON.stringify(args.frozen.map(({ id, requirement }) => ({ id, requirement })))}`
-      : "Create 2 to 6 stable criteria from the user's direction. Include required source content as a criterion. Include a criterion with id composition-originality that requires a visibly different information architecture, composition, component grouping, and interaction framing from the reference. Never make source layout, component reuse, section order, or styling a preservation criterion unless the user explicitly asks for it.";
+      : "Create 2 to 6 stable criteria from the user's direction. Include required source content as a criterion. Include composition-originality for a visibly different structure. Include design-resolution for deliberate hierarchy, spacing, typography, and recognizable affordances. Minimalism must simplify rather than turn controls into placeholder-like text or lines. Never make source layout, component reuse, section order, or styling a preservation criterion unless the user explicitly asks for it.";
     const images = [
       { name: "reference", dataUrl: args.referenceImage },
       { name: "current-draft", dataUrl: args.currentImage },
@@ -910,7 +924,7 @@
     const comparison = comparing
       ? `The second attached image is the current reconstruction. The third is the proposed next pass. In the preference field, image_1 means keep the current reconstruction and image_2 means accept the candidate. Choose image_2 only when the candidate materially advances this pass objective without breaking completed work. Reject a candidate that falls back toward the reference's component tree, section order, spatial arrangement, or visual framing. A partial reconstruction does not need to match the finished reference. Pass objective: ${JSON.stringify(args.objective)}`
       : "Review the current reconstruction against the frozen criteria. Set preference to not_applicable. If work remains, choose the smallest coherent visible nextObjective. It must cover one region, component, or design decision and include an observable completionSignal. Do not ask for a complete screen, several sections, or broad polish in one pass. The first objective for an empty draft must establish a new compositional thesis that is visibly unlike the reference.";
-    const promptText = `Act as the construction director for a first-principles redesign. Treat the reconstruction like a painting built layer by layer. The reference is a product brief, not a template. Extract what the interface means, what data it contains, and what jobs it must support. Require the reconstruction to invent a new information architecture and visual composition that expresses the user's direction. Reusing the source component hierarchy, section order, card arrangement, navigation pattern, or overall silhouette is a failure unless the user explicitly requests preservation. The reference frame is frozen and must not be edited. Do not reward pixel imitation or cosmetic restyling. Do not reject an early pass merely because later detail is unfinished. Judge progress at the scale of the stated objective. verdict=satisfied is valid only when every frozen criterion is visibly met, the composition-originality criterion is met, and no material work remains. Return only the required structured result.
+    const promptText = `Act as the construction director for a first-principles redesign. Treat the reconstruction like a painting built layer by layer. The reference is a product brief, not a template. Extract what the interface means, what data it contains, and what jobs it must support. Require the reconstruction to invent a new information architecture and visual composition that expresses the user's direction. Reusing the source component hierarchy, section order, card arrangement, navigation pattern, or overall silhouette is a failure unless the user explicitly requests preservation. Minimal does not mean empty, unfinished, or reduced to labels and divider lines. Require deliberate hierarchy, spacing rhythm, typography, recognizable controls, and clear interaction states. You may use design_capabilities, icons_search, assets_list, fonts_list, and design_audit when material or deterministic evidence would improve the next objective. Every available tool is read-only. The reference frame is frozen and must not be edited. Do not reward pixel imitation or cosmetic restyling. Do not reject an early pass merely because later detail is unfinished. Judge progress at the scale of the stated objective. verdict=satisfied is valid only when every frozen criterion is visibly met, composition-originality and design-resolution are met, and no material work remains. Return only the required structured result.
 
 Attached images are REFERENCE, CURRENT DRAFT${args.candidateImage ? ", and CANDIDATE" : ""}, in that order.
 User direction: ${args.direction}
@@ -955,9 +969,11 @@ Current reconstruction layers: ${JSON.stringify(args.draftContext)}`;
   }): string {
     const sourceFrame = object(object(args.sourceContext).nodes)[args.sourceFrameId];
     return `Candidate ID: ${args.candidateId}
+Evolution run ID: ${evolveRunId}
 User direction: ${args.direction}
 Frozen reference frame ID: ${args.sourceFrameId}
 Writable reconstruction frame ID: ${args.draftFrameId}
+Attached image order: 1. frozen reference, 2. current reconstruction
 Reference frame dimensions: ${String(object(sourceFrame).width ?? "unknown")} × ${String(object(sourceFrame).height ?? "unknown")}
 Pass objective: ${JSON.stringify(args.objective)}
 Direction criteria: ${JSON.stringify(args.assessment.criteria.map(({ id, requirement, status }) => ({ id, requirement, status })))}
@@ -980,9 +996,11 @@ Current reconstruction layers: ${JSON.stringify(args.draftContext)}`;
   }): Promise<EvolveProposal> {
     const candidateId = `P${evolvePass}`;
     const brief = designerBrief({ ...args, candidateId });
-    const promptText = `Act as the sole designer advancing a first-principles reconstruction. Work like a painter applying one layer at a time. This pass adds one deliberate layer of the design. Do not paint the whole picture at once. Let the user see the composition emerge through separate accepted passes. Do not spawn subagents. Call types_get before editing. Treat the reference as a content inventory and product brief, never as a component library. Invent a new information architecture, component grammar, spatial composition, hierarchy, and interaction framing for the user's direction. Do not reuse or trace the source component boundaries, nesting, section order, card arrangement, navigation pattern, coordinates, styling, or overall silhouette. Preserve exact source text and assets only when the product meaning requires them. New layer names and IDs should describe the invented concept rather than mirror source layers.
+    const promptText = `Act as the sole designer advancing a first-principles reconstruction. Work like a painter applying one layer at a time. This pass adds one deliberate layer of the design. Do not paint the whole picture at once. Let the user see the composition emerge through separate accepted passes. Do not spawn subagents. Call types_get and design_capabilities before editing. Use icons_search before creating an icon, assets_list before reusing artwork, fonts_list when choosing typography, and design_audit when the current frame may contain fit, contrast, or target-size problems. Treat the reference as a content inventory and product brief, never as a component library. Invent a new information architecture, component grammar, spatial composition, hierarchy, and interaction framing for the user's direction. Do not reuse or trace the source component boundaries, nesting, section order, card arrangement, navigation pattern, coordinates, styling, or overall silhouette. Preserve exact source text and assets only when the product meaning requires them. New layer names and IDs should describe the invented concept rather than mirror source layers.
 
-Make one small, coherent construction pass that fulfills only the supplied objective and its completion signal. You may create, rewrite, restyle, resize, reorder, reparent, or delete anything inside the writable reconstruction frame. Keep that frame present and never touch the reference or any layer outside the reconstruction. Use at most five operations and create at most four layers. Do not complete another region early. Leave later work visibly unfinished for later passes. Return absolute values for the current reconstruction. At least one operation array must contain a change. Never return an empty pass.
+Make one coherent construction pass that fulfills the supplied objective and its completion signal. Use as many operations and layers as the objective genuinely requires. You may create, rewrite, restyle, resize, reorder, reparent, or delete anything inside the writable reconstruction frame. Keep that frame present and never touch the reference or any layer outside the reconstruction. Do not complete unrelated regions early. Leave later work visibly unfinished for later passes. Return absolute values for the current reconstruction. At least one operation array must contain a change. Never return an empty pass.
+
+You may call evolve_candidate_validate and evolve_candidate_render for an early visual check. After you return, Figmaboy will always render the complete proposal in an isolated canvas and send that exact image and audit through a dedicated visual-review turn before comparison or commit.
 
 Return the operations in the required structured format. Figmaboy will decode and validate them before rendering. Convert updates to {kind:"update",id,patch:JSON.parse(patchJson)}, creates to {kind:"create",parentId,node:JSON.parse(nodeJson),index when non-negative}, reorders to {kind:"reorder",parentId,ids}, deletes to {kind:"delete",ids}, and reparents to {kind:"reparent",parentId,ids,index when non-negative}.
 
@@ -1029,7 +1047,7 @@ ${brief}`;
       try {
         const correction = `${brief}
 
-Correct the same construction pass. Do not start a different design direction and do not retreat toward the reference layout as a shortcut. Call types_get, then repair the proposal using the exact error below. Preserve its title, hypothesis, mechanism, intended tradeoff, and pass objective when they are usable. The corrected proposal must keep the invented information architecture and component grammar. Use at most five operations and create at most four layers. At least one operation array must contain a change. Figmaboy will validate the complete replacement before rendering. Return only the required structured proposal.
+Correct the same construction pass. Do not start a different design direction and do not retreat toward the reference layout as a shortcut. Call types_get, then repair the proposal using the exact error below. Preserve its title, hypothesis, mechanism, intended tradeoff, and pass objective when they are usable. The corrected proposal must keep the invented information architecture and component grammar. Use as many operations and layers as the objective genuinely requires. At least one operation array must contain a change. Figmaboy will render the complete correction in an isolated canvas and send the exact result through visual review before comparison or commit.
 
 EXACT VALIDATION OR RENDER ERROR
 ${errorMessage(failure).slice(0, 1_200)}
@@ -1051,6 +1069,58 @@ ${previousText.slice(0, 20_000)}`;
       }
     }
     throw failure;
+  }
+
+  function canonicalJson(value: unknown): string {
+    if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+    if (value && typeof value === "object") {
+      return `{${Object.entries(value as JsonObject).sort(([left], [right]) => left.localeCompare(right)).map(([key, child]) => `${JSON.stringify(key)}:${canonicalJson(child)}`).join(",")}}`;
+    }
+    return JSON.stringify(value) ?? "null";
+  }
+
+  async function reviewRenderedProposal(args: {
+    direction: string;
+    objective: EvolveObjective;
+    proposal: EvolveProposal;
+    referenceImage: string;
+    currentImage: string;
+    rendered: EvolveRenderedCandidate;
+  }): Promise<EvolveProposal> {
+    const activityId = beginEvolveActivity(`Inspecting pass ${evolvePass}`, "The designer is reviewing the exact rendered candidate");
+    const promptText = `Inspect the three attached images before answering. They are, in order: 1. frozen reference, 2. current reconstruction, 3. the exact rendered candidate produced by your proposal. The third image is authoritative. Do not infer its appearance from operations.
+
+Review the candidate at actual visual-result level: composition, hierarchy, spacing rhythm, typography, legibility, clipping, recognizable affordances, states, and consistency with this one-pass objective. Minimalism is not permission to leave placeholder-like labels, lines, or unresolved controls. Compare the candidate against the current reconstruction, not against an imagined finished product.
+
+If the rendered candidate already executes the objective deliberately, reproduce the complete proposal exactly. If it has a visible problem, return one complete replacement proposal that corrects that problem while preserving the candidate ID, objective, completed work, and strict pass limits. Do not broaden the pass or retreat toward the reference layout.
+
+User direction: ${args.direction}
+Pass objective: ${JSON.stringify(args.objective)}
+Candidate ID: ${args.proposal.candidateId}
+Deterministic candidate audit: ${JSON.stringify(args.rendered.audit)}
+Rendered proposal to preserve or revise:
+${args.proposal.rawText.slice(0, 24_000)}`;
+    for (let attempt = 0; attempt < 2 && !evolveCancelled; attempt += 1) {
+      try {
+        const text = await runEvolveExec("reviewer", promptText, [
+          { name: "reference", dataUrl: args.referenceImage },
+          { name: "current-draft", dataUrl: args.currentImage },
+          { name: "candidate", dataUrl: args.rendered.image },
+        ], designerSchema(), activityId);
+        const reviewed = designerCandidate(parseAgentJson(text));
+        const changed = canonicalJson(reviewed.operations) !== canonicalJson(args.proposal.operations);
+        finishEvolveActivity(activityId, "complete", changed ? "The visual review revised the proposal" : "The visual review approved the rendered proposal", [reviewed.summary]);
+        return { ...reviewed, rawText: text, baseInput: args.proposal.baseInput, candidateId: args.proposal.candidateId };
+      } catch (cause) {
+        if (!retryableEvolveError(cause) || evolveCancelled || attempt >= 1) {
+          finishEvolveActivity(activityId, "discarded", errorMessage(cause));
+          throw cause;
+        }
+        finishEvolveActivity(activityId, "recovering", "Visual review was interrupted. Trying again with the same rendered candidate.", [`Attempt ${attempt + 1} ended: ${errorMessage(cause)}`]);
+        await waitForRetry(attempt + 1);
+      }
+    }
+    throw new Error("Evolution stopped");
   }
 
   function candidateAccepted(assessment: EvolveAssessment): boolean {
@@ -1303,6 +1373,7 @@ ${sections.join("\n\n")}`;
               image: screenshotDataUrl(result),
               thumbnail: thumbnailDataUrl(result),
               context: frameContext(result.document, draftFrameId),
+              audit: object(result.audit),
             };
             updateEvolveActivity(renderActivity, { image: rendered.thumbnail });
             finishEvolveActivity(renderActivity, "complete", "The proposed pass rendered in an isolated canvas", [proposal.hypothesis, `Mechanism: ${proposal.mechanism}`]);
@@ -1318,6 +1389,45 @@ ${sections.join("\n\n")}`;
           }
         }
         if (evolveCancelled) return;
+
+        const reviewedProposal = await reviewRenderedProposal({
+          direction,
+          objective,
+          proposal,
+          referenceImage,
+          currentImage,
+          rendered,
+        });
+        const reviewChangedOperations = canonicalJson(reviewedProposal.operations) !== canonicalJson(proposal.operations);
+        proposal = reviewedProposal;
+        generationRecord.candidate = journalCandidate(proposal, "pending", reviewChangedOperations ? "Visual review revised the pass; rendering the revision" : "Visual review approved the rendered pass");
+        if (reviewChangedOperations) {
+          const revisionActivity = beginEvolveActivity(`Rendering reviewed pass ${evolvePass}`);
+          const validation = await callEditor("evolve_candidate_validate", {
+            runId: evolveRunId,
+            candidateId: proposal.candidateId,
+            operations: proposal.operations,
+          });
+          const validationToken = typeof validation.validationToken === "string" ? validation.validationToken : "";
+          if (!validationToken) throw new Error("Figmaboy validation returned no candidate receipt");
+          const result = await callEditor("evolve_candidate_render", {
+            runId: evolveRunId,
+            candidateId: proposal.candidateId,
+            operations: proposal.operations,
+            validationToken,
+          });
+          rendered = {
+            proposal,
+            image: screenshotDataUrl(result),
+            thumbnail: thumbnailDataUrl(result),
+            context: frameContext(result.document, draftFrameId),
+            audit: object(result.audit),
+          };
+          updateEvolveActivity(revisionActivity, { image: rendered.thumbnail });
+          finishEvolveActivity(revisionActivity, "complete", "The visually reviewed revision rendered in the isolated canvas");
+        } else {
+          rendered.proposal = proposal;
+        }
 
         const fingerprint = renderFingerprint(rendered.image);
         if (renderHistory.has(fingerprint)) {
@@ -1386,6 +1496,7 @@ ${sections.join("\n\n")}`;
             image: screenshotDataUrl(committed),
             thumbnail: thumbnailDataUrl(committed),
             context: frameContext(committed.document, draftFrameId),
+            audit: object(committed.audit),
           };
           const rebaseAssessment = await compareRenderedCandidate({
             direction,

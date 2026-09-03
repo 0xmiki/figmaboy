@@ -115,7 +115,7 @@ if (!Array.isArray(listed.tools) || listed.tools.length === 0) {
   throw new Error("The sidecar returned no MCP tools");
 }
 const toolNames = new Set(listed.tools.map((tool) => tool.name));
-for (const name of ["designs_list", "design_context_get", "extension_stage"]) {
+for (const name of ["designs_list", "design_context_get", "extension_stage", "icons_search", "assets_list", "fonts_list", "design_audit"]) {
   if (!toolNames.has(name)) throw new Error(`The sidecar did not expose ${name}`);
 }
 
@@ -123,7 +123,9 @@ const capabilities = await request(5, "tools/call", { name: "design_capabilities
 if (
   capabilities.isError ||
   capabilities.structuredContent?.extensions?.tool !== "extension_stage" ||
-  capabilities.structuredContent?.extensions?.example?.format !== "figmaboy-extension"
+  capabilities.structuredContent?.extensions?.example?.format !== "figmaboy-extension" ||
+  capabilities.structuredContent?.materials?.icons?.tool !== "icons_search" ||
+  capabilities.structuredContent?.audit?.tool !== "design_audit"
 ) {
   throw new Error(`Extension authoring contract is unavailable: ${JSON.stringify(capabilities)}`);
 }

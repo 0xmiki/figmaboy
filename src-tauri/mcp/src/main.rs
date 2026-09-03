@@ -152,6 +152,22 @@ struct DesignContextParams {
 
 #[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct CatalogSearchParams {
+    /// Optional case-insensitive search terms matched against icon names, asset IDs, or layer names.
+    query: Option<String>,
+    /// Maximum results from 1 through 24. Defaults to 12.
+    limit: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DesignAuditParams {
+    /// Frame to inspect. Omit to use the single selected frame.
+    frame_id: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct IdsParams {
     /// Node IDs. Omit for the current selection where supported.
     #[serde(default)]
@@ -364,6 +380,41 @@ fn image_result(mut value: Value) -> CallToolResult {
     result
 }
 
+fn catalog_result(mut value: Value, collection: &str, label_key: &str) -> CallToolResult {
+    let mut previews = Vec::new();
+    if let Some(items) = value.get_mut(collection).and_then(Value::as_array_mut) {
+        for (index, item) in items.iter_mut().enumerate() {
+            let Some(object) = item.as_object_mut() else {
+                continue;
+            };
+            let image = object
+                .remove("previewBase64")
+                .and_then(|value| value.as_str().map(str::to_owned));
+            let mime = object
+                .remove("previewMimeType")
+                .and_then(|value| value.as_str().map(str::to_owned))
+                .unwrap_or_else(|| "image/png".into());
+            let label = object
+                .get(label_key)
+                .and_then(Value::as_str)
+                .unwrap_or("item")
+                .to_owned();
+            if let Some(image) = image {
+                object.insert("previewIndex".into(), Value::from(index));
+                previews.push((index, label, image, mime));
+            }
+        }
+    }
+    let mut result = CallToolResult::structured(value);
+    for (index, label, image, mime) in previews {
+        result
+            .content
+            .push(ContentBlock::text(format!("Preview {index}: {label}")));
+        result.content.push(ContentBlock::image(image, mime));
+    }
+    result
+}
+
 fn offline_context_result(mut context: OfflineContext) -> CallToolResult {
     let image = context
         .preview_data_url
@@ -522,6 +573,12 @@ impl FigmaboyMcp {
                 "backgroundTip": "For a hero/background, set parentId, placement=fill-parent, fit=cover, and index=0.",
                 "logoTip": "For a logo or cutout, use a transparent PNG, placement=natural, fit=contain, and explicit x/y plus one dimension."
             },
+            "materials": {
+                "icons": { "tool": "icons_search", "rule": "Search first and use the returned exact Phosphor iconName." },
+                "assets": { "tool": "assets_list", "rule": "Inspect IDs, dimensions, usage, and previews before reusing existing artwork." },
+                "fonts": { "tool": "fonts_list", "rule": "Choose from fonts already used, loaded by Figmaboy, or portable system families." }
+            },
+            "audit": { "tool": "design_audit", "checks": ["clipping", "outside-parent geometry", "fixed-box text overflow", "solid-color text contrast", "named target size"] },
             "text": {
                 "content": ["text", "fontFamily", "fontSize", "fontWeight", "fontStyle"],
                 "fontStyle": ["normal", "italic"],
@@ -545,6 +602,63 @@ impl FigmaboyMcp {
             "extensions": extension_authoring_contract(),
             "workflow": ["inspect types/capabilities", "create semantic parents", "create children with parentId", "center and round surfaces", "frame_screenshot", "visually inspect", "refine", "save"]
         }))
+    }
+
+    #[tool(
+        description = "Search the Phosphor icon catalog by plain terms such as arrow left, calendar, microphone, or settings. Returns exact iconName values and labeled visual previews. Read-only."
+    )]
+    async fn icons_search(
+        &self,
+        Parameters(params): Parameters<CatalogSearchParams>,
+    ) -> CallToolResult {
+        match self
+            .bridge
+            .call(
+                "icons_search",
+                serde_json::to_value(params).unwrap_or_else(|_| json!({})),
+            )
+            .await
+        {
+            Ok(value) => catalog_result(value, "icons", "name"),
+            Err(error) => tool_error(error),
+        }
+    }
+
+    #[tool(
+        description = "List image assets used by the open design, optionally filtered by asset ID or layer name. Returns reusable assetId values, natural dimensions, usage locations, and labeled visual previews. Read-only."
+    )]
+    async fn assets_list(
+        &self,
+        Parameters(params): Parameters<CatalogSearchParams>,
+    ) -> CallToolResult {
+        match self
+            .bridge
+            .call(
+                "assets_list",
+                serde_json::to_value(params).unwrap_or_else(|_| json!({})),
+            )
+            .await
+        {
+            Ok(value) => catalog_result(value, "assets", "id"),
+            Err(error) => tool_error(error),
+        }
+    }
+
+    #[tool(
+        description = "List font families already used in the open design plus font faces loaded by Figmaboy and portable system families. Read-only."
+    )]
+    async fn fonts_list(&self) -> CallToolResult {
+        self.call("fonts_list", json!({})).await
+    }
+
+    #[tool(
+        description = "Audit one frame for clipped or out-of-bounds layers, fixed-box text overflow, low text contrast, and undersized named controls. Returns deterministic errors and warnings without changing the design."
+    )]
+    async fn design_audit(
+        &self,
+        Parameters(params): Parameters<DesignAuditParams>,
+    ) -> CallToolResult {
+        self.call("design_audit", params).await
     }
 
     #[tool(
@@ -632,7 +746,7 @@ impl FigmaboyMcp {
     }
 
     #[tool(
-        description = "Validate and render one isolated evolution candidate without changing the live canvas, selection, undo history, or autosave state."
+        description = "Render one previously validated evolution candidate without changing the live canvas, selection, undo history, or autosave state. Returns the candidate image, document, and deterministic design audit so the designer can inspect and refine its work before submission."
     )]
     async fn evolve_candidate_render(
         &self,

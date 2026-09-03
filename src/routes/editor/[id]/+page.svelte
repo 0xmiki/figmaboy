@@ -23,10 +23,11 @@
   import Inspector from "$lib/editor/Inspector.svelte";
   import FrameFullscreenPreview from "$lib/editor/FrameFullscreenPreview.svelte";
   import { stageExtensionManifest } from "$lib/extensions/staging";
+  import { ensureIconCatalog, iconData, searchIcons } from "$lib/icon-catalog";
   import LeftPanel from "$lib/editor/LeftPanel.svelte";
   import PrototypePreview from "$lib/editor/PrototypePreview.svelte";
   import Toolbar from "$lib/editor/Toolbar.svelte";
-  import { applyExternalOperations, centerNodes, nodeGeometry, placeImageNode, setBorderRadius, validateEvolutionOperations, validateEvolutionPassSize } from "$lib/editor/editor-rpc";
+  import { applyExternalOperations, auditDesign, centerNodes, nodeGeometry, placeImageNode, setBorderRadius, validateEvolutionOperations } from "$lib/editor/editor-rpc";
   import { EvolveCandidateStore, type EvolveCandidate } from "$lib/editor/evolve-candidates";
 
   const repo = repository();
@@ -627,6 +628,37 @@
     return { mimeType, imageBase64: dataUrl.slice(dataUrl.indexOf(",") + 1), width: rendered.width, height: rendered.height, bounds: rendered.bounds, ids, scale: rendered.scale };
   }
 
+  async function rasterPreview(source: string, maxDimension = 160): Promise<{ previewBase64: string; previewMimeType: "image/png"; width: number; height: number }> {
+    const image = new Image();
+    image.decoding = "async";
+    await new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve();
+      image.onerror = () => reject(new Error("Could not render catalog preview"));
+      image.src = source;
+    });
+    const scale = Math.min(1, maxDimension / Math.max(1, image.naturalWidth, image.naturalHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Could not create catalog preview");
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    const dataUrl = canvas.toDataURL("image/png");
+    return { previewBase64: dataUrl.slice(dataUrl.indexOf(",") + 1), previewMimeType: "image/png", width: image.naturalWidth, height: image.naturalHeight };
+  }
+
+  async function iconPreview(name: string): Promise<{ previewBase64: string; previewMimeType: "image/png" }> {
+    const icon = iconData(name);
+    if (!icon) throw new Error(`Unknown icon ${name}`);
+    const source = URL.createObjectURL(new Blob([`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${icon.width} ${icon.height}" width="64" height="64" color="#111111">${icon.body}</svg>`], { type: "image/svg+xml" }));
+    try {
+      const preview = await rasterPreview(source, 64);
+      return { previewBase64: preview.previewBase64, previewMimeType: preview.previewMimeType };
+    } finally {
+      URL.revokeObjectURL(source);
+    }
+  }
+
   function evolvePreviewOwner(): boolean {
     return session?.externalPreviewSource?.kind === "codex" && session.externalPreviewSource.id.startsWith("evolve:");
   }
@@ -649,6 +681,42 @@
       canvas: { clientRect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height }, screenOrigin: { x: window.screenX + rect.x, y: window.screenY + rect.y }, devicePixelRatio: window.devicePixelRatio },
     };
     if (request.method === "document_get") return { changeToken: session.changeToken, pageEpoch: session.pageEpoch, document: cloneDocument(session.document) };
+    if (request.method === "icons_search") {
+      await ensureIconCatalog();
+      const query = typeof params.query === "string" ? params.query : "";
+      const limit = Math.max(1, Math.min(24, Number(params.limit) || 12));
+      const names = searchIcons(query, limit);
+      const icons = await Promise.all(names.map(async (name, previewIndex) => ({ name, previewIndex, ...(await iconPreview(name)) })));
+      return { query, count: icons.length, icons };
+    }
+    if (request.method === "assets_list") {
+      const query = typeof params.query === "string" ? params.query.trim().toLowerCase() : "";
+      const limit = Math.max(1, Math.min(24, Number(params.limit) || 12));
+      const usages = new Map<string, Array<{ nodeId: string; nodeName: string; width: number; height: number }>>();
+      for (const node of Object.values(session.document.nodes)) {
+        if (node.type !== "image") continue;
+        usages.set(node.assetId, [...(usages.get(node.assetId) ?? []), { nodeId: node.id, nodeName: node.name, width: node.width, height: node.height }]);
+      }
+      const candidates = [...usages.entries()].filter(([id, nodes]) => !query || id.toLowerCase().includes(query) || nodes.some((node) => node.nodeName.toLowerCase().includes(query))).slice(0, limit);
+      const assets = await Promise.all(candidates.map(async ([id, nodes], previewIndex) => {
+        const source = session!.imageSources[id] ?? await repo.readAsset(id);
+        const preview = await rasterPreview(source);
+        return { id, mime: source.slice(5, source.indexOf(";")) || "image/png", width: preview.width, height: preview.height, usages: nodes, previewIndex, previewBase64: preview.previewBase64, previewMimeType: preview.previewMimeType };
+      }));
+      return { query, count: assets.length, assets };
+    }
+    if (request.method === "fonts_list") {
+      const used = [...new Set(Object.values(session.document.nodes).filter((node) => node.type === "text").map((node) => node.fontFamily))].sort();
+      const loaded = new Set<string>();
+      document.fonts?.forEach((font) => loaded.add(font.family.replace(/^['"]|['"]$/g, "")));
+      ["system-ui", "sans-serif", "serif", "monospace", "Arial", "Helvetica", "Georgia", "Times New Roman", "Courier New"].forEach((family) => loaded.add(family));
+      return { used, available: [...loaded].sort(), note: "Available includes fonts loaded by Figmaboy and portable system families. Other locally installed fonts may work when named exactly." };
+    }
+    if (request.method === "design_audit") {
+      const requested = typeof params.frameId === "string" ? params.frameId : "";
+      const selectedFrame = session.selectedNodes.length === 1 && session.selectedNodes[0]?.type === "frame" ? session.selectedNodes[0].id : "";
+      return auditDesign(session.document, requested || selectedFrame);
+    }
     if (request.method === "nodes_get") {
       const ids = Array.isArray(params.ids) ? params.ids.filter((id): id is string => typeof id === "string") : Object.keys(session.document.nodes);
       const type = typeof params.type === "string" ? params.type : null;
@@ -714,7 +782,9 @@
       if (!validationToken) throw new Error("EVOLVE_VALIDATION_REQUIRED: validate the candidate before rendering it");
       const candidate = evolveCandidates.candidate(runId, candidateId);
       if (candidate.validationToken !== validationToken || canonicalJson(candidate.operations) !== canonicalJson(operations)) throw new Error("EVOLVE_VALIDATION_REQUIRED: candidate operations changed after validation");
-      return { ...(await queueEvolveCandidateRender(candidate)), runId, candidateId, frameId: run.frameId, baseChangeToken: run.baseContentRevision, renderedChangeToken: candidate.renderedContentRevision, document: candidate.document };
+      const rendered = await queueEvolveCandidateRender(candidate);
+      const audit = auditDesign(candidate.document, run.frameId);
+      return { ...rendered, audit, runId, candidateId, frameId: run.frameId, baseChangeToken: run.baseContentRevision, renderedChangeToken: candidate.renderedContentRevision, document: candidate.document };
     }
     if (request.method === "evolve_candidate_validate") {
       const runId = typeof params.runId === "string" ? params.runId : "";
@@ -723,7 +793,6 @@
       if (run.fileId !== session.file.id || run.pageId !== session.page.id || run.pageEpoch !== session.pageEpoch) throw new Error("EVOLVE_PAGE_CHANGED: the evolution page is no longer active");
       if (!candidateId) throw new Error("EVOLVE_CANDIDATE_MISSING: candidateId is required");
       const operations = Array.isArray(params.operations) ? params.operations : [];
-      validateEvolutionPassSize(operations);
       const candidate = evolveCandidates.materialize(runId, candidateId, operations);
       return { valid: true, runId, candidateId, frameId: run.frameId, validationToken: candidate.validationToken, createdIds: candidate.createdIds, operationCount: candidate.operations.length };
     }

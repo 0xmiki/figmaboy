@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { emptyDocument } from "$lib/domain";
 import type { OpenedFile } from "$lib/domain";
 import { EditorSession } from "$lib/editor/editor.svelte";
-import { applyExternalOperations, centerNodes, placeImageNode, setBorderRadius, validateEvolutionOperations, validateEvolutionPassSize } from "$lib/editor/editor-rpc";
+import { applyExternalOperations, auditDesign, centerNodes, placeImageNode, setBorderRadius, validateEvolutionOperations } from "$lib/editor/editor-rpc";
 
 function metadata() {
   const timestamp = new Date(0).toISOString();
@@ -61,10 +61,18 @@ describe("editor RPC operations", () => {
     expect(() => validateEvolutionOperations(editor, "screen", [{ kind: "delete", ids: ["screen"] }])).toThrow("keep the target frame");
   });
 
-  it("keeps reconstruction passes visibly incremental", () => {
-    expect(() => validateEvolutionPassSize(Array.from({ length: 5 }, (_, index) => ({ kind: "update", id: `node-${index}`, patch: { x: index } })))).not.toThrow();
-    expect(() => validateEvolutionPassSize(Array.from({ length: 6 }, (_, index) => ({ kind: "update", id: `node-${index}`, patch: { x: index } })))).toThrow("use at most 5 operations");
-    expect(() => validateEvolutionPassSize(Array.from({ length: 5 }, (_, index) => ({ kind: "create", parentId: "frame", node: { id: `node-${index}` } })))).toThrow("create at most 4 layers");
+  it("audits clipping, fixed text overflow, contrast, and target size without changing the document", () => {
+    const editor = session();
+    applyExternalOperations(editor, { operations: [
+      { kind: "create", node: { id: "screen", type: "frame", name: "Screen", width: 200, height: 120, fill: { type: "solid", color: "#ffffff", opacity: 1 } } },
+      { kind: "create", parentId: "screen", node: { id: "copy", type: "text", name: "Quiet copy", x: 12, y: 12, width: 60, height: 12, text: "This text cannot fit in its fixed box", textAutoResize: "none", fill: { type: "solid", color: "#eeeeee", opacity: 1 } } },
+      { kind: "create", parentId: "screen", node: { id: "button", type: "frame", name: "Send button", x: 190, y: 105, width: 20, height: 20 } },
+    ] });
+    const before = JSON.parse(JSON.stringify(editor.document));
+    const result = auditDesign(editor.document, "screen");
+    expect(result.issues.map((issue) => issue.code)).toEqual(expect.arrayContaining(["text-overflow", "low-contrast", "clipped", "small-target"]));
+    expect(result.errors).toBeGreaterThanOrEqual(2);
+    expect(editor.document).toEqual(before);
   });
 
   it("accepts rich native styling inside a semantic component tree", () => {

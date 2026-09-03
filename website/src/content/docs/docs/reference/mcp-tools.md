@@ -23,6 +23,10 @@ These tools require an open design.
 | `editor_status` | Active file/page, save state, selection, change token, viewport, and canvas geometry. |
 | `design_capabilities` | Supported node/style capabilities and required semantic hierarchy conventions. |
 | `types_get` | Complete TypeScript contract for every node, style, operation, and tool. |
+| `icons_search` | Search Phosphor icons and return exact names with visual previews. |
+| `assets_list` | List reusable image assets in the open design with dimensions, usage, and previews. |
+| `fonts_list` | List fonts used by the design, loaded by Figmaboy, and portable system families. |
+| `design_audit` | Check a frame for clipping, overflow, contrast, and undersized named controls. |
 | `document_get` | Complete open page document, ordered layer tree, and change token. |
 | `nodes_get` | Fetch exact node records by ID or filter all nodes by type/name. |
 | `geometry_get` | Local, world, canvas-client, and rotated-corner geometry. |
@@ -54,10 +58,13 @@ These tools require an open design.
 
 Codex should follow this order:
 
-1. Inspect capabilities, types when needed, and the current document.
+1. Inspect capabilities, available materials, types when needed, and the current document.
 2. Create named parent containers before their children.
 3. Use one top-level frame per screen and semantic section/component groups.
 4. Remember that child coordinates are parent-local.
 5. Apply related changes atomically.
-6. Capture and inspect a complete frame screenshot.
-7. Refine visible issues and save.
+6. Run `design_audit` and resolve useful findings.
+7. Capture and inspect a complete frame screenshot.
+8. Refine visible issues and save.
+
+During `/evolve`, designers can also use `evolve_candidate_validate` and `evolve_candidate_render` for early checks. These tools operate on an isolated candidate rather than the live canvas. Whether or not the designer calls them, Figmaboy renders every returned proposal and sends the exact image and audit through a dedicated visual-review turn before director review.

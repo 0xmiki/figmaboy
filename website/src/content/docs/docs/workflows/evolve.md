@@ -13,18 +13,22 @@ Figmaboy leaves the selected frame untouched and creates an empty frame of the s
 
 The director keeps structural originality as an acceptance criterion throughout the run. It rejects cosmetic restyles and proposals that reproduce the source component tree, section order, card arrangement, navigation pattern, or overall silhouette. Figmaboy preserves source structure only when your direction explicitly asks for it.
 
+The director also keeps design resolution as a fixed criterion. A request for minimalism may remove noise, but it cannot replace controls with placeholder-like labels and divider lines or stop before hierarchy, spacing, typography, and interaction states feel deliberate.
+
 ## What happens during a pass
 
 1. Figmaboy freezes the selected frame as the reference.
 2. It creates and selects an empty sibling frame named as an evolution draft.
 3. A director chooses one small construction objective with a visible completion condition.
-4. One designer builds that pass inside an isolated candidate document. A pass may contain at most five operations and four new layers.
+4. One designer builds that pass inside an isolated candidate document, using as many operations and layers as the objective requires.
 5. The director compares the proposal with the current reconstruction, its objective, and the requirement to remain structurally distinct from the reference.
 6. An accepted pass appears on the sibling frame and becomes the base for the next pass.
 
 The loop finishes when two independent reviews agree that the requested direction has been reached. It has no fixed pass count. Select **Stop** whenever you want to keep the accepted progress and finish early.
 
-The per-pass budget is intentional. Think of the reconstruction as a painting built layer by layer. Each pass adds one region, component, or design decision, pauses for inspection, and leaves the next layer for later. You can watch the composition emerge while each review pays attention to local detail.
+Think of the reconstruction as a painting built layer by layer. Each pass follows one objective, pauses for inspection, and leaves unrelated work for later. This is direction rather than a fixed operation or layer limit: a coherent objective can use the full structure it needs.
+
+Designers can search the Phosphor icon catalog, inspect reusable image assets and their previews, check available fonts, and run deterministic layout and accessibility checks. Figmaboy renders every complete proposal in an isolated candidate canvas and starts a dedicated visual-review turn with the reference, current reconstruction, exact candidate image, and audit. That reviewer can revise weak work before the director compares it or anything reaches the visible reconstruction.
 
 ## What stays safe
 

@@ -22,6 +22,11 @@ type CommandResult<T> = Result<T, String>;
 type PendingResponse = oneshot::Sender<CommandResult<Value>>;
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(45);
+const EVOLVE_DIRECTOR_TOOLS_CONFIG: &str = "mcp_servers.figmaboy.enabled_tools=[\"types_get\",\"design_capabilities\",\"icons_search\",\"assets_list\",\"fonts_list\",\"design_audit\",\"frame_screenshot\"]";
+const EVOLVE_DESIGNER_TOOLS_CONFIG: &str = "mcp_servers.figmaboy.enabled_tools=[\"types_get\",\"design_capabilities\",\"icons_search\",\"assets_list\",\"fonts_list\",\"design_audit\",\"frame_screenshot\",\"evolve_candidate_validate\",\"evolve_candidate_render\"]";
+const EVOLVE_DIRECTOR_INSTRUCTIONS: &str = "You are an isolated Figmaboy evolution director. Visually inspect every attached frame image before judging or planning. The request states the image order. Treat the first image as the frozen reference and the second as the current reconstruction; a third image, when present, is the candidate. Use the reference for product meaning and content, not as a layout template. The available Figmaboy MCP tools are read-only. Use design_capabilities, icons_search, assets_list, fonts_list, or design_audit when they provide material evidence. Never mutate the canvas. Return only the required structured output.";
+const EVOLVE_DESIGNER_INSTRUCTIONS: &str = "You are an isolated Figmaboy evolution designer. Visually inspect every attached frame image before proposing changes. The first image is the frozen reference and the second is the current reconstruction. The reference supplies product meaning and content, not reusable layout. Call types_get and design_capabilities before composing the proposal. Use icons_search before creating an icon, assets_list before reusing artwork, fonts_list when choosing typography, and design_audit when fit, contrast, overflow, or target size may matter. Candidate validation and rendering tools are available for early visual checks when useful, but Figmaboy will always render the returned proposal and send the exact result through a separate visual-review turn. These tools change only an isolated candidate, never the visible canvas. Never claim an image or tool is unavailable without attempting to inspect or call it. Return only the required structured output.";
+const EVOLVE_REVIEWER_INSTRUCTIONS: &str = "You are the visual review pass for a Figmaboy evolution designer. Three images are attached in this exact order: frozen reference, current reconstruction, and the exact rendered candidate. Inspect the third image closely before answering. Compare it with the stated pass objective, the current reconstruction, and the supplied deterministic audit. If the candidate is already deliberate and correct, return its complete proposal unchanged. If it is weak, clipped, illegible, under-resolved, or inconsistent with the objective, return one complete revised proposal that fixes those visible problems without expanding the pass scope. Preserve the candidate ID. Return only the required structured output.";
 
 pub struct CodexState {
     process: Arc<Mutex<Option<CodexProcess>>>,
@@ -126,6 +131,26 @@ fn toml_string(value: &Path) -> String {
         .replace('\\', "\\\\")
         .replace('"', "\\\"");
     format!("\"{escaped}\"")
+}
+
+fn toml_text(value: &str) -> String {
+    serde_json::to_string(value).unwrap_or_else(|_| "\"\"".into())
+}
+
+fn evolve_developer_instructions(role: &str) -> &'static str {
+    match role {
+        "director" => EVOLVE_DIRECTOR_INSTRUCTIONS,
+        "reviewer" => EVOLVE_REVIEWER_INSTRUCTIONS,
+        _ => EVOLVE_DESIGNER_INSTRUCTIONS,
+    }
+}
+
+fn evolve_tools_config(role: &str) -> &'static str {
+    if matches!(role, "director" | "reviewer") {
+        EVOLVE_DIRECTOR_TOOLS_CONFIG
+    } else {
+        EVOLVE_DESIGNER_TOOLS_CONFIG
+    }
 }
 
 fn executable_in_path(name: &str) -> Option<PathBuf> {
@@ -672,7 +697,7 @@ fn run_codex_evolve_exec(
     let run_id = safe_workspace_id(&request.run_id)?;
     if !matches!(
         request.role.as_str(),
-        "designer" | "director" | "correction"
+        "designer" | "director" | "correction" | "reviewer"
     ) {
         return Err("Invalid evolution exec role".into());
     }
@@ -715,6 +740,13 @@ fn run_codex_evolve_exec(
 
     let codex = codex_executable()?;
     let mut command = evolve_command(&codex, &schema_path, &directory);
+    command.args([
+        "-c",
+        &format!(
+            "developer_instructions={}",
+            toml_text(evolve_developer_instructions(&request.role))
+        ),
+    ]);
     if !request.model.trim().is_empty() {
         command.args(["--model", request.model.trim()]);
     }
@@ -735,27 +767,25 @@ fn run_codex_evolve_exec(
     {
         command.args(["-c", &format!("service_tier=\"{}\"", tier.replace('"', ""))]);
     }
-    if request.role != "director" {
-        let mcp = figmaboy_mcp_executable()?;
-        let data_dir = app
-            .path()
-            .app_local_data_dir()
-            .map_err(|error| error.to_string())?;
-        let bridge = data_dir.join("editor-bridge.json");
-        command.args(["-c", "mcp_servers={}"]);
-        command.args([
-            "-c",
-            &format!("mcp_servers.figmaboy.command={}", toml_string(&mcp)),
-        ]);
-        command.args([
-            "-c",
-            &format!(
-                "mcp_servers.figmaboy.env.FIGMABOY_BRIDGE_FILE={}",
-                toml_string(&bridge)
-            ),
-        ]);
-        command.args(["-c", "mcp_servers.figmaboy.enabled_tools=[\"types_get\"]"]);
-    }
+    let mcp = figmaboy_mcp_executable()?;
+    let data_dir = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|error| error.to_string())?;
+    let bridge = data_dir.join("editor-bridge.json");
+    command.args(["-c", "mcp_servers={}"]);
+    command.args([
+        "-c",
+        &format!("mcp_servers.figmaboy.command={}", toml_string(&mcp)),
+    ]);
+    command.args([
+        "-c",
+        &format!(
+            "mcp_servers.figmaboy.env.FIGMABOY_BRIDGE_FILE={}",
+            toml_string(&bridge)
+        ),
+    ]);
+    command.args(["-c", evolve_tools_config(&request.role)]);
     for path in &image_paths {
         command.arg("--image").arg(path);
     }
@@ -1040,5 +1070,51 @@ mod tests {
         assert!(arguments
             .windows(2)
             .any(|pair| pair == ["-c", "agents.enabled=false"]));
+    }
+
+    #[test]
+    fn evolution_workers_receive_only_read_only_design_tools() {
+        for tool in [
+            "types_get",
+            "design_capabilities",
+            "icons_search",
+            "assets_list",
+            "fonts_list",
+            "design_audit",
+            "frame_screenshot",
+        ] {
+            assert!(EVOLVE_DIRECTOR_TOOLS_CONFIG.contains(&format!("\"{tool}\"")));
+            assert!(EVOLVE_DESIGNER_TOOLS_CONFIG.contains(&format!("\"{tool}\"")));
+        }
+        for tool in ["evolve_candidate_validate", "evolve_candidate_render"] {
+            assert!(!EVOLVE_DIRECTOR_TOOLS_CONFIG.contains(&format!("\"{tool}\"")));
+            assert!(EVOLVE_DESIGNER_TOOLS_CONFIG.contains(&format!("\"{tool}\"")));
+        }
+        for config in [EVOLVE_DIRECTOR_TOOLS_CONFIG, EVOLVE_DESIGNER_TOOLS_CONFIG] {
+            for tool in [
+                "operations_apply",
+                "image_place",
+                "evolve_candidate_commit",
+                "document_save",
+            ] {
+                assert!(!config.contains(&format!("\"{tool}\"")));
+            }
+        }
+    }
+
+    #[test]
+    fn evolution_roles_receive_visual_and_tool_instructions() {
+        let director = evolve_developer_instructions("director");
+        assert!(director.contains("first image as the frozen reference"));
+        assert!(director.contains("Never mutate the canvas"));
+        let designer = evolve_developer_instructions("designer");
+        assert!(designer.contains("Call types_get and design_capabilities"));
+        assert!(designer.contains("Use icons_search before creating an icon"));
+        assert!(designer.contains("first image is the frozen reference"));
+        assert!(designer.contains("Figmaboy will always render the returned proposal"));
+        let reviewer = evolve_developer_instructions("reviewer");
+        assert!(reviewer.contains("exact rendered candidate"));
+        assert!(reviewer.contains("Inspect the third image closely"));
+        assert!(reviewer.contains("deterministic audit"));
     }
 }

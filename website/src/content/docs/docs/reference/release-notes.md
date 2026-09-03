@@ -25,13 +25,13 @@ Released September 2, 2026.
 
 `/evolve` now leaves the selected frame untouched and creates an empty sibling frame beside it. The original remains a frozen reference for content, assets, dimensions, and product intent while Figmaboy constructs a new interpretation for the requested direction.
 
-Each pass adds one region, component, or design decision. A pass may contain at most five operations and four new layers. The director names a visible completion condition, the designer builds only that step, and accepted work appears on the reconstruction before the next pass begins.
+Each pass follows one visible objective. The director names its completion condition, the designer uses the operations and layers needed to build it, and accepted work appears on the reconstruction before the next pass begins.
 
 ### A smaller and safer evolve runtime
 
 One sequential designer replaces the parallel candidate tournament. Every director, designer, and correction runs in a short-lived `codex exec` worker with subagents and unrelated providers disabled. Figmaboy owns validation, rendering, cancellation, and process cleanup.
 
-Empty, malformed, oversized, and canvas-rejected proposals receive the exact error and a bounded correction opportunity. Persistent failures stop cleanly instead of producing an endless correction loop. The best completed reconstruction remains on the canvas after Stop or an error.
+Empty, malformed, and canvas-rejected proposals receive the exact error and a bounded correction opportunity. Persistent failures stop cleanly instead of producing an endless correction loop. The best completed reconstruction remains on the canvas after Stop or an error.
 
 ### Editor interaction fixes
 

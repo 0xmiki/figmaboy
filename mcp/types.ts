@@ -244,6 +244,18 @@ export interface ToolResult {
   [key: string]: unknown;
 }
 
+export interface CatalogSearchParams {
+  /** Case-insensitive terms matched against icon names, asset IDs, or layer names. */
+  query?: string;
+  /** Maximum results from 1 through 24. Defaults to 12. */
+  limit?: number;
+}
+
+export interface DesignAuditParams {
+  /** Frame to inspect. Omit to use the single selected frame. */
+  frameId?: Id;
+}
+
 /** Available MCP tools and their input contracts. */
 export interface FigmaBoyTools {
   designs_list(params?: DesignsListParams): Promise<ToolResult>;
@@ -251,6 +263,10 @@ export interface FigmaBoyTools {
   editor_status(params?: Record<string, never>): Promise<ToolResult>;
   design_capabilities(params?: Record<string, never>): Promise<ToolResult>;
   types_get(params?: Record<string, never>): Promise<{ language: "typescript"; path: "mcp/types.ts"; source: string }>;
+  icons_search(params?: CatalogSearchParams): Promise<ToolResult>;
+  assets_list(params?: CatalogSearchParams): Promise<ToolResult>;
+  fonts_list(params?: Record<string, never>): Promise<ToolResult>;
+  design_audit(params?: DesignAuditParams): Promise<ToolResult>;
   extension_stage(params: ExtensionStageParams): Promise<ToolResult>;
   document_get(params?: Record<string, never>): Promise<ToolResult>;
   nodes_get(params?: NodesGetParams): Promise<ToolResult>;

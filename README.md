@@ -120,6 +120,8 @@ The composer recognizes `@selection`, `@current-frame`, `@page`, and `@design`. 
 
 Select one frame and run `/evolve [direction]` to reconstruct it from first principles. Figmaboy treats the reference as a content inventory and product brief, not a component template. It creates an empty sibling and invents a new information architecture and composition for the requested direction while recording every decision in the conversation.
 
+Evolve designers can search Phosphor icons, inspect reusable image assets and previews, check available fonts, read design capabilities, and audit the reconstruction for clipping, text overflow, contrast, and target size. Figmaboy renders every proposal in an isolated candidate canvas, then gives a dedicated visual-review turn the exact candidate image and audit. Weak work can be revised before the director compares it or anything reaches the visible reconstruction.
+
 ### Use Figmaboy from another Codex client
 
 Most people can ignore this. The built-in Codex tab already has every Figmaboy tool it needs.
