@@ -34,14 +34,14 @@ Figmaboy supplies its bundled MCP to the built-in chat automatically. Open the C
 
 [Create your first design](https://0xmiki.github.io/figmaboy/docs/getting-started/quickstart/)
 
-## What is new in 0.5.4
+## What is new in 0.5.5
 
-- Shape Boy is the new mark across the desktop app, installers, website, and documentation.
-- The new landing page is now the main website and shows the real editor, Codex sidebar, and Sonic 60 design.
-- The documentation and download page use the same visual system as the landing page.
-- Platform detection and direct installer links remain available on the redesigned download page.
+- `/evolve` now reconstructs a design from an empty sibling frame instead of restyling the original component tree.
+- Every proposal is rendered in isolation and visually reviewed before comparison or commit.
+- Designers can inspect the exact canvas, search icons and assets, check fonts, and run deterministic layout and accessibility audits.
+- Figmaboy chat history stays inside Figmaboy, and trusted in-app canvas tools no longer interrupt work with permission prompts.
 
-[Read the 0.5.4 release notes](https://0xmiki.github.io/figmaboy/docs/reference/release-notes/)
+[Read the 0.5.5 release notes](https://0xmiki.github.io/figmaboy/docs/reference/release-notes/)
 
 ## Projects and designs
 

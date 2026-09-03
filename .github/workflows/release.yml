@@ -89,11 +89,11 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: Figmaboy ${{ github.ref_name }}
           releaseBody: |
-            Figmaboy 0.5.4 introduces Shape Boy as the new mark across the desktop app, installers, website, documentation, and repository.
+            Figmaboy 0.5.5 rebuilds `/evolve` around first-principles reconstruction. The selected frame remains frozen while a new design emerges inside an empty sibling frame.
 
-            The redesigned landing page is now the main Figmaboy website. It shows the real Sonic 60 design inside a proportional reconstruction of the editor, Codex sidebar, composer, and Phosphor controls.
+            Every proposal is rendered in an isolated canvas and sent through visual review with the exact image and deterministic audit before comparison or commit. Designers can inspect screenshots, search Phosphor icons and reusable assets, check fonts, and audit layout and accessibility.
 
-            The documentation and download page now use the same visual system. Platform detection, direct installer links, and release hydration remain intact.
+            Built-in Codex chat history stays inside Figmaboy. The bundled canvas tools are trusted in-app, so design reads and edits no longer open permission prompts while external filesystem, shell, and network protections remain intact.
 
             Download the installer for your platform below. This release also includes standalone `figmaboy-mcp` binaries and a `SHA256SUMS` file.
 

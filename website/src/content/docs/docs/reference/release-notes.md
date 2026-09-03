@@ -3,6 +3,24 @@ title: Release notes
 description: What changed in the current Figmaboy release.
 ---
 
+## Figmaboy 0.5.5
+
+Released September 3, 2026.
+
+### Reconstruct, then inspect
+
+`/evolve` now treats the selected frame as a frozen reference and constructs a new interpretation inside an empty sibling frame. The designer must invent a new information architecture and composition instead of tracing or restyling the source component tree.
+
+Figmaboy renders every proposal in an isolated candidate canvas. A dedicated visual reviewer receives the reference, current reconstruction, exact candidate image, and deterministic audit before the director compares or commits the work. Passes may use as many operations and layers as their objective requires.
+
+### Better design evidence
+
+Evolution designers can inspect frame screenshots, search the Phosphor icon catalog, review reusable image assets, check available fonts, and audit clipping, text overflow, contrast, and target size. Read-only MCP tools now publish the matching machine-readable metadata.
+
+### Quieter built-in Codex
+
+Figmaboy chat history now stays in Figmaboy instead of appearing in the main Codex history. The bundled design tools are trusted inside the app, so reading or editing the open canvas no longer opens a permission prompt. Filesystem, shell, network, and external-tool protections remain unchanged.
+
 ## Figmaboy 0.5.4
 
 Released September 3, 2026.
