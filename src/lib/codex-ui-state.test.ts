@@ -29,6 +29,27 @@ describe("Codex UI state", () => {
     }));
   });
 
+  it("repairs Figmaboy-owned thread history without reviving an active turn", () => {
+    const parsed = parseCodexUiState({
+      localThreads: {
+        local: {
+          thread: { id: "local", preview: "Build a card", name: "Card", createdAt: 1, updatedAt: 2, cwd: "/tmp/design" },
+          timeline: {
+            items: [{ id: "user", type: "userMessage", content: [{ type: "text", text: "Build a card" }] }],
+            activeTurnId: "turn",
+            error: "",
+            turns: { turn: { id: "turn", status: "inProgress", startedAt: 1, completedAt: null, durationMs: null, error: "" } },
+          },
+        },
+        invalid: { thread: { preview: "Missing id" }, timeline: {} },
+      },
+    });
+    expect(parsed.localThreads.local.thread).toEqual(expect.objectContaining({ id: "local", name: "Card", status: { type: "notLoaded" } }));
+    expect(parsed.localThreads.local.timeline.activeTurnId).toBeNull();
+    expect(parsed.localThreads.local.timeline.turns.turn.status).toBe("interrupted");
+    expect(parsed.localThreads.invalid).toBeUndefined();
+  });
+
   it("repairs persisted skill attachments", () => {
     expect(parseCodexUiState({ drafts: { __new__: { prompt: "Polish this", attachments: [], skills: [{ name: "first-principles-ui", path: "/skills/ui" }, { name: 42 }] } } }).drafts.__new__).toEqual({
       prompt: "Polish this",

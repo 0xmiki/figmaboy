@@ -78,6 +78,22 @@ function editorDocument(draftPatch: Record<string, unknown> = {}) {
   } };
 }
 
+function localThread(id: string, name: string, user = "Previous user request", assistant = "Previous assistant reply", updatedAt = 20) {
+  return {
+    thread: { id, preview: user, name, createdAt: 10, updatedAt, recencyAt: updatedAt, cwd: "/tmp/figmaboy", status: { type: "notLoaded" } },
+    timeline: {
+      items: [
+        { id: `${id}-user`, type: "userMessage", content: [{ type: "text", text: user }] },
+        { id: `${id}-agent`, type: "agentMessage", text: assistant },
+      ],
+      activeTurnId: null,
+      error: "",
+      usage: null,
+      turns: {},
+    },
+  };
+}
+
 async function startEvolution(message = "/evolve Tighten the hierarchy") {
   const onEditorRpc = async (tool: string, args: Record<string, unknown>) => {
     const response = await invokeMock("codex_request", { method: "mcpServer/tool/call", params: { threadId: "local-editor", server: "figmaboy", tool, arguments: args } });
@@ -242,7 +258,7 @@ describe("Codex sidebar diagnostics", () => {
         const role = serviceName.includes("director") ? "director" : serviceName.includes("designer") ? "designer" : "";
         const id = serviceName.includes("control") ? "evolve-control" : role ? `evolve-${role}-${++evolveFixture.thread}` : "thread";
         return {
-          thread: { id, preview: "", name: null, createdAt: 1, updatedAt: 1, cwd: "/tmp/figmaboy", turns: [], ephemeral: serviceName.includes("evolve") },
+          thread: { id, preview: "", name: null, createdAt: 1, updatedAt: 1, cwd: "/tmp/figmaboy", turns: [], ephemeral: params.ephemeral === true || serviceName.includes("evolve") },
           model: "gpt-test",
           reasoningEffort: null,
           serviceTier: null,
@@ -302,8 +318,14 @@ describe("Codex sidebar diagnostics", () => {
     await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("codex_request", expect.objectContaining({ method: "turn/start" })));
     const threadStart = invokeMock.mock.calls.find(([, args]) => args?.method === "thread/start");
     expect(threadStart?.[1]?.params).not.toHaveProperty("threadSource");
+    expect(threadStart?.[1]?.params).toEqual(expect.objectContaining({ ephemeral: true, serviceName: "figmaboy" }));
     expect(threadStart?.[1]?.params?.developerInstructions).toContain("extension_stage");
     expect(threadStart?.[1]?.params?.developerInstructions).toContain("only the user may run, Keep, or Discard");
+    await waitFor(() => {
+      const writes = invokeMock.mock.calls.filter(([command]) => command === "codex_ui_state_write");
+      const stored = writes.at(-1)?.[1]?.value?.localThreads as Record<string, unknown> | undefined;
+      expect(Object.keys(stored ?? {})).toHaveLength(1);
+    });
 
     eventHandlers.get("codex-event")?.({
       payload: { method: "turn/started", params: { threadId: "thread", turn: { id: "turn", status: "inProgress", items: [], error: null } } },
@@ -711,17 +733,18 @@ describe("Codex sidebar diagnostics", () => {
     expect(await screen.findByTitle("native-paste.png")).toBeInTheDocument();
   });
 
-  it("lists stored Figmaboy threads from current and legacy app-server sources", async () => {
+  it("lists only Figmaboy-owned threads and ignores app-server history", async () => {
     threadFixture.push({
-      id: "stored-thread",
-      preview: "Tighten the layout",
-      name: "Persisted design chat",
+      id: "leaked-server-thread",
+      preview: "Do not import this",
+      name: "Codex history",
       createdAt: 10,
       updatedAt: 20,
       recencyAt: 20,
       cwd: "/tmp/figmaboy",
       status: { type: "notLoaded" },
     });
+    uiStateFixture.value = { localThreads: { "stored-thread": localThread("stored-thread", "Persisted design chat") } };
     render(CodexSidebar, {
       workspaceId: "file",
       pageId: "page-1",
@@ -732,39 +755,21 @@ describe("Codex sidebar diagnostics", () => {
     });
     expect(await screen.findByText("Persisted design chat")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "View all (1)" })).toBeInTheDocument();
-    expect(invokeMock).toHaveBeenCalledWith("codex_request", expect.objectContaining({
-      method: "thread/list",
-      params: expect.objectContaining({
-        cwd: "/tmp/figmaboy",
-        sourceKinds: ["appServer", "vscode", "cli", "unknown"],
-      }),
-    }));
+    expect(screen.queryByText("Codex history")).not.toBeInTheDocument();
+    expect(invokeMock).not.toHaveBeenCalledWith("codex_request", expect.objectContaining({ method: "thread/list" }));
     await fireEvent.click(screen.getByText("Persisted design chat"));
     expect(await screen.findByText("Previous user request")).toBeInTheDocument();
     expect(await screen.findByText("Previous assistant reply")).toBeInTheDocument();
     await fireEvent.click(screen.getByRole("button", { name: "Copy prompt" }));
     expect(clipboardWriteMock).toHaveBeenCalledWith("Previous user request");
-    expect(invokeMock).toHaveBeenCalledWith("codex_request", expect.objectContaining({
-      method: "thread/resume",
-      params: expect.objectContaining({ threadId: "stored-thread" }),
-    }));
+    expect(invokeMock).not.toHaveBeenCalledWith("codex_request", expect.objectContaining({ method: "thread/resume" }));
   });
 
-  it("hydrates an injected evolve transcript from its persistent parent thread", async () => {
-    threadFixture.push({
-      id: "evolve-parent",
-      preview: "/evolve Make it editorial",
-      name: "Make it editorial",
-      createdAt: 10,
-      updatedAt: 20,
-      cwd: "/tmp/figmaboy",
-      status: { type: "notLoaded" },
-      emptyTurns: true,
-    });
-    threadItemsFixture.push(
-      { turnId: "injected-1", item: { id: "evolve-user", type: "userMessage", content: [{ type: "text", text: "/evolve Make it editorial", text_elements: [] }] } },
-      { turnId: "injected-1", item: { id: "evolve-result", type: "agentMessage", text: "Evolved in 4 passes. Three candidates kept." } },
-    );
+  it("rehydrates a saved local transcript into a fresh ephemeral runtime thread", async () => {
+    uiStateFixture.value = {
+      lastThreadIdByPage: { "page-1": "evolve-parent" },
+      localThreads: { "evolve-parent": localThread("evolve-parent", "Make it editorial", "/evolve Make it editorial", "Evolved in 4 passes. Three candidates kept.") },
+    };
     render(CodexSidebar, {
       workspaceId: "file",
       pageId: "page-1",
@@ -773,21 +778,30 @@ describe("Codex sidebar diagnostics", () => {
       onAttentionChange: () => {},
       onClose: () => {},
     });
-    await fireEvent.click(await screen.findByText("Make it editorial"));
     expect(await screen.findByText("/evolve Make it editorial")).toBeInTheDocument();
     expect(await screen.findByText("Evolved in 4 passes. Three candidates kept.")).toBeInTheDocument();
+    const textbox = screen.getByRole("textbox", { name: "Message Codex" });
+    await fireEvent.input(textbox, { target: { value: "Continue refining it" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Send message" }));
     expect(invokeMock).toHaveBeenCalledWith("codex_request", expect.objectContaining({
-      method: "thread/items/list",
-      params: expect.objectContaining({ threadId: "evolve-parent", sortDirection: "asc" }),
+      method: "thread/start",
+      params: expect.objectContaining({ ephemeral: true, serviceName: "figmaboy" }),
+    }));
+    expect(invokeMock).toHaveBeenCalledWith("codex_request", expect.objectContaining({
+      method: "thread/inject_items",
+      params: expect.objectContaining({ threadId: "thread", items: expect.arrayContaining([expect.objectContaining({ role: "user" }), expect.objectContaining({ role: "assistant" })]) }),
     }));
   });
 
   it("restores the last selected thread for the current design page", async () => {
-    threadFixture.push(
-      { id: "thread-page-one", preview: "Page one", name: "Page one chat", createdAt: 10, updatedAt: 20, cwd: "/tmp/figmaboy", status: { type: "notLoaded" } },
-      { id: "thread-page-two", preview: "Page two", name: "Page two chat", createdAt: 11, updatedAt: 21, cwd: "/tmp/figmaboy", status: { type: "notLoaded" } },
-    );
-    uiStateFixture.value = { lastThreadId: "thread-page-two", lastThreadIdByPage: { "page-1": "thread-page-one" } };
+    uiStateFixture.value = {
+      lastThreadId: "thread-page-two",
+      lastThreadIdByPage: { "page-1": "thread-page-one" },
+      localThreads: {
+        "thread-page-one": localThread("thread-page-one", "Page one chat"),
+        "thread-page-two": localThread("thread-page-two", "Page two chat", "Page two request", "Page two reply", 21),
+      },
+    };
     render(CodexSidebar, {
       workspaceId: "file",
       pageId: "page-1",
@@ -797,9 +811,6 @@ describe("Codex sidebar diagnostics", () => {
       onClose: () => {},
     });
     await screen.findByText("Previous assistant reply");
-    expect(invokeMock).toHaveBeenCalledWith("codex_request", expect.objectContaining({
-      method: "thread/resume",
-      params: expect.objectContaining({ threadId: "thread-page-one" }),
-    }));
+    expect(invokeMock).not.toHaveBeenCalledWith("codex_request", expect.objectContaining({ method: "thread/resume" }));
   });
 });

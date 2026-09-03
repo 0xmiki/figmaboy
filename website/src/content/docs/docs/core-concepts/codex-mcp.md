@@ -3,7 +3,7 @@ title: Codex and the MCP
 description: Learn how Codex discovers Figmaboy tools and how offline reads differ from live editor mutations.
 ---
 
-Figmaboy starts `codex app-server` when you open its Codex sidebar. App-server launches the bundled `figmaboy-mcp` process over stdio using a process-local configuration override, so the integrated chat does not modify your global Codex configuration.
+Figmaboy starts `codex app-server` when you open its Codex sidebar. App-server launches the bundled `figmaboy-mcp` process over stdio using a process-local configuration override, so the integrated chat does not modify your global Codex configuration. Figmaboy uses ephemeral Codex runtime threads and stores the visible conversations itself. These chats appear only inside Figmaboy.
 
 ## Two data paths
 
@@ -49,7 +49,7 @@ The editor applies each mutation. It uses the same validation, history, renderin
 
 The integrated sidebar tells each new thread which Figmaboy file is open. It supplies the bundled MCP without changing global Codex configuration. Only [external Codex clients](../../getting-started/connect-codex/) need a separate MCP installation.
 
-The model picker comes from app-server's paginated `model/list` catalog. Figmaboy validates reasoning and service-tier choices against the selected model, then uses the effective values returned by `thread/start` and `thread/resume`. This prevents the composer from displaying a stale model configuration after switching chats.
+The model picker comes from app-server's paginated `model/list` catalog. Figmaboy validates reasoning and service-tier choices against the selected model, then uses the effective values returned by `thread/start`. When you reopen a saved Figmaboy chat, the app creates a fresh ephemeral runtime thread and restores the recent user and assistant conversation before continuing.
 
 At the start of a design task, Codex should inspect:
 

@@ -22,7 +22,7 @@
     buildDisplayTimelineRows, emptyTimeline, formatTokenCount,
     inputSkills, inputText, itemText, object, reduceCodexEvent,
     resolveCodexSelection, threadAttention, threadTitle, uniqueEnabledSkills,
-    timelineFromThread, type CodexEvent, type CodexItem, type CodexModel,
+    type CodexEvent, type CodexItem, type CodexModel,
     type CodexSelection, type CodexThread, type CodexTimeline, type CodexTurnMeta,
     type JsonObject,
   } from "$lib/codex-protocol";
@@ -30,7 +30,7 @@
     COMPOSER_COMMANDS, CONTEXT_MENTIONS, composerTrigger, draftKey,
     emptyCodexUiState, evolveDirection, parseCodexUiState, replaceComposerTrigger,
     type CodexApprovalMode, type CodexAttachment, type CodexUiState,
-    type ComposerCommand,
+    type CodexLocalThread, type ComposerCommand,
   } from "$lib/codex-ui-state";
 
   type Attention = "idle" | "working" | "approval" | "input" | "complete" | "error";
@@ -117,6 +117,7 @@
   let historySearch = $state("");
   let historyMenu = $state<string | null>(null);
   let currentThreadId = $state<string | null>(null);
+  let runtimeThreadId = $state<string | null>(null);
   let timeline = $state<CodexTimeline>(emptyTimeline());
   let prompt = $state("");
   let attachments = $state<CodexAttachment[]>([]);
@@ -168,16 +169,19 @@
   const supportsImages = $derived(activeModel?.inputModalities?.includes("image") ?? true);
   const approvalMode = $derived(uiState.approvalMode);
   const currentThread = $derived(threads.find((thread) => thread.id === currentThreadId));
-  const currentPending = $derived(pendingRequests.filter((request) => request.params.threadId === currentThreadId || (!request.params.threadId && currentThreadId)));
+  const currentPending = $derived(pendingRequests.filter((request) => request.params.threadId === runtimeThreadId || (!request.params.threadId && runtimeThreadId)));
   const activePending = $derived(currentPending[0]);
   const activeApproval = $derived(activePending ? describeApprovalRequest(activePending) : null);
   const activeQuestions = $derived(activePending?.method === "item/tool/requestUserInput" && Array.isArray(activePending.params.questions) ? activePending.params.questions.map(object) : []);
   const activeQuestion = $derived(activeQuestions[questionIndex]);
   const blockedByRequest = $derived(Boolean(activePending));
+  function compareThreads(a: CodexThread, b: CodexThread): number {
+    return Number(Boolean(b.isPinned)) - Number(Boolean(a.isPinned)) || (b.recencyAt ?? b.updatedAt) - (a.recencyAt ?? a.updatedAt);
+  }
   const filteredThreads = $derived.by(() => threads
     .filter((thread) => threadTitle(thread).toLowerCase().includes(historySearch.trim().toLowerCase()))
-    .toSorted((a, b) => Number(Boolean(b.isPinned)) - Number(Boolean(a.isPinned)) || (b.recencyAt ?? b.updatedAt) - (a.recencyAt ?? a.updatedAt)));
-  const recentThreads = $derived(threads.slice(0, 3));
+    .toSorted(compareThreads));
+  const recentThreads = $derived(threads.toSorted(compareThreads).slice(0, 3));
   const evolveStageLabel = $derived({
     capture: "Capturing the selected frame",
     review: "Director is reviewing the direction",
@@ -275,37 +279,6 @@
     return result;
   }
 
-  async function requestAllThreads(): Promise<CodexThread[]> {
-    const result: CodexThread[] = [];
-    let cursor: string | null = null;
-    do {
-      // Older Figmaboy app-server sessions were stored with the vscode source.
-      // The per-design cwd is the ownership boundary, so accepting every
-      // interactive source here recovers those threads without leaking chats
-      // from other projects into this sidebar.
-      const response: { data: CodexThread[]; nextCursor?: string | null } = await request("thread/list", { limit: 50, cwd, sourceKinds: ["appServer", "vscode", "cli", "unknown"], sortKey: "recency_at", sortDirection: "desc", ...(cursor ? { cursor } : {}) });
-      result.push(...response.data);
-      cursor = response.nextCursor ?? null;
-    } while (cursor);
-    return result;
-  }
-
-  async function requestAllThreadItems(threadId: string): Promise<CodexItem[]> {
-    const result: CodexItem[] = [];
-    let cursor: string | null = null;
-    do {
-      const response: { data?: unknown[]; nextCursor?: string | null } = await request("thread/items/list", { threadId, limit: 100, sortDirection: "asc", ...(cursor ? { cursor } : {}) });
-      for (const entryValue of response.data ?? []) {
-        const entry = object(entryValue);
-        const item = object(entry.item);
-        if (typeof item.id !== "string" || typeof item.type !== "string") continue;
-        result.push({ ...item, id: item.id, type: item.type, _turnId: typeof entry.turnId === "string" ? entry.turnId : undefined });
-      }
-      cursor = response.nextCursor ?? null;
-    } while (cursor);
-    return result;
-  }
-
   onMount(() => {
     if (!("__TAURI_INTERNALS__" in window)) {
       connection = "error";
@@ -321,6 +294,7 @@
           if (evolveRunning) void cancelEvolveWorkflow();
           connection = "error";
           connectionError = "Codex app-server disconnected. Reconnect to continue.";
+          runtimeThreadId = null;
           timeline = { ...timeline, activeTurnId: null };
           setAttention("error");
         }
@@ -352,7 +326,8 @@
 
   $effect(() => {
     if (!uiStateLoaded) return;
-    prompt; attachments; selectedSkills.map((skill) => `${skill.name}:${skill.path}`).join("|"); selection.model; selection.effort; selection.serviceTier; selectionExplicit; uiState.approvalMode; uiState.promptStash.join("|"); uiState.pinnedThreadIds.join("|"); currentThreadId;
+    const latest = timeline.items.at(-1);
+    prompt; attachments; selectedSkills.map((skill) => `${skill.name}:${skill.path}`).join("|"); selection.model; selection.effort; selection.serviceTier; selectionExplicit; uiState.approvalMode; uiState.promptStash.join("|"); uiState.pinnedThreadIds.join("|"); currentThreadId; timeline.items.length; timeline.activeTurnId; timeline.error; latest ? `${latest.id}:${itemText(latest).length}:${String(latest.aggregatedOutput ?? "").length}` : ""; threads.map((thread) => `${thread.id}:${thread.name ?? ""}:${thread.preview}:${thread.updatedAt}:${Boolean(thread.isPinned)}`).join("|");
     if (saveStateTimer) clearTimeout(saveStateTimer);
     saveStateTimer = setTimeout(() => void persistUiState(), 180);
   });
@@ -374,12 +349,13 @@
   async function boot() {
     connection = "connecting";
     connectionError = "";
+    runtimeThreadId = null;
     try {
       uiState = parseCodexUiState(await invoke("codex_ui_state_read", { workspaceId }));
       models = uiState.cachedModels;
       const connected = await invoke<Connection>("codex_connect", { workspaceId });
       cwd = connected.cwd;
-      const [accountResponse, loadedModels, loadedThreads, skillResponse] = await Promise.all([
+      const [accountResponse, loadedModels, skillResponse] = await Promise.all([
         request<{ account: JsonObject | null }>("account/read", { refreshToken: false }),
         requestAllModels().catch((cause) => {
           if (uiState.cachedModels.length) {
@@ -388,13 +364,12 @@
           }
           throw cause;
         }),
-        requestAllThreads(),
         request<{ data?: Array<{ cwd?: string; skills?: Skill[] }> }>("skills/list", { cwds: [cwd] }).catch(() => ({ data: [] })),
       ]);
       account = accountResponse.account;
       models = loadedModels;
       uiState = { ...uiState, cachedModels: loadedModels };
-      threads = loadedThreads.map((thread) => ({ ...thread, isPinned: thread.isPinned || uiState.pinnedThreadIds.includes(thread.id) }));
+      threads = Object.values(uiState.localThreads).filter((record) => !record.archived).map(({ thread }) => ({ ...thread, isPinned: thread.isPinned || uiState.pinnedThreadIds.includes(thread.id) }));
       skills = uniqueEnabledSkills(skillResponse.data?.flatMap((entry) => entry.skills ?? []) ?? []);
       loadDraft(null);
       const hasPageThread = Object.prototype.hasOwnProperty.call(uiState.lastThreadIdByPage, pageId);
@@ -456,35 +431,51 @@
         void request<{ account: JsonObject | null }>("account/read", { refreshToken: true }).then((response) => account = response.account);
       } else connectionError = typeof params.error === "string" ? params.error : "Sign in failed";
     }
-    if (event.method === "thread/name/updated") {
-      threads = threads.map((thread) => thread.id === params.threadId ? { ...thread, name: String(params.threadName ?? "") } : thread);
-    }
-    if (event.method === "thread/status/changed") {
-      threads = threads.map((thread) => thread.id === params.threadId ? { ...thread, status: params.status as CodexThread["status"] } : thread);
-    }
-    if (event.method === "thread/started" && object(params.thread).id) {
-      const started = object(params.thread) as CodexThread;
-      if (object(params.thread).ephemeral !== true && !threads.some((thread) => thread.id === started.id)) threads = [started, ...threads];
-    }
-    if (event.method === "thread/archived") threads = threads.filter((thread) => thread.id !== params.threadId);
-    if (event.method === "thread/deleted") threads = threads.filter((thread) => thread.id !== params.threadId);
+    if (event.method === "thread/name/updated" && params.threadId === runtimeThreadId && currentThreadId) threads = threads.map((thread) => thread.id === currentThreadId ? { ...thread, name: String(params.threadName ?? "") } : thread);
+    if (event.method === "thread/status/changed" && params.threadId === runtimeThreadId && currentThreadId) threads = threads.map((thread) => thread.id === currentThreadId ? { ...thread, status: params.status as CodexThread["status"] } : thread);
     if (event.method === "warning") providerWarning = typeof params.message === "string" ? params.message : "";
-    timeline = reduceCodexEvent(timeline, event, currentThreadId);
-    if (event.method === "turn/started" && params.threadId === currentThreadId) setAttention("working");
+    if (runtimeThreadId) timeline = reduceCodexEvent(timeline, event, runtimeThreadId);
+    if (event.method === "turn/started" && params.threadId === runtimeThreadId) setAttention("working");
     if (event.method === "turn/completed") {
       rpcBusy = false;
-      if (params.threadId === currentThreadId) setAttention(visible ? "idle" : "complete");
+      if (params.threadId === runtimeThreadId) {
+        const now = Math.floor(Date.now() / 1000);
+        threads = threads.map((thread) => thread.id === currentThreadId ? { ...thread, updatedAt: now, recencyAt: now, status: { type: "idle" } } : thread);
+        setAttention(visible ? "idle" : "complete");
+      }
       void refreshThreads();
     }
   }
 
   async function refreshThreads() {
-    if (!cwd) return;
-    try { threads = (await requestAllThreads()).map((thread) => ({ ...thread, isPinned: thread.isPinned || uiState.pinnedThreadIds.includes(thread.id) })); } catch { /* current chat remains usable */ }
+    await persistUiState();
+  }
+
+  function durableTimeline(source: CodexTimeline): CodexTimeline {
+    const items = source.items.map((item) => JSON.parse(JSON.stringify(item, (key, value) => {
+      if (typeof value === "string" && (value.startsWith("data:image/") || (["imageBase64", "thumbnailBase64", "data"].includes(key) && value.length > 16_384))) return undefined;
+      return value;
+    })) as CodexItem);
+    return {
+      ...source,
+      items,
+      activeTurnId: null,
+      turns: Object.fromEntries(Object.entries(source.turns).map(([id, turn]) => [id, turn.status === "inProgress" ? { ...turn, status: "interrupted" } : turn])),
+    };
   }
 
   function uiStateWithCurrentDraft(): CodexUiState {
     const key = draftKey(currentThreadId);
+    const archivedThreads = Object.fromEntries(Object.entries(uiState.localThreads).filter(([, record]) => record.archived));
+    const activeThreads = Object.fromEntries(threads.toSorted(compareThreads).map((thread) => {
+      const saved = uiState.localThreads[thread.id];
+      const stored: CodexLocalThread = {
+        thread: { ...thread, status: { type: "notLoaded" } },
+        timeline: thread.id === currentThreadId ? durableTimeline(timeline) : saved?.timeline ?? emptyTimeline(),
+      };
+      return [thread.id, stored];
+    }));
+    const localThreads = { ...archivedThreads, ...activeThreads };
     return {
       ...uiState,
       drafts: {
@@ -493,6 +484,7 @@
       },
       lastThreadId: currentThreadId,
       lastThreadIdByPage: { ...uiState.lastThreadIdByPage, [pageId]: currentThreadId },
+      localThreads,
     };
   }
 
@@ -523,6 +515,7 @@
   }
 
   async function openThread(id: string) {
+    if (working || rpcBusy || evolveRunning) return;
     if (id === currentThreadId && timeline.items.length) { historyOpen = false; return; }
     saveCurrentDraftLocally();
     if (!evolveRunning) { evolveActivities = []; evolveRunOutcome = null; evolveJournal = []; evolveParentThreadId = ""; }
@@ -531,16 +524,12 @@
     syncingThread = true;
     connectionError = "";
     try {
-      const resumed = await request<{ thread: CodexThread; model?: string; serviceTier?: string | null; reasoningEffort?: string | null }>("thread/resume", approvalParams({ threadId: id, cwd }));
-      let thread = resumed.thread;
-      if (!thread.turns?.length) thread = (await request<{ thread: CodexThread }>("thread/read", { threadId: id, includeTurns: true })).thread;
+      const saved = uiState.localThreads[id];
+      if (!saved) throw new Error("This Figmaboy chat is no longer available.");
       currentThreadId = id;
-      timeline = timelineFromThread(thread);
-      if (!timeline.items.length) {
-        const injectedItems = await requestAllThreadItems(id).catch(() => []);
-        if (injectedItems.length) timeline = { ...timeline, items: injectedItems };
-      }
-      loadDraft(id, { model: resumed.model, effort: resumed.reasoningEffort ?? "", serviceTier: resumed.serviceTier ?? "default" });
+      runtimeThreadId = null;
+      timeline = saved.timeline;
+      loadDraft(id);
       uiState = { ...uiState, lastThreadId: id, lastThreadIdByPage: { ...uiState.lastThreadIdByPage, [pageId]: id }, lastVisitedAt: { ...uiState.lastVisitedAt, [id]: Date.now() } };
       pinnedToBottom = true;
       dismissedTurnError = "";
@@ -556,6 +545,7 @@
   function newChat() {
     saveCurrentDraftLocally();
     currentThreadId = null;
+    runtimeThreadId = null;
     timeline = emptyTimeline();
     evolveActivities = [];
     evolveRunOutcome = null;
@@ -840,6 +830,20 @@
 
   async function injectEvolveHistory(threadId: string, role: "user" | "assistant", text: string) {
     await request("thread/inject_items", { threadId, items: [evolveHistoryItem(role, text)] });
+  }
+
+  function conversationHistory(source: CodexTimeline): JsonObject[] {
+    return source.items.flatMap((item) => {
+      if (item.type === "userMessage") {
+        const text = inputText(item.content);
+        return text ? [evolveHistoryItem("user", text)] : [];
+      }
+      if (item.type === "agentMessage") {
+        const text = itemText(item);
+        return text ? [evolveHistoryItem("assistant", text)] : [];
+      }
+      return [];
+    }).slice(-80);
   }
 
   function retryableEvolveError(cause: unknown): boolean {
@@ -1138,6 +1142,7 @@ ${sections.join("\n\n")}`;
     evolveJournal = [];
     evolveJournalPersisted = false;
     evolveParentThreadId = "";
+    const historyBeforeEvolve = timeline;
     timeline = { ...timeline, error: "", items: appendUserMessage ? [...timeline.items, { id: `local_${Date.now()}`, type: "userMessage", content: [{ type: "text", text: message, text_elements: [] }] }] : timeline.items };
     pinnedToBottom = true;
     setAttention("working");
@@ -1146,11 +1151,11 @@ ${sections.join("\n\n")}`;
 
     try {
       const createdParentThread = currentThreadId === null;
-      const parentThreadId = await ensureThread();
+      const parentThreadId = await ensureThread(historyBeforeEvolve);
       evolveParentThreadId = parentThreadId;
       if (appendUserMessage) {
         await injectEvolveHistory(parentThreadId, "user", message);
-        if (createdParentThread) await renameThread(parentThreadId, direction.slice(0, 72));
+        if (createdParentThread && currentThreadId) await renameThread(currentThreadId, direction.slice(0, 72));
       }
 
       const status = await callEditor("editor_status");
@@ -1443,19 +1448,28 @@ Reconstructed beside the original through ${evolvePass} ${evolvePass === 1 ? "pa
     }
   }
 
-  async function ensureThread(): Promise<string> {
-    if (currentThreadId) return currentThreadId;
+  async function ensureThread(historySource = timeline): Promise<string> {
+    if (runtimeThreadId) return runtimeThreadId;
+    const localId = currentThreadId ?? `figmaboy_${crypto.randomUUID()}`;
+    const existing = currentThreadId ? uiState.localThreads[currentThreadId] : null;
     const response = await request<{ thread: CodexThread; model?: string; serviceTier?: string | null; reasoningEffort?: string | null }>("thread/start", approvalParams({
       cwd,
       model: selection.model || undefined,
       serviceTier: selection.serviceTier === "default" ? null : selection.serviceTier,
+      ephemeral: true,
       serviceName: "figmaboy",
       developerInstructions: figmaboyDeveloperInstructions(),
     }));
-    currentThreadId = response.thread.id;
+    runtimeThreadId = response.thread.id;
+    currentThreadId = localId;
     selection = resolveCodexSelection(models, { model: response.model ?? selection.model, effort: response.reasoningEffort ?? selection.effort, serviceTier: response.serviceTier ?? selection.serviceTier });
-    threads = [response.thread, ...threads.filter((thread) => thread.id !== response.thread.id)];
-    return response.thread.id;
+    if (!existing) {
+      const now = Math.floor(Date.now() / 1000);
+      threads = [{ ...response.thread, id: localId, cwd, createdAt: now, updatedAt: now, recencyAt: now, status: { type: "idle" } }, ...threads.filter((thread) => thread.id !== localId)];
+    }
+    const history = conversationHistory(historySource);
+    if (history.length) await request("thread/inject_items", { threadId: runtimeThreadId, items: history });
+    return runtimeThreadId;
   }
 
   function skillPattern(name: string): RegExp {
@@ -1496,11 +1510,14 @@ Reconstructed beside the original through ${evolvePass} ${evolvePass === 1 ? "pa
     attachments = [];
     selectedSkills = [];
     lastPrompt = text;
+    const historyBeforeSend = timeline;
     timeline = { ...timeline, error: "", items: [...timeline.items, { id: `local_${Date.now()}`, type: "userMessage", content: input }] };
     pinnedToBottom = true;
     rpcBusy = true;
     try {
-      const threadId = await ensureThread();
+      const threadId = await ensureThread(historyBeforeSend);
+      const now = Math.floor(Date.now() / 1000);
+      threads = threads.map((thread) => thread.id === currentThreadId ? { ...thread, preview: thread.preview || text.slice(0, 160), updatedAt: now, recencyAt: now, status: { type: "active", activeFlags: [] } } : thread);
       if (timeline.activeTurnId) {
         await request("turn/steer", { threadId, input, expectedTurnId: timeline.activeTurnId });
       } else {
@@ -1512,7 +1529,7 @@ Reconstructed beside the original through ${evolvePass} ${evolvePass === 1 ? "pa
           serviceTier: selection.serviceTier === "default" ? null : selection.serviceTier,
           approvalsReviewer: approvalMode === "auto" ? "auto_review" : "user",
         });
-        if (timeline.items.filter((item) => item.type === "userMessage").length === 1) void renameThread(threadId, text.slice(0, 72));
+        if (timeline.items.filter((item) => item.type === "userMessage").length === 1 && currentThreadId) void renameThread(currentThreadId, text.slice(0, 72));
       }
     } catch (cause) {
       prompt = text;
@@ -1533,9 +1550,9 @@ Reconstructed beside the original through ${evolvePass} ${evolvePass === 1 ? "pa
 
   async function stop() {
     if (evolveRunning) { await cancelEvolveWorkflow(); return; }
-    if (!currentThreadId || !timeline.activeTurnId) return;
+    if (!runtimeThreadId || !timeline.activeTurnId) return;
     rpcBusy = true;
-    try { await request("turn/interrupt", { threadId: currentThreadId, turnId: timeline.activeTurnId }); }
+    try { await request("turn/interrupt", { threadId: runtimeThreadId, turnId: timeline.activeTurnId }); }
     catch (cause) { timeline = { ...timeline, error: errorMessage(cause) }; }
     finally { rpcBusy = false; }
   }
@@ -1551,7 +1568,7 @@ Reconstructed beside the original through ${evolvePass} ${evolvePass === 1 ? "pa
     }
     if (command.action === "compact" && currentThreadId) {
       compacting = true;
-      try { await request("thread/compact/start", { threadId: currentThreadId }); }
+      try { await request("thread/compact/start", { threadId: await ensureThread() }); }
       catch (cause) { connectionError = errorMessage(cause); }
       finally { compacting = false; }
       return;
@@ -1743,15 +1760,23 @@ Reconstructed beside the original through ${evolvePass} ${evolvePass === 1 ? "pa
   async function archiveThread(event: MouseEvent, id: string) {
     event.stopPropagation();
     if (threads.find((thread) => thread.id === id)?.status?.type === "active") return;
-    try { await request("thread/archive", { threadId: id }); threads = threads.filter((thread) => thread.id !== id); if (currentThreadId === id) newChat(); }
-    catch (cause) { connectionError = errorMessage(cause); }
+    saveCurrentDraftLocally();
+    const saved = uiState.localThreads[id];
+    if (saved) uiState = { ...uiState, localThreads: { ...uiState.localThreads, [id]: { ...saved, archived: true } } };
+    threads = threads.filter((thread) => thread.id !== id);
+    if (currentThreadId === id) newChat();
+    await persistUiState();
   }
 
   async function deleteThread(event: MouseEvent, id: string) {
     event.stopPropagation();
     if (!confirm("Delete this chat permanently?")) return;
-    try { await request("thread/delete", { threadId: id }); threads = threads.filter((thread) => thread.id !== id); if (currentThreadId === id) newChat(); }
-    catch (cause) { connectionError = errorMessage(cause); }
+    saveCurrentDraftLocally();
+    const { [id]: _, ...localThreads } = uiState.localThreads;
+    uiState = { ...uiState, localThreads };
+    threads = threads.filter((thread) => thread.id !== id);
+    if (currentThreadId === id) newChat();
+    await persistUiState();
   }
 
   async function pinThread(event: MouseEvent, thread: CodexThread) {
@@ -1760,17 +1785,15 @@ Reconstructed beside the original through ${evolvePass} ${evolvePass === 1 ? "pa
     uiState = { ...uiState, pinnedThreadIds: pinned ? [...new Set([...uiState.pinnedThreadIds, thread.id])] : uiState.pinnedThreadIds.filter((id) => id !== thread.id) };
     threads = threads.map((item) => item.id === thread.id ? { ...item, isPinned: pinned } : item);
     historyMenu = null;
-    try {
-      await request("thread/metadata/update", { threadId: thread.id, isPinned: pinned });
-    } catch { /* older app-server builds keep the local pin */ }
+    await persistUiState();
   }
 
   async function renameThread(id: string, suggested?: string) {
     const current = threads.find((thread) => thread.id === id);
     const name = suggested ?? promptForName(current ? threadTitle(current) : "Untitled chat");
     if (!name?.trim()) return;
-    try { await request("thread/name/set", { threadId: id, name: name.trim() }); threads = threads.map((thread) => thread.id === id ? { ...thread, name: name.trim() } : thread); }
-    catch (cause) { connectionError = errorMessage(cause); }
+    threads = threads.map((thread) => thread.id === id ? { ...thread, name: name.trim() } : thread);
+    await persistUiState();
   }
 
   function promptForName(current: string): string | null {
@@ -1927,7 +1950,7 @@ Reconstructed beside the original through ${evolvePass} ${evolvePass === 1 ? "pa
       <div class="history-list">
         {#each filteredThreads as thread (thread.id)}
           <div class="history-row" class:current={thread.id === currentThreadId} role="button" tabindex="0" onclick={() => openThread(thread.id)} onkeydown={(event) => event.key === "Enter" && openThread(thread.id)}>
-            <span class={`status ${threadAttention(thread, pendingRequests.some((request) => request.params.threadId === thread.id && request.method !== "item/tool/requestUserInput"), pendingRequests.some((request) => request.params.threadId === thread.id && request.method === "item/tool/requestUserInput"))}`}></span>
+            <span class={`status ${threadAttention(thread, thread.id === currentThreadId && pendingRequests.some((request) => request.params.threadId === runtimeThreadId && request.method !== "item/tool/requestUserInput"), thread.id === currentThreadId && pendingRequests.some((request) => request.params.threadId === runtimeThreadId && request.method === "item/tool/requestUserInput"))}`}></span>
             <span class="history-copy"><strong>{threadTitle(thread)}</strong><small>{new Date(thread.updatedAt * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</small></span>
             {#if threadUnread(thread)}<i class="unread" title="Unread activity"></i>{/if}
             {#if thread.isPinned}<Pin size={11} />{/if}

@@ -93,7 +93,7 @@ bundled figmaboy-mcp
 2. `figmaboy-mcp` opens that database in SQLite read-only mode for `designs_list` and `design_context_get`. WAL mode keeps reads safe while the app is saving.
 3. Figmaboy starts an editor bridge on a random loopback-only port when the desktop app opens.
 4. The app writes the port, a random authentication token, and its process ID to `editor-bridge.json` in the local application-data directory. On Unix, mode `0600` restricts the file to the current user.
-5. The desktop app starts `codex app-server` on demand and passes the bundled `figmaboy-mcp` path as a process-local configuration override. It does not change `~/.codex/config.toml`.
+5. The desktop app starts `codex app-server` on demand, creates ephemeral Codex threads, and passes the bundled `figmaboy-mcp` path as a process-local configuration override. It does not change `~/.codex/config.toml` or add Figmaboy chats to the main Codex history.
 6. Live tools connect through the bridge. The editor applies and renders each mutation, then returns the result through the same path.
 
 The MCP process never writes to the SQLite database. This keeps validation, undo/redo, live rendering, revision checks, and autosave inside the desktop app.
@@ -114,7 +114,7 @@ Set `FIGMABOY_DB_PATH` to override the saved workspace database path, primarily 
 
 Install the Codex CLI and sign in once. Open a design, then select **Codex** in the shared right sidebar. Figmaboy starts the documented `codex app-server` protocol. It does not embed or parse the terminal interface.
 
-Codex stores chat history in a separate local working directory for each design. The sidebar includes model and reasoning controls, saved drafts, image attachments, steering, approvals, context usage, pinned chats, and ChatGPT sign-in.
+Figmaboy stores its chat history with the design and uses ephemeral Codex runtime threads. The chats remain available in Figmaboy without appearing in the main Codex history. The sidebar includes model and reasoning controls, saved drafts, image attachments, steering, approvals, context usage, pinned chats, and ChatGPT sign-in.
 
 The composer recognizes `@selection`, `@current-frame`, `@page`, and `@design`. Type `$` to invoke an installed Codex skill or `/` for Figmaboy chat actions such as `/review`, `/evolve`, `/save`, `/compact`, and `/undo`.
 

@@ -1,4 +1,4 @@
-import type { CodexModel, CodexSelection, JsonObject } from "$lib/codex-protocol";
+import type { CodexItem, CodexModel, CodexSelection, CodexThread, CodexTimeline, CodexTurnMeta, JsonObject } from "$lib/codex-protocol";
 
 export type CodexApprovalMode = "ask" | "auto";
 
@@ -23,6 +23,12 @@ export type CodexDraft = {
   skills: CodexSkillReference[];
 };
 
+export type CodexLocalThread = {
+  thread: CodexThread;
+  timeline: CodexTimeline;
+  archived?: boolean;
+};
+
 export type CodexUiState = {
   version: 1;
   drafts: Record<string, CodexDraft>;
@@ -33,6 +39,7 @@ export type CodexUiState = {
   lastThreadId: string | null;
   lastThreadIdByPage: Record<string, string | null>;
   lastVisitedAt: Record<string, number>;
+  localThreads: Record<string, CodexLocalThread>;
 };
 
 export const NEW_CHAT_DRAFT = "__new__";
@@ -48,6 +55,7 @@ export function emptyCodexUiState(): CodexUiState {
     lastThreadId: null,
     lastThreadIdByPage: {},
     lastVisitedAt: {},
+    localThreads: {},
   };
 }
 
@@ -67,6 +75,59 @@ function skill(value: unknown): CodexSkillReference | null {
   const item = value as JsonObject;
   if (typeof item.name !== "string" || typeof item.path !== "string") return null;
   return { name: item.name, path: item.path };
+}
+
+function localThread(value: unknown): CodexLocalThread | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as JsonObject;
+  const rawThread = record.thread;
+  const rawTimeline = record.timeline;
+  if (!rawThread || typeof rawThread !== "object" || Array.isArray(rawThread)) return null;
+  if (!rawTimeline || typeof rawTimeline !== "object" || Array.isArray(rawTimeline)) return null;
+  const thread = rawThread as JsonObject;
+  const threadId = typeof thread.id === "string" ? thread.id : "";
+  if (!threadId) return null;
+  const timeline = rawTimeline as JsonObject;
+  const items = Array.isArray(timeline.items)
+    ? timeline.items.filter((item): item is CodexItem => Boolean(item && typeof item === "object" && !Array.isArray(item) && typeof (item as JsonObject).id === "string" && typeof (item as JsonObject).type === "string"))
+    : [];
+  const turns: Record<string, CodexTurnMeta> = {};
+  if (timeline.turns && typeof timeline.turns === "object" && !Array.isArray(timeline.turns)) {
+    for (const [id, value] of Object.entries(timeline.turns as JsonObject)) {
+      if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+      const turn = value as JsonObject;
+      const status = turn.status === "failed" || turn.status === "interrupted" || turn.status === "inProgress" ? turn.status : "completed";
+      turns[id] = {
+        id,
+        status: status === "inProgress" ? "interrupted" : status,
+        startedAt: typeof turn.startedAt === "number" ? turn.startedAt : null,
+        completedAt: typeof turn.completedAt === "number" ? turn.completedAt : null,
+        durationMs: typeof turn.durationMs === "number" ? turn.durationMs : null,
+        error: typeof turn.error === "string" ? turn.error : "",
+      };
+    }
+  }
+  return {
+    thread: {
+      id: threadId,
+      preview: typeof thread.preview === "string" ? thread.preview : "",
+      name: typeof thread.name === "string" ? thread.name : null,
+      createdAt: typeof thread.createdAt === "number" ? thread.createdAt : 0,
+      updatedAt: typeof thread.updatedAt === "number" ? thread.updatedAt : 0,
+      recencyAt: typeof thread.recencyAt === "number" ? thread.recencyAt : null,
+      cwd: typeof thread.cwd === "string" ? thread.cwd : "",
+      isPinned: thread.isPinned === true,
+      status: { type: "notLoaded" },
+    },
+    timeline: {
+      items,
+      activeTurnId: null,
+      error: typeof timeline.error === "string" ? timeline.error : "",
+      usage: null,
+      turns,
+    },
+    archived: record.archived === true,
+  };
 }
 
 export function parseCodexUiState(value: unknown): CodexUiState {
@@ -102,6 +163,13 @@ export function parseCodexUiState(value: unknown): CodexUiState {
       if (typeof threadId === "string" || threadId === null) lastThreadIdByPage[pageId] = threadId;
     }
   }
+  const localThreads: Record<string, CodexLocalThread> = {};
+  if (root.localThreads && typeof root.localThreads === "object" && !Array.isArray(root.localThreads)) {
+    for (const value of Object.values(root.localThreads as JsonObject)) {
+      const parsed = localThread(value);
+      if (parsed) localThreads[parsed.thread.id] = parsed;
+    }
+  }
   return {
     version: 1,
     drafts,
@@ -112,6 +180,7 @@ export function parseCodexUiState(value: unknown): CodexUiState {
     lastThreadId: typeof root.lastThreadId === "string" ? root.lastThreadId : null,
     lastThreadIdByPage,
     lastVisitedAt,
+    localThreads,
   };
 }
 
