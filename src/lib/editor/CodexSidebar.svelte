@@ -91,6 +91,7 @@
   type EvolveActivity = { id: string; pass: number; title: string; detail: string; notes: string[]; image?: string; status: "working" | "complete" | "kept" | "discarded" | "recovering" };
   type EvolveExecResponse = { execId: string; text: string; exitCode: number };
   type PromptSegment = { type: "text" | "skill"; value: string; name?: string };
+  const ORIGINALITY_REQUIREMENT = "Invent a visibly different information architecture, composition, component grouping, and interaction framing from the reference.";
   let { workspaceId, pageId, fileName, visible, embedded = false, onAttentionChange, onClose, onEditorRpc }: {
     workspaceId: string;
     pageId: string;
@@ -609,6 +610,16 @@
     return { frameId, nodes: selected };
   }
 
+  function referenceContentInventory(contextValue: unknown): JsonObject {
+    const context = object(contextValue);
+    const semanticKeys = new Set(["type", "name", "text", "characters", "assetId", "iconName", "componentName", "variant", "href", "url", "src", "alt", "placeholder", "value", "label", "checked", "role", "description"]);
+    const nodes = Object.values(object(context.nodes)).map((nodeValue) => {
+      const node = object(nodeValue);
+      return Object.fromEntries(Object.entries(node).filter(([key, value]) => semanticKeys.has(key) && (typeof value === "string" || typeof value === "number" || typeof value === "boolean" || Array.isArray(value))));
+    }).filter((node) => Object.keys(node).length > 0);
+    return { nodes };
+  }
+
   function evolveEffort(): string {
     const supported = activeModel?.supportedReasoningEfforts.map((option) => option.reasoningEffort) ?? [];
     if (supported.includes(selection.effort)) return selection.effort;
@@ -719,10 +730,17 @@
     if (!Array.isArray(value.criteria) || !Array.isArray(value.regions) || !Array.isArray(value.successes) || !Array.isArray(value.regressions)) throw new Error("Director returned an incomplete assessment");
     const rawCriteria = value.criteria.map((criterionValue) => object(criterionValue));
     if (!frozen && rawCriteria.length < 2) throw new Error("Director did not establish enough direction criteria");
-    const criteria = (frozen ?? rawCriteria.map((criterion, index) => ({ id: String(criterion.id || `goal-${index + 1}`), requirement: cleanNote(criterion.requirement, "Direction criterion"), status: "unmet" as const, evidence: "Not assessed yet" }))).map((criterion) => {
+    const proposedCriteria = rawCriteria.map((criterion, index) => ({ id: String(criterion.id || `goal-${index + 1}`), requirement: cleanNote(criterion.requirement, "Direction criterion"), status: "unmet" as const, evidence: "Not assessed yet" }));
+    if (!frozen) {
+      const originalityIndex = proposedCriteria.findIndex((criterion) => criterion.id === "composition-originality");
+      if (originalityIndex >= 0) proposedCriteria[originalityIndex] = { ...proposedCriteria[originalityIndex]!, requirement: ORIGINALITY_REQUIREMENT };
+      else proposedCriteria.unshift({ id: "composition-originality", requirement: ORIGINALITY_REQUIREMENT, status: "unmet", evidence: "The empty reconstruction has not established an original composition yet." });
+    }
+    const criteria = (frozen ?? proposedCriteria.slice(0, 6)).map((criterion) => {
       const returned = rawCriteria.find((candidate) => String(candidate.id) === criterion.id) ?? {};
       const status: EvolveCriterion["status"] = returned.status === "met" || returned.status === "partial" || returned.status === "unmet" ? returned.status : "unmet";
-      return { ...criterion, status, evidence: cleanNote(returned.evidence, "Direction evidence") };
+      const evidence = typeof returned.evidence === "string" ? returned.evidence : criterion.evidence;
+      return { ...criterion, status, evidence: cleanNote(evidence, "Direction evidence") };
     });
     const criterionIds = new Set(criteria.map((criterion) => criterion.id));
     const frameWidth = Number(frame.width);
@@ -883,23 +901,23 @@
     const title = comparing ? `Judging construction pass ${evolvePass}` : args.verification ? "Checking the reconstruction one more time" : "Planning the next construction pass";
     const criteria = args.frozen
       ? `Frozen direction criteria: ${JSON.stringify(args.frozen.map(({ id, requirement }) => ({ id, requirement })))}`
-      : "Create 2 to 6 stable criteria from the user's direction. Include preservation of required source content as a criterion.";
+      : "Create 2 to 6 stable criteria from the user's direction. Include required source content as a criterion. Include a criterion with id composition-originality that requires a visibly different information architecture, composition, component grouping, and interaction framing from the reference. Never make source layout, component reuse, section order, or styling a preservation criterion unless the user explicitly asks for it.";
     const images = [
       { name: "reference", dataUrl: args.referenceImage },
       { name: "current-draft", dataUrl: args.currentImage },
       ...(args.candidateImage ? [{ name: "candidate", dataUrl: args.candidateImage }] : []),
     ];
     const comparison = comparing
-      ? `The second attached image is the current reconstruction. The third is the proposed next pass. In the preference field, image_1 means keep the current reconstruction and image_2 means accept the candidate. Choose image_2 only when the candidate materially advances this pass objective without breaking completed work. A partial reconstruction does not need to match the finished reference yet. Pass objective: ${JSON.stringify(args.objective)}`
-      : "Review the current reconstruction against the frozen criteria. Set preference to not_applicable. If work remains, choose the smallest coherent visible nextObjective. It must cover one region, component, or design decision and include an observable completionSignal. Do not ask for a complete screen, several sections, or broad polish in one pass. The first objective for an empty draft should establish only the outer shell or one primary structural region.";
-    const promptText = `Act as the construction director for a first-principles redesign. Treat the reconstruction like a painting built layer by layer. Choose what this pass should add, let that layer stand on its own, inspect it, then leave the next layer for the next pass. The reference frame is frozen and must not be edited. It supplies exact content, assets, dimensions, and product intent. The reconstruction may use a different composition and visual system to satisfy the user's direction. Do not reward pixel imitation. Do not reject an early pass merely because later detail is unfinished. Judge progress at the scale of the stated objective. verdict=satisfied is valid only when every frozen criterion is visibly met and no material work remains. Return only the required structured result.
+      ? `The second attached image is the current reconstruction. The third is the proposed next pass. In the preference field, image_1 means keep the current reconstruction and image_2 means accept the candidate. Choose image_2 only when the candidate materially advances this pass objective without breaking completed work. Reject a candidate that falls back toward the reference's component tree, section order, spatial arrangement, or visual framing. A partial reconstruction does not need to match the finished reference. Pass objective: ${JSON.stringify(args.objective)}`
+      : "Review the current reconstruction against the frozen criteria. Set preference to not_applicable. If work remains, choose the smallest coherent visible nextObjective. It must cover one region, component, or design decision and include an observable completionSignal. Do not ask for a complete screen, several sections, or broad polish in one pass. The first objective for an empty draft must establish a new compositional thesis that is visibly unlike the reference.";
+    const promptText = `Act as the construction director for a first-principles redesign. Treat the reconstruction like a painting built layer by layer. The reference is a product brief, not a template. Extract what the interface means, what data it contains, and what jobs it must support. Require the reconstruction to invent a new information architecture and visual composition that expresses the user's direction. Reusing the source component hierarchy, section order, card arrangement, navigation pattern, or overall silhouette is a failure unless the user explicitly requests preservation. The reference frame is frozen and must not be edited. Do not reward pixel imitation or cosmetic restyling. Do not reject an early pass merely because later detail is unfinished. Judge progress at the scale of the stated objective. verdict=satisfied is valid only when every frozen criterion is visibly met, the composition-originality criterion is met, and no material work remains. Return only the required structured result.
 
 Attached images are REFERENCE, CURRENT DRAFT${args.candidateImage ? ", and CANDIDATE" : ""}, in that order.
 User direction: ${args.direction}
 ${criteria}
 ${comparison}
 ${args.verification ? "This is an independent finish check. Reopen construction if any material criterion remains partial." : ""}
-Frozen reference layers: ${JSON.stringify(args.sourceContext)}
+Reference content inventory: ${JSON.stringify(referenceContentInventory(args.sourceContext))}
 Current reconstruction layers: ${JSON.stringify(args.draftContext)}`;
     const activityId = beginEvolveActivity(title);
     for (let attempt = 0; attempt < 2 && !evolveCancelled; attempt += 1) {
@@ -935,15 +953,17 @@ Current reconstruction layers: ${JSON.stringify(args.draftContext)}`;
     objective: EvolveObjective;
     candidateId: string;
   }): string {
+    const sourceFrame = object(object(args.sourceContext).nodes)[args.sourceFrameId];
     return `Candidate ID: ${args.candidateId}
 User direction: ${args.direction}
 Frozen reference frame ID: ${args.sourceFrameId}
 Writable reconstruction frame ID: ${args.draftFrameId}
+Reference frame dimensions: ${String(object(sourceFrame).width ?? "unknown")} × ${String(object(sourceFrame).height ?? "unknown")}
 Pass objective: ${JSON.stringify(args.objective)}
 Direction criteria: ${JSON.stringify(args.assessment.criteria.map(({ id, requirement, status }) => ({ id, requirement, status })))}
 Visible opportunities: ${JSON.stringify(args.assessment.regions)}
 Completed work to preserve: ${JSON.stringify(args.assessment.successes)}
-Frozen reference layers and exact content: ${JSON.stringify(args.sourceContext)}
+Reference content inventory: ${JSON.stringify(referenceContentInventory(args.sourceContext))}
 Current reconstruction layers: ${JSON.stringify(args.draftContext)}`;
   }
 
@@ -960,7 +980,7 @@ Current reconstruction layers: ${JSON.stringify(args.draftContext)}`;
   }): Promise<EvolveProposal> {
     const candidateId = `P${evolvePass}`;
     const brief = designerBrief({ ...args, candidateId });
-    const promptText = `Act as the sole designer advancing a first-principles reconstruction. Work like a painter applying one layer at a time. This pass adds one deliberate layer of the design. Do not paint the whole picture at once. Let the user see the composition emerge through separate accepted passes. Do not spawn subagents. Call types_get before editing. The reference is read-only evidence for exact text, assets, dimensions, and product intent. Do not copy its coordinates or styling unless that choice independently fits the user direction.
+    const promptText = `Act as the sole designer advancing a first-principles reconstruction. Work like a painter applying one layer at a time. This pass adds one deliberate layer of the design. Do not paint the whole picture at once. Let the user see the composition emerge through separate accepted passes. Do not spawn subagents. Call types_get before editing. Treat the reference as a content inventory and product brief, never as a component library. Invent a new information architecture, component grammar, spatial composition, hierarchy, and interaction framing for the user's direction. Do not reuse or trace the source component boundaries, nesting, section order, card arrangement, navigation pattern, coordinates, styling, or overall silhouette. Preserve exact source text and assets only when the product meaning requires them. New layer names and IDs should describe the invented concept rather than mirror source layers.
 
 Make one small, coherent construction pass that fulfills only the supplied objective and its completion signal. You may create, rewrite, restyle, resize, reorder, reparent, or delete anything inside the writable reconstruction frame. Keep that frame present and never touch the reference or any layer outside the reconstruction. Use at most five operations and create at most four layers. Do not complete another region early. Leave later work visibly unfinished for later passes. Return absolute values for the current reconstruction. At least one operation array must contain a change. Never return an empty pass.
 
@@ -1009,7 +1029,7 @@ ${brief}`;
       try {
         const correction = `${brief}
 
-Correct the same construction pass. Do not start a different design direction. Call types_get, then repair the proposal using the exact error below. Preserve its title, hypothesis, mechanism, intended tradeoff, and pass objective when they are usable. Use at most five operations and create at most four layers. At least one operation array must contain a change. Figmaboy will validate the complete replacement before rendering. Return only the required structured proposal.
+Correct the same construction pass. Do not start a different design direction and do not retreat toward the reference layout as a shortcut. Call types_get, then repair the proposal using the exact error below. Preserve its title, hypothesis, mechanism, intended tradeoff, and pass objective when they are usable. The corrected proposal must keep the invented information architecture and component grammar. Use at most five operations and create at most four layers. At least one operation array must contain a change. Figmaboy will validate the complete replacement before rendering. Return only the required structured proposal.
 
 EXACT VALIDATION OR RENDER ERROR
 ${errorMessage(failure).slice(0, 1_200)}

@@ -9,7 +9,9 @@ Select one frame, then give `/evolve` a visual direction:
 /evolve Strengthen the hierarchy and make the primary action easier to find
 ```
 
-Figmaboy leaves the selected frame untouched and creates an empty frame of the same size beside it. The original supplies exact content, assets, dimensions, and product intent. A director and designer then construct a new interpretation for your requested direction.
+Figmaboy leaves the selected frame untouched and creates an empty frame of the same size beside it. The original supplies content, assets, dimensions, and product intent. It does not supply a component template. A director and designer invent a new information architecture and composition for your requested direction.
+
+The director keeps structural originality as an acceptance criterion throughout the run. It rejects cosmetic restyles and proposals that reproduce the source component tree, section order, card arrangement, navigation pattern, or overall silhouette. Figmaboy preserves source structure only when your direction explicitly asks for it.
 
 ## What happens during a pass
 
@@ -17,7 +19,7 @@ Figmaboy leaves the selected frame untouched and creates an empty frame of the s
 2. It creates and selects an empty sibling frame named as an evolution draft.
 3. A director chooses one small construction objective with a visible completion condition.
 4. One designer builds that pass inside an isolated candidate document. A pass may contain at most five operations and four new layers.
-5. The director compares the proposal with the current reconstruction and its objective.
+5. The director compares the proposal with the current reconstruction, its objective, and the requirement to remain structurally distinct from the reference.
 6. An accepted pass appears on the sibling frame and becomes the base for the next pass.
 
 The loop finishes when two independent reviews agree that the requested direction has been reached. It has no fixed pass count. Select **Stop** whenever you want to keep the accepted progress and finish early.

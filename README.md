@@ -118,7 +118,7 @@ Figmaboy stores its chat history with the design and uses ephemeral Codex runtim
 
 The composer recognizes `@selection`, `@current-frame`, `@page`, and `@design`. Type `$` to invoke an installed Codex skill or `/` for Figmaboy chat actions such as `/review`, `/evolve`, `/save`, `/compact`, and `/undo`.
 
-Select one frame and run `/evolve [direction]` to reconstruct it from first principles. Figmaboy keeps the selected frame as a frozen reference, creates an empty sibling frame, and applies accepted construction passes to the new frame while recording every decision in the conversation.
+Select one frame and run `/evolve [direction]` to reconstruct it from first principles. Figmaboy treats the reference as a content inventory and product brief, not a component template. It creates an empty sibling and invents a new information architecture and composition for the requested direction while recording every decision in the conversation.
 
 ### Use Figmaboy from another Codex client
 

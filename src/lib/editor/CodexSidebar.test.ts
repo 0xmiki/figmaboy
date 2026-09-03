@@ -39,6 +39,7 @@ function revisionAssessment(overrides: Record<string, unknown> = {}) {
   return {
     verdict: "revise", preference: "not_applicable", confidence: .9,
     criteria: [
+      { id: "composition-originality", requirement: "Invent a visibly different information architecture and composition", status: "unmet", evidence: "The reconstruction has not established its own structure yet." },
       { id: "goal-1", requirement: "Create a clear visual hierarchy", status: "unmet", evidence: "The current frame has equal visual weight." },
       { id: "goal-2", requirement: "Keep supporting content readable", status: "met", evidence: "Supporting copy remains readable." },
     ],
@@ -51,6 +52,7 @@ function revisionAssessment(overrides: Record<string, unknown> = {}) {
 
 function satisfiedAssessment() {
   const criteria = [
+    { id: "composition-originality", requirement: "Invent a visibly different information architecture and composition", status: "met", evidence: "The reconstruction uses a distinct structure and component grammar." },
     { id: "goal-1", requirement: "Keep the restrained editorial hierarchy", status: "met", evidence: "The reconstruction has a clear restrained hierarchy." },
     { id: "goal-2", requirement: "Preserve readable supporting copy", status: "met", evidence: "The supporting copy is readable and balanced." },
   ];
@@ -349,6 +351,10 @@ describe("Codex sidebar diagnostics", () => {
     expect(planning).toMatchObject({ role: "director", model: "gpt-test", effort: "medium", serviceTier: "priority" });
     expect(planning.images.map((image: { name: string }) => image.name)).toEqual(["reference", "current-draft"]);
     expect(planning.prompt).toContain("smallest coherent visible nextObjective");
+    expect(planning.prompt).toContain("composition-originality");
+    expect(planning.prompt).toContain("The reference is a product brief, not a template");
+    expect(planning.prompt).toContain("Reference content inventory");
+    expect(planning.prompt).not.toContain("Frozen reference layers:");
     expect(planning.outputSchema.properties.nextObjective.required).toContain("completionSignal");
     finishExec("director", revisionAssessment());
 
@@ -361,6 +367,9 @@ describe("Codex sidebar diagnostics", () => {
     expect(designer.prompt).toContain("Figmaboy will decode and validate them before rendering");
     expect(designer.prompt).toContain("Use at most five operations and create at most four layers");
     expect(designer.prompt).toContain("Work like a painter applying one layer at a time");
+    expect(designer.prompt).toContain("Treat the reference as a content inventory and product brief");
+    expect(designer.prompt).toContain("Do not reuse or trace the source component boundaries");
+    expect(designer.prompt).not.toContain("Frozen reference layers and exact content");
     expect(designer.images).toHaveLength(2);
     expect(evolveExecFixture.some((entry) => entry.request.role === "generation")).toBe(false);
     finishExec("designer", designCandidate("P1", { fill: { type: "solid", color: "#111111", opacity: 1 } }));
