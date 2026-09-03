@@ -22,6 +22,8 @@ type CommandResult<T> = Result<T, String>;
 type PendingResponse = oneshot::Sender<CommandResult<Value>>;
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(45);
+const FIGMABOY_MCP_APPROVAL_CONFIG: &str =
+    "mcp_servers.figmaboy.default_tools_approval_mode=\"approve\"";
 const EVOLVE_DIRECTOR_TOOLS_CONFIG: &str = "mcp_servers.figmaboy.enabled_tools=[\"types_get\",\"design_capabilities\",\"icons_search\",\"assets_list\",\"fonts_list\",\"design_audit\",\"frame_screenshot\"]";
 const EVOLVE_DESIGNER_TOOLS_CONFIG: &str = "mcp_servers.figmaboy.enabled_tools=[\"types_get\",\"design_capabilities\",\"icons_search\",\"assets_list\",\"fonts_list\",\"design_audit\",\"frame_screenshot\",\"evolve_candidate_validate\",\"evolve_candidate_render\"]";
 const EVOLVE_DIRECTOR_INSTRUCTIONS: &str = "You are an isolated Figmaboy evolution director. Visually inspect every attached frame image before judging or planning. The request states the image order. Treat the first image as the frozen reference and the second as the current reconstruction; a third image, when present, is the candidate. Use the reference for product meaning and content, not as a layout template. The available Figmaboy MCP tools are read-only. Use design_capabilities, icons_search, assets_list, fonts_list, or design_audit when they provide material evidence. Never mutate the canvas. Return only the required structured output.";
@@ -425,6 +427,8 @@ pub async fn codex_connect(
                 &command_config,
                 "-c",
                 &bridge_config,
+                "-c",
+                FIGMABOY_MCP_APPROVAL_CONFIG,
             ])
             .current_dir(&cwd)
             .stdin(Stdio::piped())
@@ -786,6 +790,7 @@ fn run_codex_evolve_exec(
         ),
     ]);
     command.args(["-c", evolve_tools_config(&request.role)]);
+    command.args(["-c", FIGMABOY_MCP_APPROVAL_CONFIG]);
     for path in &image_paths {
         command.arg("--image").arg(path);
     }
@@ -1074,6 +1079,10 @@ mod tests {
 
     #[test]
     fn evolution_workers_receive_only_read_only_design_tools() {
+        assert_eq!(
+            FIGMABOY_MCP_APPROVAL_CONFIG,
+            "mcp_servers.figmaboy.default_tools_approval_mode=\"approve\""
+        );
         for tool in [
             "types_get",
             "design_capabilities",

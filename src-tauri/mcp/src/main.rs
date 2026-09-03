@@ -479,7 +479,8 @@ impl FigmaboyMcp {
 #[tool_router]
 impl FigmaboyMcp {
     #[tool(
-        description = "List saved Figmaboy designs with stable copyable file IDs, names, projects, timestamps, and page counts. Works while Figmaboy is closed. Use query to search by design or project name."
+        description = "List saved Figmaboy designs with stable copyable file IDs, names, projects, timestamps, and page counts. Works while Figmaboy is closed. Use query to search by design or project name.",
+        annotations(read_only_hint = true)
     )]
     async fn designs_list(
         &self,
@@ -496,7 +497,8 @@ impl FigmaboyMcp {
     }
 
     #[tool(
-        description = "Load a saved Figmaboy page as read-only implementation context by exact fileId or convenient fileName. Returns the full native document, ordered layer tree, page revisions, asset metadata, and a visual preview when available. Works while Figmaboy is closed."
+        description = "Load a saved Figmaboy page as read-only implementation context by exact fileId or convenient fileName. Returns the full native document, ordered layer tree, page revisions, asset metadata, and a visual preview when available. Works while Figmaboy is closed.",
+        annotations(read_only_hint = true)
     )]
     async fn design_context_get(
         &self,
@@ -518,14 +520,16 @@ impl FigmaboyMcp {
     }
 
     #[tool(
-        description = "Get the active Figma Boy file/page, save state, selection, document change token, viewport, and exact canvas client/screen geometry."
+        description = "Get the active Figma Boy file/page, save state, selection, document change token, viewport, and exact canvas client/screen geometry.",
+        annotations(read_only_hint = true)
     )]
     async fn editor_status(&self) -> CallToolResult {
         self.call("editor_status", json!({})).await
     }
 
     #[tool(
-        description = "Get the native node/style capability reference and the required semantic grouping conventions for Codex-authored designs."
+        description = "Get the native node/style capability reference and the required semantic grouping conventions for Codex-authored designs.",
+        annotations(read_only_hint = true)
     )]
     async fn design_capabilities(&self) -> CallToolResult {
         CallToolResult::structured(json!({
@@ -605,7 +609,8 @@ impl FigmaboyMcp {
     }
 
     #[tool(
-        description = "Search the Phosphor icon catalog by plain terms such as arrow left, calendar, microphone, or settings. Returns exact iconName values and labeled visual previews. Read-only."
+        description = "Search the Phosphor icon catalog by plain terms such as arrow left, calendar, microphone, or settings. Returns exact iconName values and labeled visual previews. Read-only.",
+        annotations(read_only_hint = true)
     )]
     async fn icons_search(
         &self,
@@ -625,7 +630,8 @@ impl FigmaboyMcp {
     }
 
     #[tool(
-        description = "List image assets used by the open design, optionally filtered by asset ID or layer name. Returns reusable assetId values, natural dimensions, usage locations, and labeled visual previews. Read-only."
+        description = "List image assets used by the open design, optionally filtered by asset ID or layer name. Returns reusable assetId values, natural dimensions, usage locations, and labeled visual previews. Read-only.",
+        annotations(read_only_hint = true)
     )]
     async fn assets_list(
         &self,
@@ -645,14 +651,16 @@ impl FigmaboyMcp {
     }
 
     #[tool(
-        description = "List font families already used in the open design plus font faces loaded by Figmaboy and portable system families. Read-only."
+        description = "List font families already used in the open design plus font faces loaded by Figmaboy and portable system families. Read-only.",
+        annotations(read_only_hint = true)
     )]
     async fn fonts_list(&self) -> CallToolResult {
         self.call("fonts_list", json!({})).await
     }
 
     #[tool(
-        description = "Audit one frame for clipped or out-of-bounds layers, fixed-box text overflow, low text contrast, and undersized named controls. Returns deterministic errors and warnings without changing the design."
+        description = "Audit one frame for clipped or out-of-bounds layers, fixed-box text overflow, low text contrast, and undersized named controls. Returns deterministic errors and warnings without changing the design.",
+        annotations(read_only_hint = true)
     )]
     async fn design_audit(
         &self,
@@ -662,7 +670,8 @@ impl FigmaboyMcp {
     }
 
     #[tool(
-        description = "Return the complete TypeScript contract for native nodes, styles, edit operations, and every Figma Boy MCP tool."
+        description = "Return the complete TypeScript contract for native nodes, styles, edit operations, and every Figma Boy MCP tool.",
+        annotations(read_only_hint = true)
     )]
     async fn types_get(&self) -> CallToolResult {
         CallToolResult::structured(json!({
@@ -683,19 +692,24 @@ impl FigmaboyMcp {
     }
 
     #[tool(
-        description = "Get the complete open PageDocument, including its ordered layer tree and current change token."
+        description = "Get the complete open PageDocument, including its ordered layer tree and current change token.",
+        annotations(read_only_hint = true)
     )]
     async fn document_get(&self) -> CallToolResult {
         self.call("document_get", json!({})).await
     }
 
-    #[tool(description = "Get full node records by ID or filter all nodes by type/name.")]
+    #[tool(
+        description = "Get full node records by ID or filter all nodes by type/name.",
+        annotations(read_only_hint = true)
+    )]
     async fn nodes_get(&self, Parameters(params): Parameters<NodesGetParams>) -> CallToolResult {
         self.call("nodes_get", params).await
     }
 
     #[tool(
-        description = "Get exact local, world, canvas-client, and rotated-corner geometry for nodes. Omit IDs to inspect the current selection."
+        description = "Get exact local, world, canvas-client, and rotated-corner geometry for nodes. Omit IDs to inspect the current selection.",
+        annotations(read_only_hint = true)
     )]
     async fn geometry_get(&self, Parameters(params): Parameters<IdsParams>) -> CallToolResult {
         self.call("geometry_get", params).await
@@ -868,7 +882,8 @@ impl FigmaboyMcp {
     }
 
     #[tool(
-        description = "Capture one complete frame and all descendants as a PNG image for visual review. Use after each meaningful design pass."
+        description = "Capture one complete frame and all descendants as a PNG image for visual review. Use after each meaningful design pass.",
+        annotations(read_only_hint = true)
     )]
     async fn frame_screenshot(
         &self,
@@ -888,7 +903,8 @@ impl FigmaboyMcp {
     }
 
     #[tool(
-        description = "Render the full design or selected nodes to PNG and return visual evidence with exact design bounds."
+        description = "Render the full design or selected nodes to PNG and return visual evidence with exact design bounds.",
+        annotations(read_only_hint = true)
     )]
     async fn render(&self, Parameters(params): Parameters<RenderParams>) -> CallToolResult {
         match self

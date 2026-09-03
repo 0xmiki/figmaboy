@@ -118,6 +118,10 @@ const toolNames = new Set(listed.tools.map((tool) => tool.name));
 for (const name of ["designs_list", "design_context_get", "extension_stage", "icons_search", "assets_list", "fonts_list", "design_audit"]) {
   if (!toolNames.has(name)) throw new Error(`The sidecar did not expose ${name}`);
 }
+for (const name of ["designs_list", "design_context_get", "editor_status", "design_capabilities", "icons_search", "assets_list", "fonts_list", "design_audit", "types_get", "document_get", "nodes_get", "geometry_get", "frame_screenshot", "render"]) {
+  const tool = listed.tools.find((candidate) => candidate.name === name);
+  if (tool?.annotations?.readOnlyHint !== true) throw new Error(`${name} is missing its read-only MCP annotation`);
+}
 
 const capabilities = await request(5, "tools/call", { name: "design_capabilities", arguments: {} });
 if (
